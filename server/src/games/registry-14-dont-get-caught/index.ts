@@ -41,7 +41,6 @@
  */
 
 import { Client } from "@colyseus/core";
-import { MapSchema } from "@colyseus/schema";
 import { BaseGame } from "../BaseGame";
 import {
   GAME_MAP,
@@ -62,8 +61,14 @@ import { GuardState } from "../../schema/GuardState";
 
 const TICK_RATE_MS = 50;
 
-/** Detection meter increment per tick (20 Hz → ~1.25 s to full detection). */
-const DETECTION_INCREMENT = 4;
+/** Base detection meter increment per tick. */
+const BASE_DETECTION_INCREMENT = 2;
+/**
+ * Proximity multiplier for detection rate.
+ * At 0 distance, detection is 1 + this value = 3x faster.
+ * At GUARD_RANGE, detection is 1 + 0 = 1x (base rate).
+ */
+const DETECTION_PROXIMITY_MULTIPLIER = 2;
 const DETECTION_DECREMENT = 2;
 
 const BASE_GUARD_SPEED = 1.8;       // tiles/s
@@ -87,14 +92,17 @@ const REVERSE_PROBABILITY = 0.004;
 /** Wander radius (tiles): how far off a waypoint the guard drifts. */
 const WANDER_RADIUS = 2.0;
 
-/** Player bounding-box half-size for wall collision (tiles). */
-const PLAYER_HALF = 0.35;
+/** Player bounding-box half-size for wall collision (tiles). Should be < 0.5. */
+const PLAYER_HALF = 0.4;
 
 /** Player-player soft push radius (tiles). */
 const PLAYER_COLLISION_RADIUS = 0.55;
 
 /** Minimum tile distance required between guard spawn and nearest player spawn. */
 const MIN_GUARD_PLAYER_DIST = 6;
+
+/** Minimum tile distance required between any two guard spawns. */
+const MIN_GUARD_GUARD_DIST = 5;
 
 // ── Input message type ────────────────────────────────────────────────────────
 
@@ -254,36 +262,55 @@ export default class DontGetCaughtGame extends BaseGame {
     const patrolPath = getPatrolPath();
     const spawnPositions = getSpawnPositions();
 
+    /** Positions of guards already placed (for minimum spacing check). */
+    const placedPositions: { x: number; y: number }[] = [];
+
     for (let i = 0; i < count; i++) {
       const g = new GuardState();
       const key = String(i);
       g.id = key;
 
-      // Pick patrol start waypoint that is well separated from player spawns
+      // Score every patrol waypoint: prefer far from player spawns AND far from placed guards.
       let bestIdx = i % patrolPath.length;
-      let bestMinDist = 0;
+      let bestScore = -Infinity;
+
       for (let pi = 0; pi < patrolPath.length; pi++) {
         const wp = patrolPath[pi];
-        const minDist = spawnPositions.reduce((min, sp) => {
+
+        // Minimum distance to any player spawn
+        const minPlayerDist = spawnPositions.reduce((min, sp) => {
           const d = Math.sqrt((wp.x - sp.x) ** 2 + (wp.y - sp.y) ** 2);
           return Math.min(min, d);
         }, Infinity);
-        if (minDist > bestMinDist && minDist >= MIN_GUARD_PLAYER_DIST) {
-          bestMinDist = minDist;
+
+        if (minPlayerDist < MIN_GUARD_PLAYER_DIST) continue; // too close to a player spawn
+
+        // Minimum distance to any already-placed guard
+        const minGuardDist = placedPositions.reduce((min, gp) => {
+          const d = Math.sqrt((wp.x - gp.x) ** 2 + (wp.y - gp.y) ** 2);
+          return Math.min(min, d);
+        }, Infinity);
+
+        if (placedPositions.length > 0 && minGuardDist < MIN_GUARD_GUARD_DIST) continue; // too close to another guard
+
+        // Score: maximise minimum distance to placed guards (primary) + player spawns (secondary)
+        const score = (placedPositions.length > 0 ? minGuardDist : 0) + minPlayerDist * 0.5;
+        if (score > bestScore) {
+          bestScore = score;
           bestIdx = pi;
         }
       }
 
-      // Distribute multiple guards evenly along the patrol path
-      const startIdx = (bestIdx + Math.floor((i * patrolPath.length) / count)) % patrolPath.length;
-      const startWp = patrolPath[startIdx];
+      const startWp = patrolPath[bestIdx];
 
       g.x = (startWp?.x ?? getGuardStart().x) + 0.5;
       g.y = (startWp?.y ?? getGuardStart().y) + 0.5;
       g.facingAngle = (i / count) * Math.PI * 2;
-      g.patrolIndex = startIdx;
+      g.patrolIndex = bestIdx;
       g.guardMode = "patrol";
       g.targetPlayerId = "";
+
+      placedPositions.push({ x: g.x, y: g.y });
 
       this.room.state.guards.set(key, g);
       this.guardRuntimes.push({
@@ -426,6 +453,14 @@ export default class DontGetCaughtGame extends BaseGame {
         if (visible) {
           seenByAnyGuard = true;
 
+          // Detection rate increases with proximity
+          const dist = Math.sqrt((guard.x - player.x) ** 2 + (guard.y - player.y) ** 2);
+          const proximity = Math.max(0, 1 - dist / GUARD_RANGE); // 1 at point blank, 0 at edge of range
+          const increment =
+            BASE_DETECTION_INCREMENT * (1 + proximity * DETECTION_PROXIMITY_MULTIPLIER);
+
+          player.detectionMeter = Math.min(100, player.detectionMeter + increment);
+
           if (guard.guardMode === "patrol" && player.detectionMeter >= ALERT_THRESHOLD) {
             guard.guardMode = "alert";
           }
@@ -438,8 +473,6 @@ export default class DontGetCaughtGame extends BaseGame {
 
       if (seenByAnyGuard) {
         player.isDetected = true;
-        player.detectionMeter = Math.min(100, player.detectionMeter + DETECTION_INCREMENT);
-
         if (player.detectionMeter >= 100) {
           this._catchPlayer(player.id);
         }
@@ -507,20 +540,21 @@ export default class DontGetCaughtGame extends BaseGame {
     // Respawn at the spawn farthest from any guard
     const spawnPositions = getSpawnPositions();
     const guards = [...this.room.state.guards.values()];
-    const spawn = spawnPositions.reduce((best, sp) => {
+    let bestSpawn = { x: spawnPositions[0].x, y: spawnPositions[0].y };
+    let bestSpawnDist = 0;
+    for (const sp of spawnPositions) {
       const minDistToGuard = guards.reduce((min, g) => {
         const d = Math.sqrt((g.x - sp.x) ** 2 + (g.y - sp.y) ** 2);
         return Math.min(min, d);
       }, Infinity);
-      const bestMinDist = guards.reduce((min, g) => {
-        const d = Math.sqrt((g.x - best.x) ** 2 + (g.y - best.y) ** 2);
-        return Math.min(min, d);
-      }, Infinity);
-      return minDistToGuard > bestMinDist ? sp : best;
-    }, spawnPositions[0]);
+      if (minDistToGuard > bestSpawnDist) {
+        bestSpawnDist = minDistToGuard;
+        bestSpawn = { x: sp.x, y: sp.y };
+      }
+    }
 
-    player.x = spawn.x + 0.5;
-    player.y = spawn.y + 0.5;
+    player.x = bestSpawn.x + 0.5;
+    player.y = bestSpawn.y + 0.5;
 
     if (player.timesCaught >= CATCH_LIMIT) {
       player.isEliminated = true;

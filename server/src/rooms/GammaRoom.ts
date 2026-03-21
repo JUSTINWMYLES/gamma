@@ -6,7 +6,7 @@
  * Responsibilities
  * ────────────────
  * • Create and manage RoomState Schema
- * • Handle player/TV join and leave (including reconnect)
+ * • Handle player/view-screen join and leave (including reconnect)
  * • Process lobby messages (select_game, update_config, start_game, player_ready)
  * • Dynamically load the selected game plugin at start time
  * • Route all in-game input messages to the active game plugin
@@ -29,7 +29,7 @@ import { generateRoomCode } from "../utils/rng";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
-  role: "tv" | "player";
+  role: "view_screen" | "player";
   name?: string;
   /** Reconnect token issued on first join. Present on reconnect. */
   reconnectToken?: string;
@@ -55,8 +55,8 @@ export class GammaRoom extends Room<RoomState> {
   }
 
   onJoin(client: Client, options: JoinOptions): void {
-    if (options.role === "tv") {
-      this._onTVJoin(client);
+    if (options.role === "view_screen") {
+      this._onViewScreenJoin(client);
       return;
     }
     this._onPlayerJoin(client, options);
@@ -81,10 +81,10 @@ export class GammaRoom extends Room<RoomState> {
       }
     }
 
-    // If TV disconnects, flip flag
-    if (client.sessionId === this.state.hostSessionId && this.state.tvConnected) {
-      this.state.tvConnected = false;
-      console.log("[GammaRoom] TV disconnected");
+    // If view screen disconnects, flip flag
+    if (client.sessionId === this.state.hostSessionId && this.state.viewScreenConnected) {
+      this.state.viewScreenConnected = false;
+      console.log("[GammaRoom] view screen disconnected");
     }
   }
 
@@ -98,12 +98,12 @@ export class GammaRoom extends Room<RoomState> {
 
   // ── Join helpers ──────────────────────────────────────────────────────────
 
-  private _onTVJoin(client: Client): void {
-    this.state.tvConnected = true;
+  private _onViewScreenJoin(client: Client): void {
+    this.state.viewScreenConnected = true;
     if (!this.state.hostSessionId) {
       this.state.hostSessionId = client.sessionId;
     }
-    console.log(`[GammaRoom] TV joined — sessionId=${client.sessionId}`);
+    console.log(`[GammaRoom] view screen joined — sessionId=${client.sessionId}`);
   }
 
   private _onPlayerJoin(client: Client, options: JoinOptions): void {
@@ -221,9 +221,9 @@ export class GammaRoom extends Room<RoomState> {
 
     const GameClass = await loadGame(this.state.selectedGame);
 
-    // Enforce TV requirement
-    if (GameClass.requiresTV && !this.state.tvConnected) {
-      this.broadcast("error", { message: "This game requires a TV display to be connected." });
+    // Enforce view screen requirement
+    if (GameClass.requiresTV && !this.state.viewScreenConnected) {
+      this.broadcast("error", { message: "This game requires a view screen to be connected." });
       return;
     }
 

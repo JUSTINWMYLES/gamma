@@ -134,8 +134,8 @@
         {#if state.locationMode === "same"}
           <h2 class="text-2xl font-bold text-center mb-6">Using a central screen?</h2>
           <p class="text-gray-400 text-center mb-6">
-            {state.tvConnected
-              ? "✅ TV display already connected!"
+            {state.viewScreenConnected
+              ? "View screen connected!"
               : "Connect a TV or central screen for the best experience. Players control from their phones."}
           </p>
           <div class="grid grid-cols-2 gap-6">
