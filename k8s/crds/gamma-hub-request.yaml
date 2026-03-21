@@ -1,0 +1,75 @@
+# k8s/crds/gamma-hub-request.yaml
+#
+# GammaHubRequest — represents an action the hub wants a spoke to perform.
+# The hub creates these; spoke controllers reconcile them.
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gammahubrequests.gamma.io
+spec:
+  group: gamma.io
+  names:
+    kind: GammaHubRequest
+    listKind: GammaHubRequestList
+    plural: gammahubrequests
+    singular: gammahubrequest
+    shortNames: [ghr]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [action, targetCluster]
+              properties:
+                action:
+                  type: string
+                  enum: [DeployGame, ScaleGame, TerminateGame, HealthCheck]
+                targetCluster:
+                  type: string
+                gameDeploymentRef:
+                  type: string
+                  description: Name of GammaGameDeployment this request concerns
+                desiredReplicas:
+                  type: integer
+                  description: For ScaleGame actions
+                ttlSeconds:
+                  type: integer
+                  default: 300
+                  description: Request expires after this many seconds if not acknowledged
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Acknowledged, InProgress, Completed, Failed, Expired]
+                acknowledgedAt:
+                  type: string
+                  format: date-time
+                completedAt:
+                  type: string
+                  format: date-time
+                message:
+                  type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Action
+          type: string
+          jsonPath: .spec.action
+        - name: Cluster
+          type: string
+          jsonPath: .spec.targetCluster
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

@@ -1,0 +1,77 @@
+# k8s/crds/gamma-operator-policy.yaml
+#
+# GammaOperatorPolicy — global routing and scaling policies enforced by the hub.
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gammaoperatorpolicies.gamma.io
+spec:
+  group: gamma.io
+  names:
+    kind: GammaOperatorPolicy
+    listKind: GammaOperatorPolicyList
+    plural: gammaoperatorpolicies
+    singular: gammaoperatorpolicy
+    shortNames: [gop]
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              properties:
+                defaultReplicas:
+                  type: integer
+                  default: 1
+                maxReplicasPerCluster:
+                  type: integer
+                  default: 20
+                autoScaling:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    targetConcurrentRooms:
+                      type: integer
+                      default: 10
+                      description: Target number of active rooms per replica before scaling
+                    minReplicas:
+                      type: integer
+                      default: 1
+                    maxReplicas:
+                      type: integer
+                      default: 10
+                    scaleDownCooldownSeconds:
+                      type: integer
+                      default: 300
+                routing:
+                  type: object
+                  properties:
+                    strategy:
+                      type: string
+                      enum: [round-robin, least-loaded, geo-affinity]
+                      default: least-loaded
+                    regionAffinityLabel:
+                      type: string
+                      description: Cluster label key used for geo-affinity routing
+                security:
+                  type: object
+                  properties:
+                    rateLimitRoomsPerMinute:
+                      type: integer
+                      default: 30
+                    maxPlayersPerRoom:
+                      type: integer
+                      default: 16
+                    allowedImagePrefixes:
+                      type: array
+                      items:
+                        type: string

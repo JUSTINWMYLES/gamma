@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  # ── Colyseus game server ──────────────────────────────────────────
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "2567:2567"
+    environment:
+      PORT: 2567
+      LOG_LEVEL: info
+      RECONNECT_GRACE_SECONDS: 30
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2567/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── TV static client (served by nginx) ───────────────────────────
+  tv:
+    build:
+      context: .
+      dockerfile: client/tv/Dockerfile
+      args:
+        VITE_SERVER_URL: ws://localhost:2567
+    ports:
+      - "5173:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Phone static client (served by nginx) ────────────────────────
+  phone:
+    build:
+      context: .
+      dockerfile: client/phone/Dockerfile
+      args:
+        VITE_SERVER_URL: ws://localhost:2567
+    ports:
+      - "5174:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
