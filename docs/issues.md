@@ -1,26 +1,34 @@
-## ADR - Architectural design record
+## Game rooms
 
-Break the ADRs into individual files instead of a single file. I also don't want ADRs about the individual games, I just want it about the platform as a whole.
+## Odd one out
 
-## Room creation and joining
+- When the timer starts, if the user is not actively open to the select browser, then the timer gets behind. Meanwhile the timer on the tv is strictly adhered to
+- There are some cases where the normal user receives some kind of prompt
+- In the `Observe!` period, I want all the users to know the prompt that the odd one out received
 
-- When a device selects create room, it then says waiting for room settings to be completed. The problem is, the user that created the room then can't do anything as nobody actually owns that session. When a user creates a room and joins a game, they can join either as a player or as a viewing screen, this way its not restricted to just phones and TVs. 
-- Make the necessary changes to remove the idea of phone and tv, and just have players and view screen
-- Make sure that when a user creates a room they are able to admin the room for the duration of the play
-- Ensure that the original setup where the user settings requires at least one "tv" or "view screen" to be in the lobby if that's whats selected
+## Shave the yak
+
+- The yak unfortunately is still 2D and has some odd features for a yak
+- The user clicks on the yak do not actually line up, sometimes you have to select way out on the screen for it to work properly
+- The user cannot really pan around the yak at the moment as its not fully 3D. Please do the work to make it fully 3D and so the user can pan around
 
 ## dont get caught
 
-- The physical shapes of the room are still not matching exactly where the player is allowed to move
-- As soon as a player steps into the view window of a patrol, it should shift into the next state and start the counter. Ensure that it speeds up as the user gets closer to the guard
-- Ensure that the spawns after a player dies are also ok where the player wont spawn very close to a guard
-- Ensure that guards spawn at least a bit apart from each other
+- The viewing window of the patrol is really large, make it a bit smaller, and ensure that if the user is in direct line of sight that they will be identified.
+- The patrol can walk through walls
+- The visual walls do not actually line up with the walls that prevent users from moving around
 
-## Mobile device on local network
+## Evil Laugh Overlay
 
-I still get an error on my phone on the local network once I try to join a room on a `make dev`, fix this
+- Please implement the evil laugh overlay game
+- Provide access to an external gif registry if that is safe
+- Please ensure that users have given necessary consent for access to microphones
+- Limit total recording duration to a reasonable number
+- Ensure that users can overlay their recording properly
 
-## Implement registry 20 odd one out game
+## Lowball marketplace
 
-- Based on the markdown design document, create the game `registry-20-odd-one-out`, go all the way through and make sure it works
-- Create any necessary tests around the game
+- Implement this game registry-25-lowball-marketplace
+- Create a fake marketplace with fake ads for users to scroll through
+- Ensure everything is completely and absolutely appropriate on the listings that you create
+- Make the marketplace look good and realistic

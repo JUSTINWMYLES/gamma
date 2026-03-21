@@ -1,0 +1,29 @@
+<script lang="ts">
+  import { createEventDispatcher } from "svelte";
+  export let error: string = "";
+  const dispatch = createEventDispatcher<{ join: { roomCode: string; name: string } }>();
+
+  let roomCode = "";
+  let name = "";
+  let submitting = false;
+  let localError = "";
+
+  async function handleJoin() {
+    localError = "";
+    if (!roomCode.trim() || roomCode.length !== 4) { localError = "Enter the 4-character room code from the TV."; return; }
+    if (!name.trim()) { localError = "Enter your name."; return; }
+    submitting = true;
+    try { dispatch("join", { roomCode: roomCode.toUpperCase(), name: name.trim() }); }
+    catch { localError = "Could not join room. Check the code and try again."; submitting = false; }
+  }
+</script>
+
+<div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="join-screen">
+  <h1 class="text-4xl font-black text-indigo-400">gamma</h1>
+  <div class="w-full max-w-xs space-y-4">
+    <input type="text" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters" bind:value={roomCode} class="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-center text-2xl font-mono tracking-widest uppercase focus:outline-none focus:border-indigo-500" data-testid="room-code-input" />
+    <input type="text" placeholder="Your Name" maxlength="20" autocomplete="off" bind:value={name} class="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-indigo-500" data-testid="name-input" />
+    {#if localError || error}<p class="text-red-400 text-sm text-center">{localError || error}</p>{/if}
+    <button class="w-full py-4 rounded-xl text-lg font-bold bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all {submitting ? 'opacity-50 pointer-events-none' : ''}" on:click={handleJoin} data-testid="join-btn">{submitting ? "Joining..." : "Join Game"}</button>
+  </div>
+</div>
