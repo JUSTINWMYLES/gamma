@@ -12,7 +12,9 @@ A humorous auction-style game where players submit lowball offers for items and 
 
 ## Long Description
 
-Players are presented with an item and must submit their best lowball offer. Variants include auction rounds, bluffing mechanics, and voting on which lowball is the funniest or most creative.
+Similar to any online marketplace such as facebook marketplace, fake listings exist on the marketplace and users are given 2 minutes to scroll through, identify 2 items, and come up with a funny lowball offer.
+
+Following the completion, all users lowball offers are presented one at a time on the primary view screen and on the individual viewers screens. Users vote on which individual listing comment was the funniest
 
 ## Target Platforms
 

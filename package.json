@@ -5,16 +5,14 @@
   "private": true,
   "workspaces": [
     "server",
-    "client/tv",
-    "client/phone"
+    "client/app"
   ],
   "scripts": {
-    "install:all": "npm install && npm install --workspace=server && npm install --workspace=client/tv && npm install --workspace=client/phone",
-    "dev": "concurrently -k -n server,tv,phone -c cyan,green,yellow \"npm run dev --workspace=server\" \"npm run dev --workspace=client/tv\" \"npm run dev --workspace=client/phone\"",
+    "install:all": "npm install && npm install --workspace=server && npm install --workspace=client/app",
+    "dev": "concurrently -k -n server,client -c cyan,green \"npm run dev --workspace=server\" \"npm run dev --workspace=client/app\"",
     "dev:server": "npm run dev --workspace=server",
-    "dev:tv": "npm run dev --workspace=client/tv",
-    "dev:phone": "npm run dev --workspace=client/phone",
-    "build": "npm run build --workspace=server && npm run build --workspace=client/tv && npm run build --workspace=client/phone",
+    "dev:client": "npm run dev --workspace=client/app",
+    "build": "npm run build --workspace=server && npm run build --workspace=client/app",
     "test": "npm run test --workspace=server",
     "test:e2e": "npx playwright test",
     "smoke": "node scripts/smoke-test.mjs",

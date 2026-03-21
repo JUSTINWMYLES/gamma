@@ -28,6 +28,23 @@
 
 import { Room, Client } from "@colyseus/core";
 import { RoomState, Phase } from "../schema/RoomState";
+import { meter, tracer } from "../telemetry";
+
+// ── OTEL metrics (shared across all game plugin instances) ────────────────────
+const phaseTransitions = meter.createCounter("gamma.game.phase_transitions", {
+  description: "Count of phase transitions during games",
+});
+const roundDurationHistogram = meter.createHistogram("gamma.game.round_duration_ms", {
+  description: "Duration of each in_round phase in milliseconds",
+  unit: "ms",
+});
+const roundsCompleted = meter.createCounter("gamma.game.rounds_completed", {
+  description: "Total rounds completed across all games",
+});
+const gameProgressGauge = meter.createHistogram("gamma.game.progress_percent", {
+  description: "How far through the game the session progressed (0–100)",
+  unit: "%",
+});
 
 export abstract class BaseGame {
   // ── Plugin metadata (set on subclass, not instances) ─────────────────────
@@ -83,6 +100,12 @@ export abstract class BaseGame {
   /** All active per-round timers/intervals; cleared in teardown(). */
   private _timers: ReturnType<typeof setTimeout>[] = [];
 
+  /** Timestamp when the current in_round phase started (for OTEL duration tracking). */
+  private _roundStartMs = 0;
+
+  /** Number of rounds completed so far in this game session (for progress tracking). */
+  private _roundsCompleted = 0;
+
   constructor(room: Room<RoomState>) {
     this.room = room;
   }
@@ -131,6 +154,7 @@ export abstract class BaseGame {
 
   protected async runRounds(): Promise<void> {
     const total = this.room.state.gameConfig.roundCount;
+    const gameId = this.room.state.selectedGame ?? "unknown";
 
     for (let r = 1; r <= total; r++) {
       this.room.state.currentRound = r;
@@ -141,12 +165,29 @@ export abstract class BaseGame {
 
       this.setPhase("in_round");
       this.room.state.phaseStartedAt = Date.now();
+      this._roundStartMs = Date.now();
+
       await this.runRound(r);
 
+      // Record round duration
+      const roundDurationMs = Date.now() - this._roundStartMs;
+      roundDurationHistogram.record(roundDurationMs, {
+        gameId,
+        round: r,
+        totalRounds: total,
+      });
+
       this.scoreRound(r);
+      this._roundsCompleted = r;
+      roundsCompleted.add(1, { gameId });
+
       this.setPhase("round_end");
       await this.delay(4000);
     }
+
+    // Record game progress (how much of the session was played)
+    const progressPercent = total > 0 ? (this._roundsCompleted / total) * 100 : 0;
+    gameProgressGauge.record(progressPercent, { gameId });
 
     this.setPhase("scoreboard");
     await this.delay(6000);
@@ -155,6 +196,8 @@ export abstract class BaseGame {
   // ── Utilities ─────────────────────────────────────────────────────────────
 
   protected setPhase(phase: Phase): void {
+    const gameId = this.room.state.selectedGame ?? "unknown";
+    phaseTransitions.add(1, { gameId, phase });
     this.room.state.phase = phase;
     this.room.state.phaseStartedAt = Date.now();
   }

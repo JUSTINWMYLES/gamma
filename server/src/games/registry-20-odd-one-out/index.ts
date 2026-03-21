@@ -122,9 +122,9 @@ export default class OddOneOutGame extends BaseGame {
 
   protected override async runRound(round: number): Promise<void> {
     const players = this._activePlayers();
-    if (players.length < 3) {
-      // Need at least 3 players for meaningful deduction
-      this.broadcast("round_skipped", { reason: "Not enough players (need 3+)" });
+    if (players.length < 2) {
+      // Need at least 2 players for any deduction
+      this.broadcast("round_skipped", { reason: "Not enough players (need 2+)" });
       return;
     }
 
@@ -146,6 +146,10 @@ export default class OddOneOutGame extends BaseGame {
     };
 
     // 3. Send private prompts to each player
+    //    Brief delay to ensure clients have mounted the in_round component
+    //    after the phase state change (Colyseus patches at ~50ms intervals).
+    await this.delay(200);
+
     for (const player of players) {
       const isOdd = oddPlayerIds.has(player.id);
       this.send(player.id, "assign_prompt", {
@@ -294,6 +298,7 @@ export default class OddOneOutGame extends BaseGame {
 
   /** Determine how many "odd" players for a given player count. */
   private _oddCountForPlayerCount(playerCount: number): number {
+    if (playerCount <= 3) return 1;
     if (playerCount <= 5) return 1;
     if (playerCount <= 8) return 2;
     return 3;

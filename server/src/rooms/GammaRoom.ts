@@ -26,6 +26,8 @@ import { GameConfig } from "../schema/GameConfig";
 import { BaseGame } from "../games/BaseGame";
 import { loadGame } from "../games/gameLoader";
 import { generateRoomCode } from "../utils/rng";
+import { meter, tracer } from "../telemetry";
+import { SpanStatusCode, type Span } from "@opentelemetry/api";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -39,6 +41,35 @@ export class GammaRoom extends Room<RoomState> {
   /** The active game plugin instance. Null in lobby. */
   private game: BaseGame | null = null;
 
+  /** OTEL span tracking the entire game session (from start_game to game_over/dispose). */
+  private gameSessionSpan: Span | null = null;
+
+  // ── OTEL metrics ──────────────────────────────────────────────────────────
+  private static roomsCreated = meter.createCounter("gamma.rooms.created", {
+    description: "Total rooms created",
+  });
+  private static playersJoined = meter.createCounter("gamma.players.joined", {
+    description: "Total player joins (including reconnects)",
+  });
+  private static viewScreensJoined = meter.createCounter("gamma.view_screens.joined", {
+    description: "Total view screen joins",
+  });
+  private static gamesStarted = meter.createCounter("gamma.games.started", {
+    description: "Total games started",
+  });
+  private static gamesCompleted = meter.createCounter("gamma.games.completed", {
+    description: "Total games that ran to completion",
+  });
+  private static playerDisconnects = meter.createCounter("gamma.players.disconnected", {
+    description: "Total player disconnections",
+  });
+  private static playerReconnects = meter.createCounter("gamma.players.reconnected", {
+    description: "Total successful player reconnections",
+  });
+  private static activeRooms = meter.createUpDownCounter("gamma.rooms.active", {
+    description: "Currently active rooms",
+  });
+
   // ── Colyseus lifecycle ────────────────────────────────────────────────────
 
   onCreate(_options: unknown): void {
@@ -50,6 +81,9 @@ export class GammaRoom extends Room<RoomState> {
     this.setMetadata({ roomCode: this.state.roomCode });
 
     this._registerMessages();
+
+    GammaRoom.roomsCreated.add(1, { roomCode: this.state.roomCode });
+    GammaRoom.activeRooms.add(1);
 
     console.log(`[GammaRoom] created — code=${this.state.roomCode} id=${this.roomId}`);
   }
@@ -66,6 +100,10 @@ export class GammaRoom extends Room<RoomState> {
     const player = this.state.players.get(client.sessionId);
     if (player) {
       player.isConnected = false;
+      GammaRoom.playerDisconnects.add(1, {
+        roomCode: this.state.roomCode,
+        consented: String(consented),
+      });
       console.log(`[GammaRoom] player disconnected — id=${client.sessionId} consented=${consented}`);
 
       if (!consented) {
@@ -74,6 +112,7 @@ export class GammaRoom extends Room<RoomState> {
         try {
           await this.allowReconnection(client, graceSecs);
           player.isConnected = true;
+          GammaRoom.playerReconnects.add(1, { roomCode: this.state.roomCode });
           console.log(`[GammaRoom] player reconnected — id=${client.sessionId}`);
         } catch {
           console.log(`[GammaRoom] player reconnect timed out — id=${client.sessionId}`);
@@ -93,6 +132,13 @@ export class GammaRoom extends Room<RoomState> {
       this.game.teardown();
       this.game = null;
     }
+    // End any active game session span
+    if (this.gameSessionSpan) {
+      this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
+      this.gameSessionSpan.end();
+      this.gameSessionSpan = null;
+    }
+    GammaRoom.activeRooms.add(-1);
     console.log(`[GammaRoom] disposed — code=${this.state.roomCode}`);
   }
 
@@ -103,6 +149,7 @@ export class GammaRoom extends Room<RoomState> {
     if (!this.state.hostSessionId) {
       this.state.hostSessionId = client.sessionId;
     }
+    GammaRoom.viewScreensJoined.add(1, { roomCode: this.state.roomCode });
     console.log(`[GammaRoom] view screen joined — sessionId=${client.sessionId}`);
   }
 
@@ -124,6 +171,10 @@ export class GammaRoom extends Room<RoomState> {
       this.state.hostSessionId = client.sessionId;
     }
 
+    GammaRoom.playersJoined.add(1, {
+      roomCode: this.state.roomCode,
+      playerName: player.name,
+    });
     console.log(`[GammaRoom] player joined — id=${client.sessionId} name=${player.name}`);
   }
 
@@ -232,10 +283,49 @@ export class GammaRoom extends Room<RoomState> {
       this.state.gameConfig.roundCount = GameClass.defaultRoundCount;
     }
 
-    this.game = new GameClass(this);
-    this.game.start().catch((err) => {
-      console.error("[GammaRoom] game error:", err);
+    // ── OTEL: start game session span + counter ────────────────────
+    const playerCount = this.state.players.size;
+    GammaRoom.gamesStarted.add(1, {
+      roomCode: this.state.roomCode,
+      gameId: this.state.selectedGame,
+      playerCount: playerCount,
     });
+
+    this.gameSessionSpan = tracer.startSpan("game_session", {
+      attributes: {
+        "gamma.room_code": this.state.roomCode,
+        "gamma.game_id": this.state.selectedGame,
+        "gamma.player_count": playerCount,
+        "gamma.round_count": this.state.gameConfig.roundCount,
+        "gamma.time_limit_secs": this.state.gameConfig.timeLimitSecs,
+      },
+    });
+
+    this.game = new GameClass(this);
+    this.game.start()
+      .then(() => {
+        // Game completed successfully
+        GammaRoom.gamesCompleted.add(1, {
+          roomCode: this.state.roomCode,
+          gameId: this.state.selectedGame,
+        });
+        if (this.gameSessionSpan) {
+          this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
+          this.gameSessionSpan.end();
+          this.gameSessionSpan = null;
+        }
+      })
+      .catch((err) => {
+        console.error("[GammaRoom] game error:", err);
+        if (this.gameSessionSpan) {
+          this.gameSessionSpan.setStatus({
+            code: SpanStatusCode.ERROR,
+            message: String(err),
+          });
+          this.gameSessionSpan.end();
+          this.gameSessionSpan = null;
+        }
+      });
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
