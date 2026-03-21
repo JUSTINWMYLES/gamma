@@ -4,11 +4,9 @@
    *
    * Controls:
    *   • Virtual joystick (touch drag from centre) → sends "move" messages
-   *   • Hide button → sends "hide" message (only active on hiding spots)
    *
-   * The joystick throttles to ~20 messages/s via requestAnimationFrame.
-   *
-   * Detection meter is shown at the top so the player knows danger level.
+   * There is NO hiding mechanic — just run from the guards.
+   * Detection meter shows danger level.
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -28,7 +26,7 @@
   let dx = 0;
   let dy = 0;
 
-  const RADIUS = 60; // px — maximum knob travel
+  const RADIUS = 60;
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   function startJoystick(e: TouchEvent | MouseEvent) {
@@ -52,7 +50,6 @@
     dx = dist > 0 ? (rawDx / dist) * clamped : 0;
     dy = dist > 0 ? (rawDy / dist) * clamped : 0;
 
-    // Update knob visual
     if (knobEl) {
       knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
     }
@@ -66,7 +63,6 @@
   }
 
   onMount(() => {
-    // Send movement at 20 Hz
     sendInterval = setInterval(() => {
       if (joystickActive && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
         room.send("game_input", {
@@ -85,10 +81,6 @@
   onDestroy(() => {
     if (sendInterval) clearInterval(sendInterval);
   });
-
-  function toggleHide() {
-    room.send("game_input", { action: "hide", hiding: !me?.isHiding });
-  }
 
   // Time remaining
   let timeLeft = 0;
@@ -131,31 +123,17 @@
   <!-- Status banner -->
   {#if me?.isEliminated}
     <div class="bg-red-900 text-center py-2 text-sm font-bold text-red-200">
-      You've been eliminated. Watch from the TV!
+      You've been caught too many times. Watch the TV!
     </div>
   {:else if me?.isDetected}
     <div class="bg-yellow-900 text-center py-2 text-sm font-bold text-yellow-200 animate-pulse">
-      ⚠️ Guard can see you!
-    </div>
-  {:else if me?.isHiding}
-    <div class="bg-green-900 text-center py-2 text-sm font-bold text-green-200">
-      🌿 Hidden
+      A guard can see you — RUN!
     </div>
   {/if}
 
   <!-- Game controls -->
   <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6">
     {#if !me?.isEliminated}
-      <!-- Hide button -->
-      <button
-        class="w-40 py-4 rounded-2xl text-lg font-bold transition-all active:scale-95
-          {me?.isHiding
-            ? 'bg-green-600 text-white'
-            : 'bg-gray-700 text-gray-200 hover:bg-gray-600'}"
-        on:click={toggleHide}
-        data-testid="hide-btn"
-      >{me?.isHiding ? '🌿 Hiding' : '🌿 Hide'}</button>
-
       <!-- Catch counter -->
       <div class="flex gap-2">
         {#each Array(3) as _, i}
@@ -167,7 +145,6 @@
 
       <!-- Virtual joystick -->
       <div class="relative" style="width:150px;height:150px">
-        <!-- Base -->
         <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
         <div
           bind:this={joystickEl}

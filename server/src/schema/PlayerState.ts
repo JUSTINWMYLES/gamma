@@ -37,11 +37,9 @@ export class PlayerState extends Schema {
   @type("number") x: number = 0;
   /** World-space Y position (tile units). */
   @type("number") y: number = 0;
-  /** True while the player is using a hiding spot. */
-  @type("boolean") isHiding: boolean = false;
-  /** True when the guard has LOS on this player and they are not hiding. */
+  /** True when any guard has LOS on this player. */
   @type("boolean") isDetected: boolean = false;
-  /** Detection meter 0–100. Reaches 100 → elimination. */
+  /** Detection meter 0–100. Reaches 100 → caught. */
   @type("number") detectionMeter: number = 0;
   /** Number of times caught this round. */
   @type("number") timesCaught: number = 0;

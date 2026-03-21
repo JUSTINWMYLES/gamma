@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   PATROL_PATH,
   SPAWN_POSITIONS,
@@ -8,8 +8,17 @@ import {
   isHidingSpot,
   MAP_WIDTH,
   MAP_HEIGHT,
+  resetMap,
+  refreshLegacyExports,
+  generateMap,
 } from "../src/utils/tilemap";
 import { hasLineOfSight } from "../src/utils/los";
+
+// Regenerate a fresh deterministic map before each suite
+beforeEach(() => {
+  resetMap(12345);
+  refreshLegacyExports();
+});
 
 describe("tilemap walkability", () => {
   it("guard start is walkable", () => {
@@ -40,14 +49,11 @@ describe("tilemap walkability", () => {
     }
   });
 
-  it("hiding spots are correctly identified", () => {
-    // Tile at (5,1) is a bush (tile id 2) in the map layout
-    expect(isHidingSpot(5, 1)).toBe(true);
-    // Tile at (4,4) is a crate (tile id 3)
-    expect(isHidingSpot(4, 4)).toBe(true);
-    // Floor tile should not be a hiding spot
+  it("hiding spots are always false in the new no-hiding design", () => {
+    // isHidingSpot should always return false — no hiding mechanic
+    expect(isHidingSpot(5, 1)).toBe(false);
+    expect(isHidingSpot(4, 4)).toBe(false);
     expect(isHidingSpot(1, 1)).toBe(false);
-    // Wall tile should not be a hiding spot
     expect(isHidingSpot(0, 0)).toBe(false);
   });
 });
@@ -58,18 +64,15 @@ describe("guard patrol determinism", () => {
   });
 
   it("guard patrol path indices cycle correctly", () => {
-    // Simulate 20 patrol steps and confirm modulo wraps
     for (let i = 0; i < 20; i++) {
       const idx = i % PATROL_PATH.length;
       expect(PATROL_PATH[idx]).toBeDefined();
     }
   });
 
-  it("consecutive patrol waypoints have unobstructed LOS paths on open corridors", () => {
-    // At least the first two consecutive waypoints should have LOS (row 1 corridor)
+  it("consecutive patrol waypoints are defined", () => {
     const wp0 = PATROL_PATH[0];
     const wp1 = PATROL_PATH[1];
-    // Not necessarily direct LOS (guard doesn't teleport), but positions exist
     expect(wp0).toBeDefined();
     expect(wp1).toBeDefined();
   });
@@ -82,5 +85,58 @@ describe("game map integrity", () => {
 
   it("wall tile ID set is not empty", () => {
     expect(GAME_MAP.wallTileIds.size).toBeGreaterThan(0);
+  });
+
+  it("map has same dimensions as MAP_WIDTH × MAP_HEIGHT", () => {
+    expect(GAME_MAP.width).toBe(MAP_WIDTH);
+    expect(GAME_MAP.height).toBe(MAP_HEIGHT);
+  });
+});
+
+describe("procedural map generation", () => {
+  it("same seed produces same map", () => {
+    const m1 = generateMap(999);
+    const m2 = generateMap(999);
+    expect(m1.tiles).toEqual(m2.tiles);
+  });
+
+  it("different seeds produce different maps", () => {
+    const m1 = generateMap(1);
+    const m2 = generateMap(2);
+    // Very unlikely to be identical
+    expect(m1.tiles).not.toEqual(m2.tiles);
+  });
+
+  it("generated map has correct dimensions", () => {
+    const m = generateMap(42);
+    expect(m.tiles.length).toBe(MAP_WIDTH * MAP_HEIGHT);
+    expect(m.width).toBe(MAP_WIDTH);
+    expect(m.height).toBe(MAP_HEIGHT);
+  });
+
+  it("generated map boundary is all walls", () => {
+    const m = generateMap(42);
+    for (let col = 0; col < MAP_WIDTH; col++) {
+      expect(m.tiles[0 * MAP_WIDTH + col]).toBe(1); // top row
+      expect(m.tiles[(MAP_HEIGHT - 1) * MAP_WIDTH + col]).toBe(1); // bottom row
+    }
+    for (let row = 0; row < MAP_HEIGHT; row++) {
+      expect(m.tiles[row * MAP_WIDTH + 0]).toBe(1); // left col
+      expect(m.tiles[row * MAP_WIDTH + (MAP_WIDTH - 1)]).toBe(1); // right col
+    }
+  });
+
+  it("generated map has some floor tiles", () => {
+    const m = generateMap(42);
+    const floorCount = m.tiles.filter((t) => t === 0).length;
+    expect(floorCount).toBeGreaterThan(MAP_WIDTH * MAP_HEIGHT * 0.2); // at least 20% floor
+  });
+
+  it("generated map spawn positions are walkable", () => {
+    const m = generateMap(42);
+    for (const sp of m.spawnPositions) {
+      const tile = m.tiles[sp.y * MAP_WIDTH + sp.x];
+      expect(tile).toBe(0);
+    }
   });
 });
