@@ -12,6 +12,8 @@
   import type { RoomState, PlayerState } from "../../../../shared/types";
   import ShaveYak from "../../games/player/ShaveYak.svelte";
   import OddOneOut from "../../games/player/OddOneOut.svelte";
+  import EvilLaugh from "../../games/player/EvilLaugh.svelte";
+  import LowballMarketplace from "../../games/player/LowballMarketplace.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -21,6 +23,8 @@
   // ── Game routing ──────────────────────────────────────────────────
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
+  $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
+  $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -140,7 +144,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isEvilLaugh || isLowball) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -197,6 +201,12 @@
 {#if isOddOneOut}
   <!-- ── Registry-20: Odd One Out ──────────────────────────────────── -->
   <OddOneOut {room} {state} {me} />
+{:else if isEvilLaugh}
+  <!-- ── Registry-26: Evil Laugh Overlay ──────────────────────────── -->
+  <EvilLaugh {room} {state} {me} />
+{:else if isLowball}
+  <!-- ── Registry-25: Lowball Marketplace ─────────────────────────── -->
+  <LowballMarketplace {room} {state} {me} />
 {:else if isShaveYak}
   <!-- ── Registry-19: Shave The Yak ──────────────────────────────── -->
   <ShaveYak {room} {state} {me} />

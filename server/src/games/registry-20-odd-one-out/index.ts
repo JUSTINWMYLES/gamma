@@ -175,11 +175,16 @@ export default class OddOneOutGame extends BaseGame {
         windowNumber: w,
         totalWindows: OBSERVATION_WINDOWS,
         durationMs: WINDOW_DURATION_MS,
+        serverTimestamp: Date.now(),
+        oddPrompt: promptPair.odd,
       });
       await this.delay(WINDOW_DURATION_MS);
 
       if (w < OBSERVATION_WINDOWS) {
-        this.broadcast("window_pause", { nextWindowIn: INTER_WINDOW_PAUSE_MS });
+        this.broadcast("window_pause", {
+          nextWindowIn: INTER_WINDOW_PAUSE_MS,
+          serverTimestamp: Date.now(),
+        });
         await this.delay(INTER_WINDOW_PAUSE_MS);
       }
     }
@@ -188,6 +193,7 @@ export default class OddOneOutGame extends BaseGame {
     this.roundData.votingStartedAt = Date.now();
     this.broadcast("voting_start", {
       durationMs: VOTING_DURATION_MS,
+      serverTimestamp: Date.now(),
       playerIds: players.map((p) => ({ id: p.id, name: p.name })),
     });
 

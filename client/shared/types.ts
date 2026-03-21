@@ -121,6 +121,22 @@ export const GAME_REGISTRY: GameMeta[] = [
     requiresSameRoom: true,
     requiresSecondaryDisplay: false,
   },
+  {
+    id: "registry-26-evil-laugh-overlay",
+    label: "Evil Laugh Overlay",
+    description: "Record your most evil laugh, pick a villain scene, then vote for the best one!",
+    activityLevel: "none",
+    requiresSameRoom: true,
+    requiresSecondaryDisplay: false,
+  },
+  {
+    id: "registry-25-lowball-marketplace",
+    label: "Lowball Marketplace",
+    description: "Bid on ridiculous items in a fake marketplace. Go low... but not TOO low!",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
 ];
 
 /**

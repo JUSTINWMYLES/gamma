@@ -2,25 +2,23 @@
   /**
    * client/app/src/games/player/ShaveYak.svelte
    *
-   * "Shave The Yak" phone game screen.
+   * "Shave The Yak" — full 3D version with Three.js.
    *
    * Visual approach:
-   *   1. SVG skin layer (always visible) — bottom
-   *   2. Fur canvas (starts opaque, erased along swipe paths) — middle
-   *   3. SVG face/eyes overlay — top
-   *   4. Particle puffs on each shave stroke
+   *   - Three.js scene with procedurally built yak model from basic geometries
+   *   - Fur texture: a canvas texture painted brown, erased along swipe paths
+   *   - Pink "skin" material underneath, revealed when fur is shaved
+   *   - OrbitControls for camera pan/rotate (two-finger gesture or right-drag)
+   *   - Single-finger swipe = shave (raycast to UV, erase fur texture)
+   *   - 3D particle puffs on shave
    *
-   * The fur canvas uses a 2D context. On mount, an offscreen fur image is
-   * drawn. As the player swipes on-target, circles along the swipe line are
-   * erased with globalCompositeOperation = "destination-out", revealing the
-   * pink skin SVG underneath.
-   *
-   * 3D effect: the yak container uses CSS perspective + rotateX/rotateY
-   * based on the yak rotation value from the server nudge system.
+   * Server protocol is unchanged — swipe coords mapped to YAK_W x YAK_H space.
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import * as THREE from "three";
+  import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
   export let room: Room;
   export let state: RoomState;
@@ -29,8 +27,6 @@
   // ── Yak canvas virtual dimensions (must match server YAK_W / YAK_H) ──
   const YAK_W = 300;
   const YAK_H = 280;
-
-  // Shave brush radius — matches server SHAVE_RADIUS
   const SHAVE_RADIUS = 8;
 
   // ── Reactive state ────────────────────────────────────────────────────
@@ -43,153 +39,81 @@
   let yakRotation = 0;
   let timeLeft = 0;
 
-  // Particles for the shave FX
-  interface Particle {
-    id: number;
-    x: number;
-    y: number;
-    age: number;
-  }
-  let particles: Particle[] = [];
-  let nextParticleId = 0;
+  // ── Three.js refs ─────────────────────────────────────────────────────
+  let containerEl: HTMLDivElement;
+  let renderer: THREE.WebGLRenderer;
+  let scene: THREE.Scene;
+  let camera: THREE.PerspectiveCamera;
+  let controls: OrbitControls;
+  let yakGroup: THREE.Group;
+  let furMesh: THREE.Mesh;
+  let furCanvas: HTMLCanvasElement;
+  let furCtx: CanvasRenderingContext2D;
+  let furTexture: THREE.CanvasTexture;
+  let raycaster: THREE.Raycaster;
+  let animFrameId: number;
 
   // Swipe tracking
-  let canvasEl: HTMLDivElement;
   let swiping = false;
-  let lastPt: { x: number; y: number } | null = null;
-
-  // Fur canvas for per-swipe hair removal
-  let furCanvas: HTMLCanvasElement;
-  let furCtx: CanvasRenderingContext2D | null = null;
-
-  // ── Hit-test: is a point inside the yak ellipse? ──────────────────────
-  const YAK_CX = YAK_W / 2;
-  const YAK_CY = YAK_H / 2 + 10;
-  const YAK_RX = 115;
-  const YAK_RY = 100;
-
-  function isOnYak(x: number, y: number): boolean {
-    const dx = (x - YAK_CX) / YAK_RX;
-    const dy = (y - YAK_CY) / YAK_RY;
-    return dx * dx + dy * dy <= 1;
-  }
-
-  /** Convert a client touch/mouse point to yak-canvas coordinates. */
-  function toCanvasCoords(clientX: number, clientY: number): { x: number; y: number } | null {
-    if (!canvasEl) return null;
-    const rect = canvasEl.getBoundingClientRect();
-    const scaleX = YAK_W / rect.width;
-    const scaleY = YAK_H / rect.height;
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY,
-    };
-  }
+  let lastUV: { u: number; v: number } | null = null;
+  let lastPt: { x: number; y: number } | null = null; // in YAK_W/YAK_H space for server
 
   // ── Fur canvas initialization ─────────────────────────────────────────
-  // Build a fur-colored ellipse image on the canvas. When we swipe, we
-  // erase circles along the path using "destination-out" compositing.
+  function createFurCanvas(): HTMLCanvasElement {
+    const c = document.createElement("canvas");
+    c.width = YAK_W;
+    c.height = YAK_H;
+    const ctx = c.getContext("2d")!;
 
-  function initFurCanvas() {
-    if (!furCanvas) return;
-    furCanvas.width = YAK_W;
-    furCanvas.height = YAK_H;
-    furCtx = furCanvas.getContext("2d");
-    if (!furCtx) return;
+    // Fill with brown fur color
+    ctx.fillStyle = "#8b6914";
+    ctx.fillRect(0, 0, YAK_W, YAK_H);
 
-    // Draw the fur silhouette — main body ellipse
-    furCtx.fillStyle = "#8b6914";
-    furCtx.beginPath();
-    furCtx.ellipse(150, 150, 112, 92, 0, 0, Math.PI * 2);
-    furCtx.fill();
-
-    // Darker ring for depth
-    furCtx.fillStyle = "#7c5b3a";
-    furCtx.beginPath();
-    furCtx.ellipse(150, 148, 106, 86, 0, 0, Math.PI * 2);
-    furCtx.fill();
-
-    // Head tuft
-    furCtx.fillStyle = "#7c5b3a";
-    furCtx.beginPath();
-    furCtx.ellipse(150, 55, 38, 30, 0, 0, Math.PI * 2);
-    furCtx.fill();
-    furCtx.fillStyle = "#8b6914";
-    furCtx.beginPath();
-    furCtx.ellipse(150, 52, 34, 26, 0, 0, Math.PI * 2);
-    furCtx.fill();
-
-    // Belly fur
-    furCtx.fillStyle = "rgba(107, 79, 10, 0.5)";
-    furCtx.beginPath();
-    furCtx.ellipse(150, 200, 80, 35, 0, 0, Math.PI * 2);
-    furCtx.fill();
-
-    // Shaggy texture lines
-    furCtx.strokeStyle = "#6b4f0a";
-    furCtx.lineWidth = 2;
-    furCtx.globalAlpha = 0.6;
-    drawWavyLine(furCtx, 55, 140, 85, 140, 15);
-    drawWavyLine(furCtx, 85, 170, 115, 170, 15);
-    drawWavyLine(furCtx, 190, 140, 220, 140, 15);
-    drawWavyLine(furCtx, 130, 180, 170, 180, 15);
-    furCtx.globalAlpha = 0.5;
-    drawWavyLine(furCtx, 70, 195, 90, 195, 15);
-    drawWavyLine(furCtx, 200, 190, 220, 190, 15);
-    furCtx.globalAlpha = 1.0;
-
-    // Tail fur
-    furCtx.strokeStyle = "#8b6914";
-    furCtx.lineWidth = 8;
-    furCtx.lineCap = "round";
-    furCtx.beginPath();
-    furCtx.moveTo(250, 140);
-    furCtx.quadraticCurveTo(272, 126, 265, 105);
-    furCtx.stroke();
-    furCtx.fillStyle = "#8b6914";
-    furCtx.beginPath();
-    furCtx.arc(265, 103, 10, 0, Math.PI * 2);
-    furCtx.fill();
-
-    // Shaggy edge bits
-    furCtx.fillStyle = "#7c5b3a";
-    drawDrip(furCtx, 60, 160, 55, 175, 50, 160);
-    drawDrip(furCtx, 240, 160, 245, 175, 250, 160);
-    drawDrip(furCtx, 80, 210, 75, 225, 70, 210);
-    drawDrip(furCtx, 220, 210, 225, 225, 230, 210);
-  }
-
-  /** Draw a wavy line for fur texture. */
-  function drawWavyLine(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, amp: number) {
-    const steps = 4;
-    const dx = (x2 - x1) / steps;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    for (let i = 1; i <= steps; i++) {
-      const cx = x1 + dx * (i - 0.5);
-      const cy = y1 + (i % 2 === 1 ? -amp : amp);
-      const ex = x1 + dx * i;
-      ctx.quadraticCurveTo(cx, cy, ex, y1);
+    // Add texture variation
+    ctx.fillStyle = "#7c5b3a";
+    for (let i = 0; i < 200; i++) {
+      const x = Math.random() * YAK_W;
+      const y = Math.random() * YAK_H;
+      ctx.beginPath();
+      ctx.ellipse(x, y, 3 + Math.random() * 8, 1 + Math.random() * 4, Math.random() * Math.PI, 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.stroke();
+
+    // Wavy fur strokes
+    ctx.strokeStyle = "#6b4f0a";
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.4;
+    for (let i = 0; i < 60; i++) {
+      const x1 = Math.random() * YAK_W;
+      const y1 = Math.random() * YAK_H;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo(
+        x1 + (Math.random() - 0.5) * 20,
+        y1 + (Math.random() - 0.5) * 20,
+        x1 + (Math.random() - 0.5) * 30,
+        y1 + (Math.random() - 0.5) * 10,
+      );
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1.0;
+
+    return c;
   }
 
-  /** Draw a drip/shaggy bit. */
-  function drawDrip(ctx: CanvasRenderingContext2D, x1: number, y1: number, cx: number, cy: number, x2: number, y2: number) {
-    ctx.beginPath();
-    ctx.moveTo(x1, y1);
-    ctx.quadraticCurveTo(cx, cy, x2, y2);
-    ctx.fill();
-  }
-
-  /** Erase a circular region along a swipe line on the fur canvas. */
-  function eraseSwipeLine(x1: number, y1: number, x2: number, y2: number) {
+  /** Erase circles along a line on the fur canvas (UV space mapped to pixels). */
+  function eraseSwipeLine(u1: number, v1: number, u2: number, v2: number) {
     if (!furCtx) return;
+    // UV to pixel coords
+    const x1 = u1 * YAK_W;
+    const y1 = (1 - v1) * YAK_H; // V is flipped in Three.js
+    const x2 = u2 * YAK_W;
+    const y2 = (1 - v2) * YAK_H;
+
     furCtx.save();
     furCtx.globalCompositeOperation = "destination-out";
     furCtx.fillStyle = "rgba(0,0,0,1)";
 
-    // Draw circles along the line at intervals smaller than the radius
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -197,73 +121,324 @@
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      const px = x1 + dx * t;
-      const py = y1 + dy * t;
       furCtx.beginPath();
-      furCtx.arc(px, py, SHAVE_RADIUS, 0, Math.PI * 2);
+      furCtx.arc(x1 + dx * t, y1 + dy * t, SHAVE_RADIUS, 0, Math.PI * 2);
       furCtx.fill();
     }
 
     furCtx.restore();
+    furTexture.needsUpdate = true;
+  }
+
+  // ── Build the 3D yak model ────────────────────────────────────────────
+  function buildYak(): THREE.Group {
+    const group = new THREE.Group();
+    const skinColor = 0xf9b4c2;
+    const hoofColor = 0x6b4f3a;
+    const hornColor = 0xc9a96e;
+
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.7 });
+    const hoofMat = new THREE.MeshStandardMaterial({ color: hoofColor, roughness: 0.8 });
+    const hornMat = new THREE.MeshStandardMaterial({ color: hornColor, roughness: 0.5, metalness: 0.1 });
+    const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+    const pupilMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.3 });
+
+    // Body — elongated ellipsoid
+    const bodyGeom = new THREE.SphereGeometry(1, 32, 24);
+    bodyGeom.scale(1.4, 1.0, 1.0);
+    const body = new THREE.Mesh(bodyGeom, skinMat);
+    body.position.set(0, 0.3, 0);
+    group.add(body);
+
+    // Fur shell — slightly larger body with fur texture
+    furCanvas = createFurCanvas();
+    furCtx = furCanvas.getContext("2d")!;
+    furTexture = new THREE.CanvasTexture(furCanvas);
+    furTexture.wrapS = THREE.RepeatWrapping;
+    furTexture.wrapT = THREE.RepeatWrapping;
+
+    const furMat = new THREE.MeshStandardMaterial({
+      map: furTexture,
+      transparent: true,
+      roughness: 0.9,
+      side: THREE.DoubleSide,
+    });
+    const furGeom = new THREE.SphereGeometry(1, 32, 24);
+    furGeom.scale(1.42, 1.02, 1.02);
+    furMesh = new THREE.Mesh(furGeom, furMat);
+    furMesh.position.set(0, 0.3, 0);
+    group.add(furMesh);
+
+    // Head
+    const headGeom = new THREE.SphereGeometry(0.55, 24, 20);
+    headGeom.scale(1.0, 0.9, 0.9);
+    const head = new THREE.Mesh(headGeom, skinMat);
+    head.position.set(0, 0.95, 0.8);
+    group.add(head);
+
+    // Head fur
+    const headFurGeom = new THREE.SphereGeometry(0.57, 24, 20);
+    headFurGeom.scale(1.0, 0.92, 0.92);
+    const headFurMat = new THREE.MeshStandardMaterial({
+      map: furTexture,
+      transparent: true,
+      roughness: 0.9,
+    });
+    const headFur = new THREE.Mesh(headFurGeom, headFurMat);
+    headFur.position.set(0, 0.95, 0.8);
+    group.add(headFur);
+
+    // Snout
+    const snoutGeom = new THREE.SphereGeometry(0.22, 16, 12);
+    snoutGeom.scale(1.2, 0.8, 1.0);
+    const snoutMat = new THREE.MeshStandardMaterial({ color: 0xfcd5de, roughness: 0.6 });
+    const snout = new THREE.Mesh(snoutGeom, snoutMat);
+    snout.position.set(0, 0.78, 1.25);
+    group.add(snout);
+
+    // Nostrils
+    const nostrilGeom = new THREE.SphereGeometry(0.04, 8, 8);
+    const nostrilMat = new THREE.MeshStandardMaterial({ color: 0xd97890 });
+    const nostrilL = new THREE.Mesh(nostrilGeom, nostrilMat);
+    nostrilL.position.set(-0.08, 0.78, 1.42);
+    group.add(nostrilL);
+    const nostrilR = new THREE.Mesh(nostrilGeom, nostrilMat);
+    nostrilR.position.set(0.08, 0.78, 1.42);
+    group.add(nostrilR);
+
+    // Eyes
+    const eyeGeom = new THREE.SphereGeometry(0.1, 12, 10);
+    const eyeL = new THREE.Mesh(eyeGeom, eyeWhiteMat);
+    eyeL.position.set(-0.2, 1.05, 1.15);
+    group.add(eyeL);
+    const eyeR = new THREE.Mesh(eyeGeom, eyeWhiteMat);
+    eyeR.position.set(0.2, 1.05, 1.15);
+    group.add(eyeR);
+
+    // Pupils
+    const pupilGeom = new THREE.SphereGeometry(0.055, 10, 8);
+    const pupilL = new THREE.Mesh(pupilGeom, pupilMat);
+    pupilL.position.set(-0.2, 1.05, 1.24);
+    group.add(pupilL);
+    const pupilR = new THREE.Mesh(pupilGeom, pupilMat);
+    pupilR.position.set(0.2, 1.05, 1.24);
+    group.add(pupilR);
+
+    // Eye highlights
+    const highlightGeom = new THREE.SphereGeometry(0.025, 8, 6);
+    const highlightMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.5 });
+    const hlL = new THREE.Mesh(highlightGeom, highlightMat);
+    hlL.position.set(-0.17, 1.08, 1.24);
+    group.add(hlL);
+    const hlR = new THREE.Mesh(highlightGeom, highlightMat);
+    hlR.position.set(0.23, 1.08, 1.24);
+    group.add(hlR);
+
+    // Horns — curved using TubeGeometry
+    const hornCurveL = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(-0.25, 1.3, 0.75),
+      new THREE.Vector3(-0.45, 1.7, 0.6),
+      new THREE.Vector3(-0.35, 1.85, 0.5),
+    );
+    const hornGeomL = new THREE.TubeGeometry(hornCurveL, 12, 0.06, 8, false);
+    const hornL = new THREE.Mesh(hornGeomL, hornMat);
+    group.add(hornL);
+
+    const hornCurveR = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0.25, 1.3, 0.75),
+      new THREE.Vector3(0.45, 1.7, 0.6),
+      new THREE.Vector3(0.35, 1.85, 0.5),
+    );
+    const hornGeomR = new THREE.TubeGeometry(hornCurveR, 12, 0.06, 8, false);
+    const hornR = new THREE.Mesh(hornGeomR, hornMat);
+    group.add(hornR);
+
+    // Ears
+    const earGeom = new THREE.SphereGeometry(0.12, 10, 8);
+    earGeom.scale(1.6, 0.6, 1.0);
+    const earL = new THREE.Mesh(earGeom, skinMat);
+    earL.position.set(-0.45, 1.05, 0.65);
+    earL.rotation.z = 0.3;
+    group.add(earL);
+    const earR = new THREE.Mesh(earGeom, skinMat);
+    earR.position.set(0.45, 1.05, 0.65);
+    earR.rotation.z = -0.3;
+    group.add(earR);
+
+    // Legs — 4 cylinders
+    const legGeom = new THREE.CylinderGeometry(0.12, 0.1, 0.7, 12);
+    const legPositions = [
+      [-0.55, -0.4, 0.4],  // front-left
+      [0.55, -0.4, 0.4],   // front-right
+      [-0.5, -0.4, -0.5],  // back-left
+      [0.5, -0.4, -0.5],   // back-right
+    ];
+    for (const pos of legPositions) {
+      const leg = new THREE.Mesh(legGeom, skinMat);
+      leg.position.set(pos[0], pos[1], pos[2]);
+      group.add(leg);
+
+      // Hoof
+      const hoofGeom = new THREE.CylinderGeometry(0.12, 0.13, 0.12, 12);
+      const hoof = new THREE.Mesh(hoofGeom, hoofMat);
+      hoof.position.set(pos[0], pos[1] - 0.4, pos[2]);
+      group.add(hoof);
+    }
+
+    // Tail — curved tube
+    const tailCurve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, 0.5, -1.0),
+      new THREE.Vector3(0, 1.0, -1.3),
+      new THREE.Vector3(0.1, 1.2, -1.15),
+    );
+    const tailGeom = new THREE.TubeGeometry(tailCurve, 10, 0.05, 8, false);
+    const tail = new THREE.Mesh(tailGeom, skinMat);
+    group.add(tail);
+
+    // Tail tuft
+    const tuftGeom = new THREE.SphereGeometry(0.1, 10, 8);
+    const tuft = new THREE.Mesh(tuftGeom, skinMat);
+    tuft.position.set(0.1, 1.2, -1.15);
+    group.add(tuft);
+
+    return group;
+  }
+
+  // ── 3D Particles ──────────────────────────────────────────────────────
+  let particleMeshes: { mesh: THREE.Mesh; velocity: THREE.Vector3; age: number }[] = [];
+  const particleMat = new THREE.MeshBasicMaterial({ color: 0xf5e6d3, transparent: true });
+
+  function spawn3DParticles(point: THREE.Vector3) {
+    for (let i = 0; i < 5; i++) {
+      const geom = new THREE.SphereGeometry(0.02 + Math.random() * 0.03, 6, 4);
+      const mesh = new THREE.Mesh(geom, particleMat.clone());
+      mesh.position.copy(point);
+      scene.add(mesh);
+      particleMeshes.push({
+        mesh,
+        velocity: new THREE.Vector3(
+          (Math.random() - 0.5) * 0.08,
+          Math.random() * 0.06 + 0.02,
+          (Math.random() - 0.5) * 0.08,
+        ),
+        age: 0,
+      });
+    }
+  }
+
+  function updateParticles() {
+    particleMeshes = particleMeshes.filter((p) => {
+      p.age++;
+      p.mesh.position.add(p.velocity);
+      p.velocity.y -= 0.001; // gravity
+      const mat = p.mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0, 1 - p.age / 30);
+      if (p.age > 30) {
+        scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        mat.dispose();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  // ── Hit-test / raycast ────────────────────────────────────────────────
+  function getUVFromPointer(clientX: number, clientY: number): { uv: THREE.Vector2; point: THREE.Vector3 } | null {
+    if (!containerEl || !furMesh) return null;
+    const rect = containerEl.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(mouse, camera);
+
+    // Check intersection with the fur mesh (body) and head fur
+    const intersects = raycaster.intersectObjects(yakGroup.children, false);
+    for (const hit of intersects) {
+      if (hit.uv) {
+        return { uv: hit.uv, point: hit.point };
+      }
+    }
+    return null;
+  }
+
+  function uvToYakCoords(uv: THREE.Vector2): { x: number; y: number } {
+    return {
+      x: uv.x * YAK_W,
+      y: (1 - uv.y) * YAK_H, // flip V
+    };
   }
 
   // ── Touch / pointer handlers ──────────────────────────────────────────
-  function onPointerDown(e: TouchEvent | MouseEvent) {
-    const pt = "touches" in e ? toCanvasCoords(e.touches[0].clientX, e.touches[0].clientY) : toCanvasCoords((e as MouseEvent).clientX, (e as MouseEvent).clientY);
-    if (!pt) return;
-    swiping = true;
-    lastPt = pt;
+  function onPointerDown(e: PointerEvent) {
+    if (e.pointerType === "touch" && e.isPrimary === false) return; // multi-touch = orbit
+    const hit = getUVFromPointer(e.clientX, e.clientY);
+    if (hit) {
+      swiping = true;
+      lastUV = { u: hit.uv.x, v: hit.uv.y };
+      lastPt = uvToYakCoords(hit.uv);
+      controls.enabled = false; // disable orbit while shaving
+    }
   }
 
-  function onPointerMove(e: TouchEvent | MouseEvent) {
-    if (!swiping || !lastPt) return;
-    const pt = "touches" in e ? toCanvasCoords(e.touches[0].clientX, e.touches[0].clientY) : toCanvasCoords((e as MouseEvent).clientX, (e as MouseEvent).clientY);
-    if (!pt) return;
+  function onPointerMove(e: PointerEvent) {
+    if (!swiping || !lastUV || !lastPt) return;
+    const hit = getUVFromPointer(e.clientX, e.clientY);
+    if (!hit) return;
 
-    const onTarget = isOnYak(lastPt.x, lastPt.y) && isOnYak(pt.x, pt.y);
+    const currentPt = uvToYakCoords(hit.uv);
+    const onTarget = true; // we already hit the mesh via raycast
 
     room.send("game_input", {
       action: "swipe",
       x1: lastPt.x,
       y1: lastPt.y,
-      x2: pt.x,
-      y2: pt.y,
+      x2: currentPt.x,
+      y2: currentPt.y,
       onTarget,
     });
 
-    if (onTarget) {
-      // Erase fur on the canvas along the swipe path
-      eraseSwipeLine(lastPt.x, lastPt.y, pt.x, pt.y);
-      spawnParticles(pt.x, pt.y);
-    }
+    // Erase fur on the texture
+    eraseSwipeLine(lastUV.u, lastUV.v, hit.uv.x, hit.uv.y);
+    spawn3DParticles(hit.point);
 
-    lastPt = pt;
+    lastUV = { u: hit.uv.x, v: hit.uv.y };
+    lastPt = currentPt;
   }
 
-  function onPointerUp() {
-    swiping = false;
-    lastPt = null;
-  }
-
-  // ── Particles ─────────────────────────────────────────────────────────
-  function spawnParticles(x: number, y: number) {
-    for (let i = 0; i < 3; i++) {
-      particles = [
-        ...particles,
-        {
-          id: nextParticleId++,
-          x: x + (Math.random() - 0.5) * 30,
-          y: y + (Math.random() - 0.5) * 30,
-          age: 0,
-        },
-      ];
-    }
-    if (particles.length > 30) {
-      particles = particles.slice(-30);
+  function onPointerUp(_e: PointerEvent) {
+    if (swiping) {
+      swiping = false;
+      lastUV = null;
+      lastPt = null;
+      controls.enabled = true; // re-enable orbit
     }
   }
 
-  let particleInterval: ReturnType<typeof setInterval>;
+  // Handle off-target swipes (touches that don't hit the yak mesh)
+  function onMissSwipe(e: PointerEvent) {
+    if (e.pointerType === "touch" && e.isPrimary === false) return;
+    const hit = getUVFromPointer(e.clientX, e.clientY);
+    if (!hit && swiping && lastPt) {
+      // Swipe went off the yak — send as off-target
+      const rect = containerEl.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width) * YAK_W;
+      const ny = ((e.clientY - rect.top) / rect.height) * YAK_H;
+      room.send("game_input", {
+        action: "swipe",
+        x1: lastPt.x,
+        y1: lastPt.y,
+        x2: nx,
+        y2: ny,
+        onTarget: false,
+      });
+      swiping = false;
+      lastUV = null;
+      lastPt = null;
+      controls.enabled = true;
+    }
+  }
 
   // ── Server messages ───────────────────────────────────────────────────
   function onShaveUpdate(data: {
@@ -292,67 +467,141 @@
     yakOffsetX = data.yakOffsetX;
     yakOffsetY = data.yakOffsetY;
     yakRotation = data.yakRotation;
+    // Apply nudge to the yak group rotation as a brief visual jolt
+    if (yakGroup) {
+      yakGroup.rotation.y += data.yakRotation * 0.5;
+    }
+  }
+
+  // ── Animation loop ────────────────────────────────────────────────────
+  function animate() {
+    animFrameId = requestAnimationFrame(animate);
+    controls.update();
+    updateParticles();
+    renderer.render(scene, camera);
   }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    initFurCanvas();
+    // Setup Three.js
+    const w = containerEl.clientWidth;
+    const h = containerEl.clientHeight;
 
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+    containerEl.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(2, 3, 4);
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-2, 1, -2);
+    scene.add(fillLight);
+
+    // Camera
+    camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 100);
+    camera.position.set(0, 1.5, 3.5);
+    camera.lookAt(0, 0.3, 0);
+
+    // Controls — orbit with 2 fingers / right mouse
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.3, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    controls.minDistance = 1.5;
+    controls.maxDistance = 6;
+    controls.maxPolarAngle = Math.PI * 0.85;
+    controls.touches = {
+      ONE: THREE.TOUCH.ROTATE, // will be disabled during shaving
+      TWO: THREE.TOUCH.DOLLY_ROTATE,
+    };
+
+    // Raycaster
+    raycaster = new THREE.Raycaster();
+
+    // Build yak
+    yakGroup = buildYak();
+    scene.add(yakGroup);
+
+    // Ground plane
+    const groundGeom = new THREE.CircleGeometry(3, 32);
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x2d5a3d,
+      roughness: 0.9,
+    });
+    const ground = new THREE.Mesh(groundGeom, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.75;
+    scene.add(ground);
+
+    // Pointer events
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", (e) => {
+      onPointerMove(e);
+      onMissSwipe(e);
+    });
+    renderer.domElement.addEventListener("pointerup", onPointerUp);
+    renderer.domElement.style.touchAction = "none"; // prevent browser scroll
+
+    // Server messages
     room.onMessage("shave_update", onShaveUpdate);
     room.onMessage("yak_nudge", onYakNudge);
 
-    document.addEventListener("touchmove", onGlobalTouchMove, { passive: false });
-    document.addEventListener("mousemove", onGlobalMouseMove);
-    document.addEventListener("touchend", onGlobalRelease);
-    document.addEventListener("mouseup", onGlobalRelease);
-
+    // Timer
     timerInterval = setInterval(() => {
       const elapsed = (Date.now() - state.phaseStartedAt) / 1000;
       timeLeft = Math.max(0, state.roundDurationSecs - elapsed);
     }, 100);
 
-    particleInterval = setInterval(() => {
-      particles = particles
-        .map((p) => ({ ...p, age: p.age + 1 }))
-        .filter((p) => p.age < 8);
-    }, 60);
+    // Start render loop
+    animate();
+
+    // Handle resize
+    const onResize = () => {
+      const nw = containerEl.clientWidth;
+      const nh = containerEl.clientHeight;
+      camera.aspect = nw / nh;
+      camera.updateProjectionMatrix();
+      renderer.setSize(nw, nh);
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+    };
   });
 
   onDestroy(() => {
-    document.removeEventListener("touchmove", onGlobalTouchMove);
-    document.removeEventListener("mousemove", onGlobalMouseMove);
-    document.removeEventListener("touchend", onGlobalRelease);
-    document.removeEventListener("mouseup", onGlobalRelease);
+    cancelAnimationFrame(animFrameId);
     clearInterval(timerInterval);
-    clearInterval(particleInterval);
+    if (renderer) {
+      renderer.dispose();
+    }
+    // Clean up particles
+    for (const p of particleMeshes) {
+      scene?.remove(p.mesh);
+      p.mesh.geometry.dispose();
+      (p.mesh.material as THREE.MeshBasicMaterial).dispose();
+    }
+    particleMeshes = [];
   });
 
-  function onGlobalTouchMove(e: TouchEvent) {
-    if (swiping) {
-      e.preventDefault();
-      onPointerMove(e);
-    }
-  }
-  function onGlobalMouseMove(e: MouseEvent) {
-    if (swiping) onPointerMove(e);
-  }
-  function onGlobalRelease() {
-    onPointerUp();
-  }
-
   // ── Derived values ────────────────────────────────────────────────────
-  $: progressDash = 2 * Math.PI * 54;
-  $: progressOffset = progressDash - (shavedPercent / 100) * progressDash;
-  // 3D perspective transform: translate for nudge + rotateY/rotateX for 3D tilt
-  $: yakTransform = `perspective(600px) translate(${yakOffsetX * 0.3}px, ${yakOffsetY * 0.3}px) rotateY(${yakRotation * 25}deg) rotateX(${-yakOffsetY * 0.15}deg)`;
   $: comboColor = combo >= 8 ? "#f59e0b" : combo >= 5 ? "#a78bfa" : combo >= 3 ? "#6366f1" : "#94a3b8";
   $: urgentTimer = timeLeft < 6;
 </script>
 
 <div class="flex-1 flex flex-col select-none overflow-hidden bg-gradient-to-b from-sky-900 via-sky-800 to-emerald-900" data-testid="shave-yak-game">
-  <!-- ── Top HUD ──────────────────────────────────────────────────────── -->
+  <!-- Top HUD -->
   <div class="px-4 py-3 bg-black/40 flex items-center gap-3 z-10">
     <!-- Shaved % bar -->
     <div class="flex-1">
@@ -393,129 +642,17 @@
     <span class="text-sm text-sky-300 font-mono font-bold">Score: {score}</span>
   </div>
 
-  <!-- ── Yak canvas area ─────────────────────────────────────────────── -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <!-- 3D viewport -->
   <div
-    bind:this={canvasEl}
-    class="flex-1 relative flex items-center justify-center touch-none"
-    on:touchstart|preventDefault={onPointerDown}
-    on:mousedown={onPointerDown}
+    bind:this={containerEl}
+    class="flex-1 relative touch-none"
+    data-testid="yak-3d-viewport"
   >
-    <!-- Progress ring (behind yak) -->
-    <svg class="absolute" width="140" height="140" viewBox="0 0 120 120" style="opacity:0.7; z-index:0;">
-      <circle cx="60" cy="60" r="54" fill="none" stroke="#334155" stroke-width="6" />
-      <circle
-        cx="60" cy="60" r="54"
-        fill="none"
-        stroke="#6366f1"
-        stroke-width="6"
-        stroke-linecap="round"
-        stroke-dasharray={progressDash}
-        stroke-dashoffset={progressOffset}
-        transform="rotate(-90 60 60)"
-        class="transition-all duration-300"
-      />
-    </svg>
-
-    <!-- Yak container — 3D perspective transform on nudge/miss -->
-    <div
-      class="relative transition-transform duration-300 ease-out"
-      style="transform:{yakTransform}; width:280px; height:260px; z-index:1; transform-style: preserve-3d;"
-      data-testid="yak-body"
-    >
-      <!-- Layer 1: Skin SVG (always visible underneath) -->
-      <svg class="absolute inset-0" viewBox="0 0 300 280" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-        <g id="yak-skin">
-          <!-- Body -->
-          <ellipse cx="150" cy="155" rx="105" ry="85" fill="#f9b4c2" stroke="#d97890" stroke-width="2" />
-          <!-- Head -->
-          <ellipse cx="150" cy="68" rx="52" ry="42" fill="#f9b4c2" stroke="#d97890" stroke-width="2" />
-          <!-- Snout -->
-          <ellipse cx="150" cy="90" rx="28" ry="18" fill="#fcd5de" stroke="#d97890" stroke-width="1.5" />
-          <!-- Nostrils -->
-          <ellipse cx="142" cy="92" rx="4" ry="3" fill="#d97890" />
-          <ellipse cx="158" cy="92" rx="4" ry="3" fill="#d97890" />
-          <!-- Mouth -->
-          <path d="M135 100 Q150 114 165 100" fill="none" stroke="#d97890" stroke-width="2" stroke-linecap="round" />
-          <!-- Tongue -->
-          <ellipse cx="152" cy="107" rx="7" ry="5" fill="#ff8fab" />
-          <!-- Eyes -->
-          <ellipse cx="132" cy="62" rx="12" ry="14" fill="white" stroke="#555" stroke-width="1.5" />
-          <ellipse cx="168" cy="62" rx="12" ry="14" fill="white" stroke="#555" stroke-width="1.5" />
-          <ellipse cx="135" cy="64" rx="6" ry="7" fill="#333" />
-          <ellipse cx="165" cy="64" rx="6" ry="7" fill="#333" />
-          <circle cx="137" cy="61" r="2.5" fill="white" />
-          <circle cx="167" cy="61" r="2.5" fill="white" />
-          <!-- Eyebrows -->
-          <path d="M120 48 Q132 40 144 50" fill="none" stroke="#6b4f3a" stroke-width="2.5" stroke-linecap="round" />
-          <path d="M156 50 Q168 40 180 48" fill="none" stroke="#6b4f3a" stroke-width="2.5" stroke-linecap="round" />
-          <!-- Horns -->
-          <path d="M118 45 Q108 20 100 28" fill="none" stroke="#c9a96e" stroke-width="5" stroke-linecap="round" />
-          <path d="M182 45 Q192 20 200 28" fill="none" stroke="#c9a96e" stroke-width="5" stroke-linecap="round" />
-          <!-- Ears -->
-          <ellipse cx="108" cy="55" rx="14" ry="8" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" transform="rotate(-20 108 55)" />
-          <ellipse cx="192" cy="55" rx="14" ry="8" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" transform="rotate(20 192 55)" />
-          <!-- Legs -->
-          <rect x="80"  y="220" width="22" height="40" rx="10" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" />
-          <rect x="120" y="225" width="22" height="38" rx="10" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" />
-          <rect x="160" y="225" width="22" height="38" rx="10" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" />
-          <rect x="198" y="220" width="22" height="40" rx="10" fill="#f9b4c2" stroke="#d97890" stroke-width="1.5" />
-          <!-- Hooves -->
-          <rect x="78"  y="254" width="26" height="10" rx="5" fill="#6b4f3a" />
-          <rect x="118" y="257" width="26" height="10" rx="5" fill="#6b4f3a" />
-          <rect x="158" y="257" width="26" height="10" rx="5" fill="#6b4f3a" />
-          <rect x="196" y="254" width="26" height="10" rx="5" fill="#6b4f3a" />
-          <!-- Tail -->
-          <path d="M255 145 Q275 130 268 110" fill="none" stroke="#f9b4c2" stroke-width="5" stroke-linecap="round" />
-          <circle cx="268" cy="108" r="6" fill="#f9b4c2" stroke="#d97890" stroke-width="1" />
-        </g>
-      </svg>
-
-      <!-- Layer 2: Fur canvas (erased on swipe — reveals skin below) -->
-      <canvas
-        bind:this={furCanvas}
-        class="absolute inset-0 w-full h-full pointer-events-none"
-        style="z-index:1;"
-      ></canvas>
-
-      <!-- Layer 3: Face overlay SVG (eyes/horns always visible on top) -->
-      <svg class="absolute inset-0 pointer-events-none" viewBox="0 0 300 280" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" style="z-index:2;">
-        <g id="yak-face-overlay">
-          <ellipse cx="132" cy="62" rx="13" ry="15" fill="white" stroke="#555" stroke-width="1.5" />
-          <ellipse cx="168" cy="62" rx="13" ry="15" fill="white" stroke="#555" stroke-width="1.5" />
-          <ellipse cx="135" cy="64" rx="6" ry="7" fill="#333" />
-          <ellipse cx="165" cy="64" rx="6" ry="7" fill="#333" />
-          <circle cx="137" cy="61" r="2.5" fill="white" />
-          <circle cx="167" cy="61" r="2.5" fill="white" />
-          <!-- Horns always visible -->
-          <path d="M118 45 Q108 20 100 28" fill="none" stroke="#c9a96e" stroke-width="5" stroke-linecap="round" />
-          <path d="M182 45 Q192 20 200 28" fill="none" stroke="#c9a96e" stroke-width="5" stroke-linecap="round" />
-        </g>
-      </svg>
-    </div>
-
-    <!-- ── Shave particles ─────────────────────────────────────────── -->
-    {#each particles as p (p.id)}
-      <div
-        class="absolute pointer-events-none rounded-full"
-        style="
-          left: {(p.x / YAK_W) * 100}%;
-          top: {(p.y / YAK_H) * 100}%;
-          width: {8 - p.age}px;
-          height: {8 - p.age}px;
-          background: {p.age % 2 === 0 ? '#f5e6d3' : '#d4a76a'};
-          opacity: {1 - p.age / 8};
-          transform: translate(-50%, -50%) scale({1 + p.age * 0.3});
-          transition: all 0.06s linear;
-        "
-      ></div>
-    {/each}
-
-    <!-- ── "Swipe here!" hint ──────────────────────────────────────── -->
+    <!-- Orbit hint -->
     {#if shavedPercent === 0 && timeLeft > 18}
-      <div class="absolute bottom-8 left-0 right-0 text-center animate-bounce z-10">
+      <div class="absolute bottom-4 left-0 right-0 text-center animate-bounce z-10 pointer-events-none">
         <span class="bg-black/60 text-white px-4 py-2 rounded-full text-sm font-bold">
-          Swipe the yak to shave!
+          Swipe on the yak to shave! Pinch to rotate.
         </span>
       </div>
     {/if}
