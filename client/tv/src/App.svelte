@@ -2,7 +2,7 @@
   /**
    * client/tv/src/App.svelte
    *
-   * Root TV app component.  Manages Colyseus room connection and
+   * Root view-screen app. Manages Colyseus room connection and
    * routes to the correct screen based on room phase.
    */
   import { onMount, onDestroy } from "svelte";
@@ -18,7 +18,7 @@
   import ScoreboardScreen from "./screens/ScoreboardScreen.svelte";
   import GameOverScreen from "./screens/GameOverScreen.svelte";
 
-  let room: Room | null = null;
+  let room: Room<RoomState> | null = null;
   let state: RoomState | null = null;
   let phase: Phase = "lobby";
   let error: string = "";
@@ -27,11 +27,11 @@
   onMount(async () => {
     try {
       room = await hostRoom();
-      state = room.state as unknown as RoomState;
+      state = room.state;
       phase = state.phase;
 
       room.onStateChange((newState) => {
-        state = newState as unknown as RoomState;
+        state = newState;
         phase = state.phase;
       });
 
@@ -60,7 +60,7 @@
     : [];
 </script>
 
-<div class="min-h-screen bg-gray-900 text-white flex flex-col" data-testid="tv-app">
+<div class="min-h-screen bg-gray-900 text-white flex flex-col" data-testid="view-screen-app">
   {#if connecting}
     <div class="flex-1 flex items-center justify-center">
       <p class="text-2xl animate-pulse">Connecting to server…</p>

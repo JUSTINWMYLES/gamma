@@ -56,7 +56,8 @@ export interface RoomState {
   phase: Phase;
   roomCode: string;
   hostSessionId: string;
-  tvConnected: boolean;
+  tvConnected: boolean; // @deprecated — use viewScreenConnected
+  viewScreenConnected: boolean;
   selectedGame: string;
   currentRound: number;
   phaseStartedAt: number;
@@ -102,6 +103,22 @@ export const GAME_REGISTRY: GameMeta[] = [
     description: "Avoid supernatural guards on a procedural map. More guards each round.",
     activityLevel: "none",
     requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
+  {
+    id: "registry-19-shave-the-yak",
+    label: "Shave The Yak",
+    description: "Swipe to shave a cartoon yak before time runs out. Miss and the yak moves!",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
+  {
+    id: "registry-20-odd-one-out",
+    label: "Odd One Out",
+    description: "One player has a secret action. Observe, deduce, and vote — who's the odd one?",
+    activityLevel: "none",
+    requiresSameRoom: true,
     requiresSecondaryDisplay: false,
   },
 ];

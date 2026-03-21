@@ -2,7 +2,7 @@
   /**
    * client/phone/src/App.svelte
    *
-   * Root phone app component.
+   * Root player app component.
    * Manages connection state and routes to the appropriate screen.
    *
    * Flow:
@@ -27,22 +27,22 @@
   type AppView = "landing" | "join" | "host" | "room";
 
   let view: AppView = "landing";
-  let room: Room | null = null;
+  let room: Room<RoomState> | null = null;
   let state: RoomState | null = null;
   let phase: Phase = "lobby";
   let myId: string = "";
   let error: string = "";
 
-  function wireRoom(r: Room) {
+  function wireRoom(r: Room<RoomState>) {
     room = r;
     myId = r.sessionId;
-    state = r.state as unknown as RoomState;
-    phase = (state as RoomState).phase;
+    state = r.state;
+    phase = state.phase;
     view = "room";
 
     r.onStateChange((s) => {
-      state = s as unknown as RoomState;
-      phase = (state as RoomState).phase;
+      state = s;
+      phase = s.phase;
     });
 
     r.onError((code: number, msg?: string) => {
@@ -76,12 +76,12 @@
 
   onDestroy(() => room?.leave());
 
-  $: me = state?.players?.get(myId) as PlayerState | undefined;
-  $: typedRoom = room as Room;
+  $: me = state?.players?.get(myId);
+  $: typedRoom = room as Room<RoomState>;
   $: typedState = state as RoomState;
 </script>
 
-<div class="min-h-screen flex flex-col bg-gray-950 text-white" data-testid="phone-app">
+<div class="min-h-screen flex flex-col bg-gray-950 text-white" data-testid="player-app">
   {#if error}
     <div class="flex-1 flex items-center justify-center p-6">
       <div class="text-center space-y-4">
@@ -113,7 +113,7 @@
       on:host={(e) => onHost(e.detail.name)}
       on:back={() => { view = "landing"; }}
     />
-  {:else if view === "room" && state}
+  {:else if view === "room" && state && me}
     {#if phase === "lobby"}
       <LobbyScreen room={typedRoom} state={typedState} {me} />
     {:else if phase === "game_loading"}
@@ -121,7 +121,7 @@
         <p class="text-xl animate-pulse">Loading…</p>
       </div>
     {:else if phase === "instructions"}
-      <InstructionsScreen room={typedRoom} />
+      <InstructionsScreen room={typedRoom} state={typedState} />
     {:else if phase === "countdown"}
       <CountdownScreen state={typedState} />
     {:else if phase === "in_round"}

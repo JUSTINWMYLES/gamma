@@ -1,21 +1,23 @@
 <script lang="ts">
   /**
-   * TV Game screen — renders the procedural tile map, players, and all guards.
-   * Uses an HTML Canvas element for the 2-D top-down view.
+   * TV Game screen — routes to the correct game component based on selectedGame.
    *
-   * Tile data is received from the server via state.mapTiles (JSON string).
-   * Multiple guards are in state.guards (Map keyed by index string).
+   * Registry-14 (Don't Get Caught): renders the procedural tile map, players,
+   * and all guards using an HTML Canvas element for a 2-D top-down view.
    *
-   * Coordinate system: tile units (0,0) = top-left.
-   * Each tile is TILE_SIZE_PX pixels.
+   * Registry-20 (Odd One Out): delegates to OddOneOutTV component.
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../shared/types";
   import { TILE_SIZE_PX, TILE } from "../../../shared/types";
+  import OddOneOutTV from "../games/OddOneOutTV.svelte";
 
   export let room: Room;
   export let state: RoomState;
+
+  // ── Game routing ──────────────────────────────────────────────────
+  $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -30,6 +32,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
+    if (isOddOneOut) return; // OddOneOutTV handles its own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -167,6 +170,9 @@
   }
 </script>
 
+{#if isOddOneOut}
+  <OddOneOutTV {room} {state} />
+{:else}
 <div class="flex-1 flex" data-testid="game-screen">
   <!-- Canvas -->
   <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
@@ -221,3 +227,4 @@
     </div>
   </div>
 </div>
+{/if}
