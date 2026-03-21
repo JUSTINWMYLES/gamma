@@ -60,6 +60,16 @@ export async function hostRoom(): Promise<Colyseus.Room> {
 }
 
 /**
+ * Create a new room as a player (phone-only, no TV).
+ * The first phone becomes the host in this mode.
+ *
+ * @param name  Player display name (max 20 chars)
+ */
+export async function createRoom(name: string): Promise<Colyseus.Room> {
+  return getClient().create("gamma_room", { role: "player", name });
+}
+
+/**
  * Join an existing room as a player.
  *
  * @param roomCode  4-char room code shown on the TV
