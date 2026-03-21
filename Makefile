@@ -1,4 +1,4 @@
-.PHONY: install dev compose-up compose-down build test test-unit test-e2e smoke docker-push helm-install-operator clean
+.PHONY: install dev compose-up compose-down build test test-unit test-e2e smoke docker-push helm-install-operator clean dev-server dev-client
 
 # ── Variables ────────────────────────────────────────────────────────────────
 REGISTRY   ?= ghcr.io/gamma
@@ -12,7 +12,7 @@ install:
 	npx playwright install --with-deps chromium
 
 # ── Local development ─────────────────────────────────────────────────────────
-## Start server + TV + phone clients in watch mode (requires concurrently)
+## Start server + unified client in watch mode (requires concurrently)
 dev:
 	npm run dev
 
@@ -20,13 +20,9 @@ dev:
 dev-server:
 	npm run dev:server
 
-## Start only the TV Vite dev server
-dev-tv:
-	npm run dev:tv
-
-## Start only the Phone Vite dev server
-dev-phone:
-	npm run dev:phone
+## Start only the unified client Vite dev server
+dev-client:
+	npm run dev:client
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
 ## Bring up server + static client servers via Docker Compose
@@ -46,17 +42,15 @@ compose-logs:
 build:
 	npm run build
 
-## Build Docker images for server and clients
+## Build Docker images for server and client
 docker-build:
 	docker build -t $(REGISTRY)/gamma-server:$(TAG) -f server/Dockerfile .
-	docker build -t $(REGISTRY)/gamma-tv:$(TAG) -f client/tv/Dockerfile .
-	docker build -t $(REGISTRY)/gamma-phone:$(TAG) -f client/phone/Dockerfile .
+	docker build -t $(REGISTRY)/gamma-client:$(TAG) -f client/app/Dockerfile .
 
 ## Tag and push Docker images (requires docker login)
 docker-push: docker-build
 	docker push $(REGISTRY)/gamma-server:$(TAG)
-	docker push $(REGISTRY)/gamma-tv:$(TAG)
-	docker push $(REGISTRY)/gamma-phone:$(TAG)
+	docker push $(REGISTRY)/gamma-client:$(TAG)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 ## Run all tests (unit + e2e)
@@ -97,5 +91,5 @@ helm-uninstall-operator:
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 ## Remove all build artifacts
 clean:
-	rm -rf server/dist client/tv/dist client/phone/dist
+	rm -rf server/dist client/app/dist
 	find . -name "node_modules" -not -path "*/.git/*" -prune -exec rm -rf {} + 2>/dev/null; true

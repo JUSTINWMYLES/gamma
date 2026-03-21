@@ -104,6 +104,8 @@ export default class ShaveYakGame extends BaseGame {
   private playerRounds = new Map<string, PlayerRound>();
   private roundResolve: (() => void) | null = null;
   private roundTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Interval that broadcasts all-player progress to view_screen clients. */
+  private progressInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -133,6 +135,11 @@ export default class ShaveYakGame extends BaseGame {
     }
 
     const timeSecs = this.room.state.gameConfig.timeLimitSecs ?? DEFAULT_ROUND_TIME_SECS;
+
+    // Broadcast all-player shave progress to view_screen clients every 500ms
+    this.progressInterval = setInterval(() => {
+      this._broadcastProgress();
+    }, 500);
 
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
@@ -216,6 +223,7 @@ export default class ShaveYakGame extends BaseGame {
 
   override teardown(): void {
     super.teardown();
+    this._clearProgressInterval();
     if (this.roundTimer) {
       clearTimeout(this.roundTimer);
       this.roundTimer = null;
@@ -278,7 +286,46 @@ export default class ShaveYakGame extends BaseGame {
     }
   }
 
+  /** Broadcast a snapshot of every player's shaving progress to all clients. */
+  private _broadcastProgress(): void {
+    const playerProgress: {
+      playerId: string;
+      playerName: string;
+      shavedPercent: number;
+      score: number;
+      combo: number;
+      comboMax: number;
+    }[] = [];
+
+    for (const [playerId, pr] of this.playerRounds) {
+      const player = this.room.state.players.get(playerId);
+      const pct = computeShavedPercent(pr.mask);
+      const score = computeScore(pct, pr.comboMax);
+      playerProgress.push({
+        playerId,
+        playerName: player?.name ?? playerId,
+        shavedPercent: pct,
+        score,
+        combo: pr.combo,
+        comboMax: pr.comboMax,
+      });
+    }
+
+    this.broadcast("shave_progress_all", { players: playerProgress });
+  }
+
+  private _clearProgressInterval(): void {
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = null;
+    }
+  }
+
   private _endRound(): void {
+    this._clearProgressInterval();
+    // Send one final progress snapshot before resolving
+    this._broadcastProgress();
+
     if (this.roundResolve) {
       this.roundResolve();
       this.roundResolve = null;

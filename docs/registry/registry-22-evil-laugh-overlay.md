@@ -12,7 +12,7 @@ Record an evil laugh and overlay it on a looping GIF; players may plug ears for 
 
 ## Long Description
 
-Players record an evil laugh; the app overlays the audio on a GIF or short video and plays for others. Can include pitch shifting and effects. Optionally allow players to mute/plug ears as a reaction mini-game.
+Players have 2 minutes to select a gif. The gif ideally involves someone laughing or something similar. Once all users have selected a gif in secret, each user is then prompted to plug their ears. One by one users phones will indicate it's their turns to record. They will record themselves then align the laugh to match at the correct time of the gif, then mark themselves as complete. They will be given 60 seconds for their turn entirely.
 
 ## Target Platforms
 
