@@ -1,18 +1,18 @@
 /**
  * server/src/games/registry-14-dont-get-caught/index.ts
  *
- * "Don't Get Caught" — run from supernatural guards on a procedural map.
+ * "Don't Get Caught" — run from guards on a procedural map.
  *
  * Game Rules
  * ──────────
  * • Players spawn on a procedurally-generated tile map and move via joystick
  *   or device tilt.
- * • Guards patrol waypoints; there is NO hiding mechanic — just run.
- * • Guards are supernatural: they move through walls, but LOS is still blocked
- *   by walls for detection purposes.
+ * • Guards patrol waypoints and respect walls (axis-sliding collision).
  * • Each round the map is regenerated and one extra guard appears
  *   (round 1 = 1 guard, round 2 = 2, …, max 4).
  * • If a guard has LOS to a player, that player's detection meter fills.
+ *   Detection is faster when the player is near the centre of the guard's
+ *   vision cone (direct line of sight boost).
  *   At 100 the player is caught: respawned and a catch is charged.
  * • After CATCH_LIMIT catches the player is eliminated.
  * • Survivors score SURVIVAL_POINTS at round end.
@@ -22,6 +22,7 @@
  * • Smooth patrol: facing angle is lerped rather than snapped — no twitching.
  * • Wander offset drifts slowly so guards aren't perfectly predictable.
  * • Occasional direction reversal for unpredictability.
+ * • Guards collide with walls (axis-sliding), same as players.
  * • On alert (detection meter >= ALERT_THRESHOLD): enters "alert" mode.
  * • On full detection (meter >= 100): enters "chase" mode.
  * • After player is caught: guard returns to patrol immediately.
@@ -33,9 +34,9 @@
  *
  * Server Update Loop (20 Hz)
  * ──────────────────────────
- *   1. Move all guards (ignore walls, smooth angle lerp)
+ *   1. Move all guards (wall collision + smooth angle lerp)
  *   2. For each player, run LOS check against each guard
- *   3. Update detection meters
+ *   3. Update detection meters (with direct LOS boost)
  *   4. Handle catches / eliminations
  *   5. Apply player-player push-apart collision
  */
@@ -76,9 +77,16 @@ const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
 const CAUGHT_PENALTY = 20;
-const FOV_HALF_ANGLE = Math.PI / 3; // 60° each side
-const GUARD_RANGE = 7;
+const FOV_HALF_ANGLE = Math.PI / 4; // 45° each side = 90° total cone
+const GUARD_RANGE = 5;
 const ALERT_THRESHOLD = 30;
+
+/** Direct LOS bonus: if angle to player is within this from center, detection is boosted. */
+const DIRECT_LOS_HALF_ANGLE = Math.PI / 12; // 15° each side = 30° "direct" zone
+const DIRECT_LOS_MULTIPLIER = 4; // 4x faster detection when dead center
+
+/** Guard bounding-box half-size for wall collision (tiles). Slightly larger than players. */
+const GUARD_HALF = 0.45;
 
 /** Max guards regardless of round number. */
 const MAX_GUARDS = 4;
@@ -93,7 +101,7 @@ const REVERSE_PROBABILITY = 0.004;
 const WANDER_RADIUS = 2.0;
 
 /** Player bounding-box half-size for wall collision (tiles). Should be < 0.5. */
-const PLAYER_HALF = 0.4;
+const PLAYER_HALF = 0.3;
 
 /** Player-player soft push radius (tiles). */
 const PLAYER_COLLISION_RADIUS = 0.55;
@@ -401,7 +409,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
   /**
    * Move entity towards (targetX, targetY) at most `speed` tiles.
-   * Guards pass through walls (no walkability check).
+   * Guards respect wall collision with axis-sliding (same as players).
    * Facing angle is lerped — no snapping to prevent twitching.
    * Returns true when arrived at destination.
    */
@@ -421,15 +429,42 @@ export default class DontGetCaughtGame extends BaseGame {
     const desiredAngle = Math.atan2(dy, dx);
     entity.facingAngle = lerpAngle(entity.facingAngle, desiredAngle, ANGLE_LERP_RATE);
 
+    let moveX: number;
+    let moveY: number;
     if (dist <= speed) {
-      entity.x = targetX;
-      entity.y = targetY;
-      return true;
+      moveX = targetX;
+      moveY = targetY;
+    } else {
+      moveX = entity.x + (dx / dist) * speed;
+      moveY = entity.y + (dy / dist) * speed;
     }
 
-    entity.x += (dx / dist) * speed;
-    entity.y += (dy / dist) * speed;
-    return false;
+    // Wall collision with axis-sliding (same approach as player movement)
+    if (this._guardPositionWalkable(moveX, moveY)) {
+      entity.x = moveX;
+      entity.y = moveY;
+    } else if (this._guardPositionWalkable(moveX, entity.y)) {
+      entity.x = moveX;
+    } else if (this._guardPositionWalkable(entity.x, moveY)) {
+      entity.y = moveY;
+    }
+    // Fully blocked — no movement
+
+    return dist <= speed;
+  }
+
+  /**
+   * Returns true only if all 4 corners of the guard bounding box at (x, y)
+   * are on walkable tiles.
+   */
+  private _guardPositionWalkable(x: number, y: number): boolean {
+    const h = GUARD_HALF;
+    return (
+      isWalkable(Math.floor(x - h), Math.floor(y - h)) &&
+      isWalkable(Math.floor(x + h), Math.floor(y - h)) &&
+      isWalkable(Math.floor(x - h), Math.floor(y + h)) &&
+      isWalkable(Math.floor(x + h), Math.floor(y + h))
+    );
   }
 
   // ── Detection ─────────────────────────────────────────────────────────────
@@ -454,10 +489,22 @@ export default class DontGetCaughtGame extends BaseGame {
           seenByAnyGuard = true;
 
           // Detection rate increases with proximity
-          const dist = Math.sqrt((guard.x - player.x) ** 2 + (guard.y - player.y) ** 2);
+          const dx = guard.x - player.x;
+          const dy = guard.y - player.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
           const proximity = Math.max(0, 1 - dist / GUARD_RANGE); // 1 at point blank, 0 at edge of range
-          const increment =
+          let increment =
             BASE_DETECTION_INCREMENT * (1 + proximity * DETECTION_PROXIMITY_MULTIPLIER);
+
+          // Direct LOS boost: if player is near the center of the guard's vision cone,
+          // detection is dramatically faster (they're staring right at you)
+          const angleToPlayer = Math.atan2(player.y - guard.y, player.x - guard.x);
+          let angleDiff = angleToPlayer - guard.facingAngle;
+          while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+          while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+          if (Math.abs(angleDiff) < DIRECT_LOS_HALF_ANGLE) {
+            increment *= DIRECT_LOS_MULTIPLIER;
+          }
 
           player.detectionMeter = Math.min(100, player.detectionMeter + increment);
 

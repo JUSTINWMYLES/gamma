@@ -15,6 +15,8 @@
   import { TILE_SIZE_PX, TILE } from "../../../../shared/types";
   import OddOneOutTV from "../../games/viewer/OddOneOutTV.svelte";
   import ShaveYakTV from "../../games/viewer/ShaveYakTV.svelte";
+  import EvilLaughTV from "../../games/viewer/EvilLaughTV.svelte";
+  import LowballMarketplaceTV from "../../games/viewer/LowballMarketplaceTV.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -22,6 +24,8 @@
   // ── Game routing ──────────────────────────────────────────────────
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
+  $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
+  $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -36,7 +40,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -90,21 +94,50 @@
     for (const g of guards) {
       const gx = g.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
       const gy = g.y * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-      const range = 7 * TILE_SIZE_PX;
-      const fov = Math.PI / 3;
+      const range = 5 * TILE_SIZE_PX;
+      const fov = Math.PI / 4;
 
-      // Vision cone
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(gx, gy);
-      ctx.arc(gx, gy, range, g.facingAngle - fov, g.facingAngle + fov);
-      ctx.closePath();
-      ctx.fillStyle =
+      // Vision cone — clipped against walls via ray-marching
+      const coneColor =
         g.guardMode === "chase"
           ? "rgba(239,68,68,0.18)"
           : g.guardMode === "alert"
           ? "rgba(245,158,11,0.14)"
           : "rgba(99,102,241,0.10)";
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+
+      // Cast rays across the cone to clip against walls
+      const RAY_STEPS = 40;
+      const startAngle = g.facingAngle - fov;
+      const endAngle = g.facingAngle + fov;
+      for (let r = 0; r <= RAY_STEPS; r++) {
+        const angle = startAngle + (endAngle - startAngle) * (r / RAY_STEPS);
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+
+        // March along ray in small steps, stop at wall or max range
+        let rayLen = range;
+        const stepSize = TILE_SIZE_PX * 0.5;
+        for (let d = stepSize; d <= range; d += stepSize) {
+          const checkX = gx + cosA * d;
+          const checkY = gy + sinA * d;
+          const tCol = Math.floor(checkX / TILE_SIZE_PX);
+          const tRow = Math.floor(checkY / TILE_SIZE_PX);
+          const tileIdx = tRow * mapWidth + tCol;
+          const tileId = tiles[tileIdx] ?? TILE.WALL;
+          if (tileId === TILE.WALL || tCol < 0 || tRow < 0 || tCol >= mapWidth || tRow >= mapHeight) {
+            rayLen = d;
+            break;
+          }
+        }
+
+        ctx.lineTo(gx + cosA * rayLen, gy + sinA * rayLen);
+      }
+      ctx.closePath();
+      ctx.fillStyle = coneColor;
       ctx.fill();
       ctx.restore();
 
@@ -176,6 +209,10 @@
 
 {#if isOddOneOut}
   <OddOneOutTV {room} {state} />
+{:else if isEvilLaugh}
+  <EvilLaughTV {room} {state} />
+{:else if isLowball}
+  <LowballMarketplaceTV {room} {state} />
 {:else if isShaveYak}
   <ShaveYakTV {room} {state} />
 {:else}
