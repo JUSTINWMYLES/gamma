@@ -31,7 +31,6 @@ export interface PlayerState {
   // registry-14
   x: number;
   y: number;
-  isHiding: boolean;
   isDetected: boolean;
   detectionMeter: number;
   timesCaught: number;
@@ -44,6 +43,7 @@ export interface GameConfig {
 }
 
 export interface GuardState {
+  id: string;
   x: number;
   y: number;
   facingAngle: number;
@@ -63,17 +63,71 @@ export interface RoomState {
   roundDurationSecs: number;
   players: Map<string, PlayerState>;
   gameConfig: GameConfig;
-  guard: GuardState;
+  /** Multiple guards, keyed by index string ("0", "1", …). */
+  guards: Map<string, GuardState>;
+  /** JSON-serialised flat tile array for the current procedural map. */
+  mapTiles: string;
+  mapWidth: number;
+  mapHeight: number;
+  // Setup criteria
+  locationMode: "same" | "remote" | "";
+  activityLevel: "none" | "some" | "full" | "";
+  hasSecondaryDisplay: boolean;
+  setupStep: number;
 }
 
 /** Tile IDs from the server tilemap — shared knowledge for rendering. */
 export const TILE = {
   WALL: 1,
   FLOOR: 0,
-  BUSH: 2,
-  CRATE: 3,
 } as const;
 
-export const MAP_WIDTH = 16;
-export const MAP_HEIGHT = 10;
-export const TILE_SIZE_PX = 48; // pixels per tile in the TV renderer
+export const TILE_SIZE_PX = 36; // pixels per tile — smaller to fit the larger 24×16 map
+
+// ── Game registry (client-side metadata for filtering / display) ──────────────
+
+export interface GameMeta {
+  id: string;
+  label: string;
+  description: string;
+  activityLevel: "none" | "some" | "full";
+  requiresSameRoom: boolean;
+  requiresSecondaryDisplay: boolean;
+}
+
+export const GAME_REGISTRY: GameMeta[] = [
+  {
+    id: "registry-14-dont-get-caught",
+    label: "Don't Get Caught",
+    description: "Avoid supernatural guards on a procedural map. More guards each round.",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
+];
+
+/**
+ * Returns null if the game matches all setup criteria, otherwise a string
+ * explaining why it is unavailable given the current setup.
+ */
+export function getGameUnavailableReason(
+  game: GameMeta,
+  state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay">,
+): string | null {
+  if (game.requiresSameRoom && state.locationMode === "remote") {
+    return "Requires same-room play";
+  }
+  if (game.requiresSecondaryDisplay && !state.hasSecondaryDisplay) {
+    return "Requires a TV / secondary display";
+  }
+  if (state.activityLevel !== "" && game.activityLevel !== state.activityLevel) {
+    // Allow same or less activity than selected
+    const levels: Array<"none" | "some" | "full"> = ["none", "some", "full"];
+    const selected = levels.indexOf(state.activityLevel as "none" | "some" | "full");
+    const required = levels.indexOf(game.activityLevel);
+    if (required > selected) {
+      return `Requires ${game.activityLevel} activity`;
+    }
+  }
+  return null;
+}

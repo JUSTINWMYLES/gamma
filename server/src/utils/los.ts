@@ -48,11 +48,11 @@ export function isWall(map: TileMap, col: number, row: number): boolean {
 }
 
 /**
- * Digital Differential Analyser (DDA) ray cast.
+ * Grid-crossing DDA ray cast.
  * Returns true when the line from `from` to `to` is unobstructed by walls.
  *
- * The ray steps through each tile boundary and checks whether
- * the tile it enters is a wall tile.
+ * Steps only to actual tile-boundary crossings so a ray passing through
+ * the exact corner of a wall tile (diagonal case) does NOT count as blocked.
  */
 export function hasLineOfSight(
   map: TileMap,
@@ -61,17 +61,64 @@ export function hasLineOfSight(
 ): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 2);
 
-  if (steps === 0) return true; // same tile
+  if (dx === 0 && dy === 0) return true; // same position
 
-  const stepX = dx / steps;
-  const stepY = dy / steps;
+  // Current tile
+  let tileX = Math.floor(from.x);
+  let tileY = Math.floor(from.y);
 
-  for (let i = 1; i <= steps; i++) {
-    const cx = Math.floor(from.x + stepX * i);
-    const cy = Math.floor(from.y + stepY * i);
-    if (isWall(map, cx, cy)) return false;
+  const destTileX = Math.floor(to.x);
+  const destTileY = Math.floor(to.y);
+
+  const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+  const stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+
+  // tMax: parametric distance (t in [0,1]) to next vertical/horizontal boundary
+  // tDelta: parametric distance between consecutive boundaries
+  const tDeltaX = stepX !== 0 ? Math.abs(1 / dx) : Infinity;
+  const tDeltaY = stepY !== 0 ? Math.abs(1 / dy) : Infinity;
+
+  let tMaxX = stepX > 0
+    ? (Math.ceil(from.x) - from.x) * tDeltaX
+    : stepX < 0
+      ? (from.x - Math.floor(from.x)) * tDeltaX
+      : Infinity;
+  // If we're exactly on a boundary, skip to the next one
+  if (tMaxX === 0) tMaxX = tDeltaX;
+
+  let tMaxY = stepY > 0
+    ? (Math.ceil(from.y) - from.y) * tDeltaY
+    : stepY < 0
+      ? (from.y - Math.floor(from.y)) * tDeltaY
+      : Infinity;
+  if (tMaxY === 0) tMaxY = tDeltaY;
+
+  // Walk through tiles until we reach the destination tile
+  while (tileX !== destTileX || tileY !== destTileY) {
+    if (tMaxX < tMaxY) {
+      // Crossing a vertical boundary — enter a new column
+      tileX += stepX;
+      tMaxX += tDeltaX;
+      if (tileX === destTileX && tileY === destTileY) break;
+      if (isWall(map, tileX, tileY)) return false;
+    } else if (tMaxY < tMaxX) {
+      // Crossing a horizontal boundary — enter a new row
+      tileY += stepY;
+      tMaxY += tDeltaY;
+      if (tileX === destTileX && tileY === destTileY) break;
+      if (isWall(map, tileX, tileY)) return false;
+    } else {
+      // Exact corner crossing — ray grazes the shared corner of 4 tiles.
+      // Neither the diagonal tile nor the two orthogonal neighbours are
+      // entered; just advance both axes without a wall check.
+      tileX += stepX;
+      tileY += stepY;
+      tMaxX += tDeltaX;
+      tMaxY += tDeltaY;
+      if (tileX === destTileX && tileY === destTileY) break;
+      // No wall check here — corner graze does not enter any tile.
+    }
   }
   return true;
 }

@@ -2,16 +2,47 @@
  * client/shared/colyseusClient.ts
  *
  * Shared Colyseus connection helpers used by both TV and phone clients.
- * The server URL is injected at build time via Vite define (__SERVER_URL__).
+ *
+ * Server URL resolution (in priority order):
+ *   1. Build-time define: __SERVER_URL__ (set via Vite `define` in vite.config.ts)
+ *   2. Runtime env var:   import.meta.env.VITE_SERVER_URL
+ *   3. Auto-derived:      ws(s)://<same-host-as-page>:2567
+ *
+ * The auto-derive strategy (3) means that when a phone opens the page via the
+ * host machine's LAN IP (e.g. http://192.168.1.5:5174), the server URL is
+ * automatically resolved to ws://192.168.1.5:2567 — no manual config needed.
  */
 
 import * as Colyseus from "colyseus.js";
 
 // __SERVER_URL__ is replaced at build time by Vite
 declare const __SERVER_URL__: string;
-const SERVER_URL: string = typeof __SERVER_URL__ !== "undefined"
-  ? __SERVER_URL__
-  : (import.meta.env?.VITE_SERVER_URL ?? "ws://localhost:2567");
+
+function resolveServerUrl(): string {
+  // 1. Build-time override (production builds can bake in the server URL)
+  if (typeof __SERVER_URL__ !== "undefined" && __SERVER_URL__) {
+    return __SERVER_URL__;
+  }
+
+  // 2. Explicit runtime env var
+  if (import.meta.env?.VITE_SERVER_URL) {
+    return import.meta.env.VITE_SERVER_URL as string;
+  }
+
+  // 3. Auto-derive from page origin so cross-device LAN access works out of the box.
+  //    The Vite dev servers (ports 5173/5174) are served from the same host as
+  //    the Colyseus server (port 2567).  Using the page's hostname keeps this
+  //    working whether the user opens via localhost, 127.0.0.1, or a LAN IP.
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${protocol}://${window.location.hostname}:2567`;
+  }
+
+  // Fallback for SSR / test environments
+  return "ws://localhost:2567";
+}
+
+const SERVER_URL: string = resolveServerUrl();
 
 let _client: Colyseus.Client | null = null;
 

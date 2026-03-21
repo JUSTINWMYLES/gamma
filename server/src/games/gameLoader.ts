@@ -17,7 +17,7 @@
  * 4. Implement runRound(), scoreRound(), handleInput()
  * 5. The game is automatically available — no registration step needed
  *
- * See docs/onboarding.md for the full guide.
+ * See docs/developers/contributing-games.md for the full guide.
  */
 
 import path from "path";

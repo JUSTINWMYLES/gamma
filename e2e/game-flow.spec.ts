@@ -154,7 +154,7 @@ test.describe("Registry-14 full game flow", () => {
     // Set 1 round, fast timer
     await tvPage.click("button:has-text(\"Don't Get Caught\")");
     // Change time limit to 10s for faster test
-    await tvPage.fill('input[type="number"][min="20"]', "10");
+    await tvPage.fill('input[type="number"][min="10"]', "10");
     await tvPage.click('[data-testid="start-btn"]');
 
     await expect(phone1.locator('[data-testid="phone-instructions"]')).toBeVisible({ timeout: 10_000 });
@@ -191,16 +191,16 @@ test.describe("Registry-14 full game flow", () => {
     await phone1.click('[data-testid="join-btn"]');
 
     await tvPage.click("button:has-text(\"Don't Get Caught\")");
-    // Set shortest possible time limit (20s minimum per config)
-    await tvPage.fill('input[type="number"][min="20"]', "20");
+    // Set shortest possible time limit (10s minimum per config)
+    await tvPage.fill('input[type="number"][min="10"]', "10");
     await tvPage.click('[data-testid="start-btn"]');
 
     await expect(phone1.locator('[data-testid="phone-instructions"]')).toBeVisible({ timeout: 10_000 });
     await phone1.click('[data-testid="got-it-btn"]');
 
-    // Wait for scoreboard (20s round + ~7s for round_end + scoreboard phases)
+    // Wait for scoreboard (10s round + ~7s for round_end + scoreboard phases)
     await expect(tvPage.locator('[data-testid="scoreboard-screen"]')).toBeVisible({
-      timeout: 40_000,
+      timeout: 60_000,
     });
 
     // Scoreboard should show player name
@@ -220,7 +220,7 @@ test.describe("Registry-14 full game flow", () => {
     await phone1.click('[data-testid="join-btn"]');
 
     await tvPage.click("button:has-text(\"Don't Get Caught\")");
-    await tvPage.fill('input[type="number"][min="20"]', "30");
+    await tvPage.fill('input[type="number"][min="10"]', "30");
     await tvPage.click('[data-testid="start-btn"]');
 
     await phone1.click('[data-testid="got-it-btn"]').catch(() => {}); // may not be on instructions
