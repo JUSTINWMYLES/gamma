@@ -1,0 +1,13 @@
+apiVersion: v2
+name: gamma-operator
+description: Helm chart for the Gamma operator hub component
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - gamma
+  - game-server
+  - operator
+home: https://github.com/gamma-io/gamma
+maintainers:
+  - name: gamma-team

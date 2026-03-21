@@ -1,0 +1,32 @@
+{
+  "name": "gamma",
+  "version": "0.1.0",
+  "description": "Networked multiplayer party game framework — Jackbox-style, phone controllers + TV display",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client/tv",
+    "client/phone"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm install --workspace=server && npm install --workspace=client/tv && npm install --workspace=client/phone",
+    "dev": "concurrently -k -n server,tv,phone -c cyan,green,yellow \"npm run dev --workspace=server\" \"npm run dev --workspace=client/tv\" \"npm run dev --workspace=client/phone\"",
+    "dev:server": "npm run dev --workspace=server",
+    "dev:tv": "npm run dev --workspace=client/tv",
+    "dev:phone": "npm run dev --workspace=client/phone",
+    "build": "npm run build --workspace=server && npm run build --workspace=client/tv && npm run build --workspace=client/phone",
+    "test": "npm run test --workspace=server",
+    "test:e2e": "npx playwright test",
+    "smoke": "node scripts/smoke-test.mjs",
+    "lint": "eslint 'server/src/**/*.ts' 'client/**/*.{ts,svelte}'"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "@playwright/test": "^1.44.0",
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

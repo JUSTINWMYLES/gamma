@@ -1,0 +1,113 @@
+# k8s/crds/gamma-game-deployment.yaml
+#
+# GammaGameDeployment — declares a desired game server deployment.
+# The spoke controller watches these and creates/scales Pods accordingly.
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gammagamedeployments.gamma.io
+spec:
+  group: gamma.io
+  names:
+    kind: GammaGameDeployment
+    listKind: GammaGameDeploymentList
+    plural: gammagamedeployments
+    singular: gammagamedeployment
+    shortNames: [ggd]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [gameId, image]
+              properties:
+                gameId:
+                  type: string
+                  description: Registry ID of the game plugin (e.g. "registry-14-dont-get-caught")
+                image:
+                  type: string
+                  description: Docker image for the game server
+                version:
+                  type: string
+                  default: latest
+                replicas:
+                  type: integer
+                  default: 1
+                  minimum: 0
+                  maximum: 100
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "50m"
+                        memory:
+                          type: string
+                          default: "64Mi"
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "200m"
+                        memory:
+                          type: string
+                          default: "256Mi"
+                config:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Game-specific environment variables
+                targetCluster:
+                  type: string
+                  description: GammaCluster name to deploy to (empty = hub decides)
+                port:
+                  type: integer
+                  default: 2567
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Deploying, Running, Degraded, Failed]
+                readyReplicas:
+                  type: integer
+                totalReplicas:
+                  type: integer
+                serviceEndpoint:
+                  type: string
+                lastUpdated:
+                  type: string
+                  format: date-time
+      subresources:
+        status: {}
+        scale:
+          specReplicasPath: .spec.replicas
+          statusReplicasPath: .status.totalReplicas
+      additionalPrinterColumns:
+        - name: Game
+          type: string
+          jsonPath: .spec.gameId
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Ready
+          type: integer
+          jsonPath: .status.readyReplicas
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
