@@ -26,6 +26,10 @@
     sendSetup({ locationMode: "", activityLevel: "", hasSecondaryDisplay: false, setupStep: 1 });
   }
 
+  function kickPlayer(targetId: string) {
+    room.send("kick_player", { targetId });
+  }
+
   function selectGame(id: string) {
     room.send("select_game", { gameId: id });
   }
@@ -41,6 +45,8 @@
   $: setupStep = state.setupStep ?? 0;
   $: setupDone = setupStep >= 4;
   $: isHost = true;
+  $: allPlayersReady = [...state.players.values()].every((p) => !p.isConnected || p.isReady);
+  $: canStart = !!state.selectedGame && state.players.size >= 1 && allPlayersReady;
 
   import { onMount } from "svelte";
   onMount(() => {
@@ -146,6 +152,11 @@
                 {:else}
                   <span class="text-gray-500 text-sm">Waiting...</span>
                 {/if}
+                <button
+                  class="text-red-400 hover:text-red-300 text-xs font-bold px-2 py-1 rounded bg-gray-700 hover:bg-red-900 transition-colors"
+                  on:click={() => kickPlayer(player.id)}
+                  title="Kick {player.name}"
+                >Kick</button>
               </li>
             {/each}
             {#if state.players.size === 0}
@@ -193,11 +204,11 @@
           </div>
         {/if}
         <button
-          class="w-full py-4 rounded-xl text-xl font-bold transition-colors {state.selectedGame && state.players.size >= 1 ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}"
-          disabled={!state.selectedGame || state.players.size < 1}
+          class="w-full py-4 rounded-xl text-xl font-bold transition-colors {canStart ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}"
+          disabled={!canStart}
           on:click={start}
           data-testid="start-btn"
-        >Start Game</button>
+        >{canStart ? 'Start Game' : !state.selectedGame ? 'Pick a game' : !allPlayersReady ? 'Waiting for players...' : 'Start Game'}</button>
       </div>
     </div>
   {/if}

@@ -90,8 +90,12 @@
       error = `Server error ${code}: ${msg ?? "unknown"}`;
     });
 
-    r.onLeave(() => {
-      error = "Disconnected from server.";
+    r.onLeave((code: number) => {
+      if (code === 4001) {
+        error = "You were kicked from the room by the host.";
+      } else {
+        error = "Disconnected from server.";
+      }
     });
   }
 
@@ -204,7 +208,7 @@
       {:else if phase === "scoreboard"}
         <ViewerScoreboard state={typedState} {sortedPlayers} />
       {:else if phase === "game_over"}
-        <ViewerGameOver state={typedState} {sortedPlayers} />
+        <ViewerGameOver room={typedRoom} state={typedState} {sortedPlayers} />
       {/if}
     {/if}
 
@@ -251,7 +255,7 @@
           <p class="text-xl animate-pulse">Loading...</p>
         </div>
       {:else if phase === "instructions"}
-        <PlayerInstructions room={typedRoom} state={typedState} />
+        <PlayerInstructions room={typedRoom} state={typedState} {me} />
       {:else if phase === "countdown"}
         <PlayerCountdown state={typedState} />
       {:else if phase === "in_round"}
@@ -261,7 +265,7 @@
       {:else if phase === "scoreboard"}
         <PlayerScoreboard state={typedState} {me} />
       {:else if phase === "game_over"}
-        <PlayerGameOver state={typedState} {me} />
+        <PlayerGameOver room={typedRoom} state={typedState} {me} />
       {/if}
     {/if}
   {/if}

@@ -9,6 +9,8 @@
   $: totalCount = state.players.size;
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
+  $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
+  $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="instructions-screen">
@@ -33,6 +35,29 @@
         <li>🎯 Stay on target — missing makes the yak move!</li>
         <li>🔥 Build combos for bonus points</li>
         <li>⏱️ Shave as much as you can before time runs out</li>
+      </ul>
+    </div>
+  {:else if isEvilLaugh}
+    <h1 class="text-5xl font-black text-indigo-400">Evil Laugh Overlay</h1>
+    <div class="max-w-2xl text-center space-y-4 text-gray-200 text-lg">
+      <p>Pick a GIF, dub a laugh, vote for the best!</p>
+      <ul class="text-left space-y-2 bg-gray-800 rounded-xl p-6">
+        <li>🎬 Everyone picks a GIF from the pool</li>
+        <li>🔀 GIFs get shuffled — you'll dub someone else's pick</li>
+        <li>🎤 One at a time, record your evil laugh over the GIF</li>
+        <li>📺 Watch each creation on the big screen</li>
+        <li>🗳️ Vote for the funniest evil laugh!</li>
+      </ul>
+    </div>
+  {:else if isLowball}
+    <h1 class="text-5xl font-black text-indigo-400">Lowball Marketplace</h1>
+    <div class="max-w-2xl text-center space-y-4 text-gray-200 text-lg">
+      <p>Bid low, write funny, vote for the best!</p>
+      <ul class="text-left space-y-2 bg-gray-800 rounded-xl p-6">
+        <li>🛒 Browse ridiculous items in a fake marketplace</li>
+        <li>💰 Place your lowball bids — go low, but not too low!</li>
+        <li>📝 Write funny messages to the sellers</li>
+        <li>🗳️ Vote for the funniest bids and messages!</li>
       </ul>
     </div>
   {:else}

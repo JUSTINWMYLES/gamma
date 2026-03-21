@@ -2,15 +2,15 @@
   /**
    * TV game component for "Evil Laugh Overlay" (registry-26).
    *
-   * Displays the shared-screen view:
-   *   - Recording countdown while players record
-   *   - Gallery: plays each entry's audio over a CSS-animated villain scene
-   *   - Vote progress
-   *   - Round results with vote counts + scores
+   * Displays the shared-screen view through the new GIF-based flow:
+   *   gif_selection → recording (live per-player) → playback → voting → results
    *
    * Server messages listened:
-   *   start_recording, gallery_entry, gallery_done,
-   *   voting_start, vote_count_update, round_result, round_skipped
+   *   gif_selection_start, gif_selection_update,
+   *   recording_turn, recording_submitted,
+   *   playback_entry, playback_done,
+   *   voting_start, vote_count_update,
+   *   round_result, round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -21,25 +21,43 @@
 
   // ── Sub-phase state ──────────────────────────────────────────────
 
-  type SubPhase = "waiting" | "recording" | "gallery" | "gallery_done" | "voting" | "results";
+  type SubPhase =
+    | "waiting"
+    | "gif_selection"
+    | "recording"
+    | "playback"
+    | "playback_done"
+    | "voting"
+    | "results";
+
   let subPhase: SubPhase = "waiting";
 
-  // ── Recording phase ──────────────────────────────────────────────
+  // ── GIF Selection phase ─────────────────────────────────────────
 
+  let selectionTimeLeft = 0;
+  let selectionEndTime = 0;
+  let selectionTimer: ReturnType<typeof setInterval> | null = null;
+  let selectionsSubmitted = 0;
+  let selectionsTotal = 0;
+
+  // ── Recording phase ─────────────────────────────────────────────
+
+  let recorderName = "";
+  let recorderGifUrl = "";
+  let recorderGifLabel = "";
   let recordingTimeLeft = 0;
   let recordingEndTime = 0;
   let recordingTimer: ReturnType<typeof setInterval> | null = null;
+  let recorderSubmitted = false;
 
-  // ── Gallery phase ────────────────────────────────────────────────
+  // ── Playback phase ──────────────────────────────────────────────
 
-  let currentEntryName = "";
-  let currentEntryScene = "";
-  let currentAudioSrc = "";
-  let galleryIndex = 0;
-  let galleryTotal = 0;
+  let playbackName = "";
+  let playbackGifUrl = "";
+  let playbackGifLabel = "";
   let audioEl: HTMLAudioElement | null = null;
 
-  // ── Voting phase ─────────────────────────────────────────────────
+  // ── Voting phase ────────────────────────────────────────────────
 
   let votingTimeLeft = 0;
   let votingEndTime = 0;
@@ -48,47 +66,33 @@
   let totalVoters = 0;
   let votingEntries: { playerId: string; playerName: string }[] = [];
 
-  // ── Results ──────────────────────────────────────────────────────
+  // ── Results ─────────────────────────────────────────────────────
 
   let results: {
     winner: string | null;
     scores: Record<string, number>;
-    entries: { playerId: string; playerName: string; sceneId: string; voteCount: number }[];
+    entries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string; voteCount: number }[];
   } | null = null;
 
-  // Round skipped
   let roundSkipped = false;
   let skipReason = "";
 
-  // ── Scene config ─────────────────────────────────────────────────
-
-  const SCENE_CONFIG: Record<string, { bg: string; accent: string; label: string }> = {
-    "thunderstorm":    { bg: "from-gray-900 via-blue-900 to-gray-800",    accent: "text-blue-300",   label: "Thunderstorm" },
-    "volcano-lair":    { bg: "from-red-950 via-orange-900 to-red-900",    accent: "text-orange-300", label: "Volcano Lair" },
-    "haunted-castle":  { bg: "from-gray-900 via-purple-950 to-gray-900",  accent: "text-purple-300", label: "Haunted Castle" },
-    "evil-laboratory": { bg: "from-green-950 via-emerald-900 to-gray-900",accent: "text-emerald-300",label: "Evil Laboratory" },
-    "dark-throne":     { bg: "from-gray-950 via-yellow-950 to-gray-900",  accent: "text-yellow-300", label: "Dark Throne" },
-    "sinister-forest": { bg: "from-green-950 via-gray-900 to-emerald-950",accent: "text-green-300",  label: "Sinister Forest" },
-    "underwater-base": { bg: "from-blue-950 via-cyan-900 to-blue-900",    accent: "text-cyan-300",   label: "Underwater Base" },
-    "space-station":   { bg: "from-gray-950 via-indigo-950 to-gray-900",  accent: "text-indigo-300", label: "Space Station" },
-  };
-
-  // ── Timer helpers ────────────────────────────────────────────────
+  // ── Timer helpers ───────────────────────────────────────────────
 
   function clearAllTimers() {
+    if (selectionTimer) { clearInterval(selectionTimer); selectionTimer = null; }
     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
   }
 
-  // ── Audio playback ───────────────────────────────────────────────
+  // ── Audio playback ──────────────────────────────────────────────
 
   function playAudio(base64: string) {
     stopAudio();
-    // Reconstruct data URL from raw base64
     const dataUrl = `data:audio/webm;base64,${base64}`;
     audioEl = new Audio(dataUrl);
     audioEl.play().catch(() => {
-      // Autoplay might be blocked — that's ok, visual scene still displays
+      // Autoplay might be blocked
     });
   }
 
@@ -100,10 +104,45 @@
     }
   }
 
-  // ── Message handlers ─────────────────────────────────────────────
+  // ── Message handlers ────────────────────────────────────────────
 
-  function onStartRecording(data: { durationMs: number; serverTimestamp: number }) {
+  function onGifSelectionStart(data: {
+    gifs: { url: string; label: string }[];
+    durationMs: number;
+    serverTimestamp: number;
+  }) {
+    subPhase = "gif_selection";
+    selectionEndTime = data.serverTimestamp + data.durationMs;
+    selectionTimeLeft = Math.max(0, (selectionEndTime - Date.now()) / 1000);
+    selectionsSubmitted = 0;
+    selectionsTotal = [...state.players.values()].filter((p) => p.isConnected).length;
+
+    selectionTimer = setInterval(() => {
+      selectionTimeLeft = Math.max(0, (selectionEndTime - Date.now()) / 1000);
+    }, 100);
+  }
+
+  function onGifSelectionUpdate(data: { submitted: number; total: number }) {
+    selectionsSubmitted = data.submitted;
+    selectionsTotal = data.total;
+  }
+
+  function onRecordingTurn(data: {
+    playerId: string;
+    playerName: string;
+    gifUrl: string;
+    gifLabel: string;
+    durationMs: number;
+    serverTimestamp: number;
+  }) {
     subPhase = "recording";
+    clearAllTimers();
+
+    recorderName = data.playerName;
+    recorderGifUrl = data.gifUrl;
+    recorderGifLabel = data.gifLabel;
+    recorderSubmitted = false;
+
     recordingEndTime = data.serverTimestamp + data.durationMs;
     recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
 
@@ -112,27 +151,30 @@
     }, 100);
   }
 
-  function onGalleryEntry(data: {
+  function onRecordingSubmitted(_data: { playerId: string }) {
+    recorderSubmitted = true;
+  }
+
+  function onPlaybackEntry(data: {
     playerId: string;
     playerName: string;
-    sceneId: string;
+    gifUrl: string;
+    gifLabel: string;
     audioBase64: string;
   }) {
-    subPhase = "gallery";
-    galleryIndex++;
-    currentEntryName = data.playerName;
-    currentEntryScene = data.sceneId;
-    currentAudioSrc = data.audioBase64;
+    subPhase = "playback";
+    playbackName = data.playerName;
+    playbackGifUrl = data.gifUrl;
+    playbackGifLabel = data.gifLabel;
 
-    // Play the audio
     playAudio(data.audioBase64);
   }
 
-  function onGalleryDone() {
-    subPhase = "gallery_done";
+  function onPlaybackDone() {
+    subPhase = "playback_done";
     stopAudio();
-    currentEntryName = "";
-    currentEntryScene = "";
+    playbackName = "";
+    playbackGifUrl = "";
   }
 
   function onVotingStart(data: {
@@ -148,7 +190,6 @@
     votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
     votesIn = 0;
     totalVoters = data.entries.length;
-    galleryTotal = data.entries.length;
 
     votingTimer = setInterval(() => {
       votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
@@ -172,12 +213,15 @@
     skipReason = data.reason;
   }
 
-  // ── Lifecycle ────────────────────────────────────────────────────
+  // ── Lifecycle ───────────────────────────────────────────────────
 
   onMount(() => {
-    room.onMessage("start_recording", onStartRecording);
-    room.onMessage("gallery_entry", onGalleryEntry);
-    room.onMessage("gallery_done", onGalleryDone);
+    room.onMessage("gif_selection_start", onGifSelectionStart);
+    room.onMessage("gif_selection_update", onGifSelectionUpdate);
+    room.onMessage("recording_turn", onRecordingTurn);
+    room.onMessage("recording_submitted", onRecordingSubmitted);
+    room.onMessage("playback_entry", onPlaybackEntry);
+    room.onMessage("playback_done", onPlaybackDone);
     room.onMessage("voting_start", onVotingStart);
     room.onMessage("vote_count_update", onVoteCountUpdate);
     room.onMessage("round_result", onRoundResult);
@@ -190,7 +234,6 @@
   });
 
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
-  $: sceneInfo = SCENE_CONFIG[currentEntryScene] ?? SCENE_CONFIG["thunderstorm"];
   $: sortedResults = results?.entries
     ? [...results.entries].sort((a, b) => b.voteCount - a.voteCount)
     : [];
@@ -200,7 +243,7 @@
 
   <!-- Round header -->
   <p class="text-sm text-gray-400 uppercase tracking-widest">
-    Evil Laugh Overlay — Round {state.currentRound} of {state.gameConfig.roundCount}
+    Evil Laugh Overlay
   </p>
 
   {#if roundSkipped}
@@ -215,95 +258,125 @@
       <p class="text-xl text-gray-300">Getting ready...</p>
     </div>
 
-  {:else if subPhase === "recording"}
-    <!-- Recording phase — TV shows countdown + encouragement -->
+  {:else if subPhase === "gif_selection"}
+    <!-- GIF Selection — TV shows progress -->
     <div class="text-center space-y-8">
-      <h1 class="text-4xl font-black text-red-400 animate-pulse">Recording in Progress!</h1>
+      <h1 class="text-4xl font-black text-purple-400">Pick Your GIFs!</h1>
       <p class="text-7xl font-mono font-black text-white">
-        {Math.ceil(recordingTimeLeft)}
+        {Math.ceil(selectionTimeLeft)}
       </p>
-      <p class="text-xl text-gray-300">Players are recording their best evil laughs...</p>
+      <p class="text-xl text-gray-300">Players are browsing the GIF pool on their phones...</p>
 
       <!-- Player status -->
       <div class="flex gap-4 justify-center flex-wrap">
         {#each [...state.players.values()] as p}
-          <div class="px-4 py-3 bg-gray-800 rounded-xl text-center min-w-[110px]">
+          <div class="px-5 py-3 bg-gray-800 rounded-xl text-center min-w-[120px]">
             <p class="font-semibold text-white">{p.name}</p>
-            <p class="text-xs mt-1 {p.isReady ? 'text-green-400' : 'text-red-400 animate-pulse'}">
-              {p.isReady ? 'Submitted' : 'Recording...'}
+            <p class="text-xs mt-1 {p.isReady ? 'text-green-400' : 'text-yellow-400 animate-pulse'}">
+              {p.isReady ? 'Picked!' : 'Browsing...'}
             </p>
           </div>
         {/each}
       </div>
 
-      <!-- Animated mic icon -->
-      <div class="flex justify-center">
-        <div class="w-24 h-24 rounded-full bg-red-600/30 border-4 border-red-500 flex items-center justify-center animate-pulse">
-          <span class="text-5xl">🎤</span>
+      <!-- Progress -->
+      <div class="w-full max-w-md mx-auto">
+        <div class="flex justify-between text-sm text-gray-400 mb-1">
+          <span>Selections</span>
+          <span>{selectionsSubmitted} / {selectionsTotal}</span>
+        </div>
+        <div class="h-4 bg-gray-700 rounded-full overflow-hidden">
+          <div
+            class="h-full bg-purple-500 rounded-full transition-all"
+            style="width:{selectionsTotal > 0 ? (selectionsSubmitted / selectionsTotal) * 100 : 0}%"
+          ></div>
         </div>
       </div>
     </div>
 
-  {:else if subPhase === "gallery"}
-    <!-- Gallery: show villain scene + play audio -->
-    <div class="w-full max-w-3xl">
-      <!-- Scene backdrop -->
-      <div class="relative rounded-2xl overflow-hidden bg-gradient-to-br {sceneInfo.bg} p-12 min-h-[400px] flex flex-col items-center justify-center gap-6 shadow-2xl">
-        <!-- Scene name badge -->
-        <div class="absolute top-4 right-4 px-3 py-1 bg-black/40 rounded-lg">
-          <p class="text-xs {sceneInfo.accent} font-bold uppercase tracking-widest">{sceneInfo.label}</p>
-        </div>
+  {:else if subPhase === "recording"}
+    <!-- Recording — show who's recording + the GIF they're dubbing -->
+    <div class="text-center space-y-6 w-full max-w-3xl">
+      <h1 class="text-3xl font-black text-red-400 animate-pulse">Recording Live!</h1>
 
-        <!-- Animated atmospheric elements per scene -->
-        {#if currentEntryScene === "thunderstorm"}
-          <div class="absolute inset-0 opacity-20">
-            <div class="absolute top-0 left-1/4 w-px h-full bg-blue-300 animate-pulse"></div>
-            <div class="absolute top-0 left-3/4 w-px h-3/4 bg-blue-200 animate-pulse" style="animation-delay:0.5s"></div>
-          </div>
-        {:else if currentEntryScene === "volcano-lair"}
-          <div class="absolute bottom-0 left-0 right-0 h-1/3 bg-gradient-to-t from-orange-600/30 to-transparent animate-pulse"></div>
-        {:else if currentEntryScene === "haunted-castle"}
-          <div class="absolute inset-0 bg-gradient-to-b from-purple-900/20 via-transparent to-purple-900/30"></div>
-        {:else if currentEntryScene === "evil-laboratory"}
-          <div class="absolute bottom-0 left-0 right-0 h-1/4 bg-gradient-to-t from-green-500/20 to-transparent animate-pulse" style="animation-duration:2s"></div>
-        {:else if currentEntryScene === "dark-throne"}
-          <div class="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(234,179,8,0.1),transparent_70%)]"></div>
-        {:else if currentEntryScene === "sinister-forest"}
-          <div class="absolute inset-0 bg-gradient-to-b from-transparent via-green-900/10 to-green-900/30"></div>
-        {:else if currentEntryScene === "underwater-base"}
-          <div class="absolute inset-0 opacity-20">
-            <div class="absolute top-1/4 left-1/3 w-3 h-3 rounded-full bg-cyan-300 animate-bounce" style="animation-duration:3s"></div>
-            <div class="absolute top-1/2 left-2/3 w-2 h-2 rounded-full bg-cyan-200 animate-bounce" style="animation-duration:2.5s;animation-delay:0.5s"></div>
-            <div class="absolute top-3/4 left-1/2 w-4 h-4 rounded-full bg-cyan-300 animate-bounce" style="animation-duration:3.5s;animation-delay:1s"></div>
-          </div>
-        {:else if currentEntryScene === "space-station"}
-          <div class="absolute inset-0">
-            <div class="absolute top-[10%] left-[20%] w-1 h-1 rounded-full bg-white animate-pulse"></div>
-            <div class="absolute top-[30%] left-[70%] w-1 h-1 rounded-full bg-white animate-pulse" style="animation-delay:0.3s"></div>
-            <div class="absolute top-[60%] left-[40%] w-1.5 h-1.5 rounded-full bg-white animate-pulse" style="animation-delay:0.7s"></div>
-            <div class="absolute top-[80%] left-[80%] w-1 h-1 rounded-full bg-white animate-pulse" style="animation-delay:1s"></div>
-          </div>
+      <div class="relative rounded-2xl overflow-hidden bg-gray-800 shadow-2xl">
+        <!-- The GIF being dubbed -->
+        {#if recorderGifUrl}
+          <img
+            src={recorderGifUrl}
+            alt={recorderGifLabel}
+            class="w-full max-h-[400px] object-contain"
+          />
         {/if}
 
-        <!-- Player name -->
-        <p class="text-sm text-gray-400 uppercase tracking-widest z-10">Presenting...</p>
-        <h2 class="text-5xl font-black text-white z-10 drop-shadow-lg">{currentEntryName}</h2>
+        <!-- Overlay with recorder info -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-6">
+          <p class="text-sm text-gray-400 uppercase tracking-widest">Now dubbing...</p>
+          <p class="text-3xl font-black text-white">{recorderName}</p>
+          <p class="text-sm text-gray-400 mt-1">GIF: {recorderGifLabel}</p>
+        </div>
 
-        <!-- Audio waveform indicator -->
-        <div class="flex items-end gap-1 h-12 z-10">
-          {#each Array(12) as _, i}
+        <!-- Recording indicator -->
+        <div class="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-red-600 rounded-full">
+          <div class="w-3 h-3 rounded-full bg-white animate-pulse"></div>
+          <span class="text-white text-sm font-bold">
+            {recorderSubmitted ? 'DONE' : 'REC'}
+          </span>
+        </div>
+      </div>
+
+      <!-- Timer -->
+      <p class="text-5xl font-mono font-black {recordingTimeLeft < 10 ? 'text-red-400' : 'text-white'}">
+        {Math.ceil(recordingTimeLeft)}
+      </p>
+
+      <!-- Audio waveform indicator -->
+      {#if !recorderSubmitted}
+        <div class="flex items-end gap-1 h-10 justify-center">
+          {#each Array(16) as _, i}
             <div
-              class="w-2 bg-white/60 rounded-full animate-pulse"
-              style="height:{20 + Math.random() * 80}%;animation-delay:{i * 0.08}s;animation-duration:{0.4 + Math.random() * 0.4}s"
+              class="w-2 bg-red-500/60 rounded-full animate-pulse"
+              style="height:{15 + Math.random() * 85}%;animation-delay:{i * 0.06}s;animation-duration:{0.3 + Math.random() * 0.5}s"
             ></div>
           {/each}
         </div>
+      {:else}
+        <p class="text-green-400 font-bold text-lg">Recording submitted! Moving on...</p>
+      {/if}
+    </div>
+
+  {:else if subPhase === "playback"}
+    <!-- Playback: show GIF + play audio -->
+    <div class="w-full max-w-3xl text-center space-y-4">
+      <p class="text-sm text-gray-400 uppercase tracking-widest">Presenting...</p>
+      <h2 class="text-4xl font-black text-white">{playbackName}</h2>
+
+      <div class="relative rounded-2xl overflow-hidden bg-gray-800 shadow-2xl">
+        {#if playbackGifUrl}
+          <img
+            src={playbackGifUrl}
+            alt={playbackGifLabel}
+            class="w-full max-h-[450px] object-contain"
+          />
+        {/if}
+
+        <!-- Audio waveform overlay -->
+        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+          <div class="flex items-end gap-1 h-8 justify-center">
+            {#each Array(20) as _, i}
+              <div
+                class="w-1.5 bg-purple-400/70 rounded-full animate-pulse"
+                style="height:{10 + Math.random() * 90}%;animation-delay:{i * 0.05}s;animation-duration:{0.3 + Math.random() * 0.4}s"
+              ></div>
+            {/each}
+          </div>
+        </div>
       </div>
     </div>
 
-  {:else if subPhase === "gallery_done"}
+  {:else if subPhase === "playback_done"}
     <div class="text-center space-y-4">
-      <h1 class="text-3xl font-bold text-purple-400">Gallery Complete!</h1>
+      <h1 class="text-3xl font-bold text-purple-400">All Entries Played!</h1>
       <p class="text-xl text-gray-300">Time to vote...</p>
     </div>
 
@@ -349,16 +422,26 @@
         <!-- Winner -->
         {#if results.winner}
           {@const winnerEntry = results.entries.find((e) => e.playerId === results?.winner)}
-          <div class="text-center bg-yellow-900/40 border-2 border-yellow-500 rounded-2xl p-6 shadow-lg">
-            <p class="text-sm text-yellow-400 uppercase tracking-widest mb-2">Most Evil Laugh</p>
-            <p class="text-4xl font-black text-yellow-200">{winnerEntry?.playerName ?? "???"}</p>
-            <p class="text-lg text-yellow-400 mt-1">{winnerEntry?.voteCount ?? 0} votes</p>
+          <div class="text-center space-y-4">
+            <div class="bg-yellow-900/40 border-2 border-yellow-500 rounded-2xl p-6 shadow-lg">
+              <p class="text-sm text-yellow-400 uppercase tracking-widest mb-2">Best Evil Laugh</p>
+              <p class="text-4xl font-black text-yellow-200">{winnerEntry?.playerName ?? "???"}</p>
+              <p class="text-lg text-yellow-400 mt-1">{winnerEntry?.voteCount ?? 0} votes</p>
+            </div>
+            <!-- Show winner's GIF -->
+            {#if winnerEntry?.gifUrl}
+              <img
+                src={winnerEntry.gifUrl}
+                alt={winnerEntry.gifLabel}
+                class="w-64 h-40 object-cover rounded-xl mx-auto border-2 border-yellow-500"
+              />
+            {/if}
           </div>
         {/if}
 
         <!-- All entries ranked -->
         <div class="bg-gray-800 rounded-xl p-4">
-          <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Round Scores</p>
+          <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Scores</p>
           <div class="space-y-2">
             {#each sortedResults as entry, i}
               {@const score = results.scores[entry.playerId] ?? 0}
