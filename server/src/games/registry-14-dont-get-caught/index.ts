@@ -5,24 +5,35 @@
  *
  * Game Rules
  * ──────────
- * • Players spawn on a procedurally-generated tile map and move via joystick.
+ * • Players spawn on a procedurally-generated tile map and move via joystick
+ *   or device tilt.
  * • Guards patrol waypoints; there is NO hiding mechanic — just run.
- * • Guards are supernatural: they ignore walls when moving (they can walk
- *   through walls), but LOS is still blocked by walls for detection purposes.
- * • Each round adds one more guard (round 1 = 1 guard, round 2 = 2, …, max 4).
+ * • Guards are supernatural: they move through walls, but LOS is still blocked
+ *   by walls for detection purposes.
+ * • Each round the map is regenerated and one extra guard appears
+ *   (round 1 = 1 guard, round 2 = 2, …, max 4).
  * • If a guard has LOS to a player, that player's detection meter fills.
- *   At 100 the player is caught: respawned and deducted from their catch budget.
+ *   At 100 the player is caught: respawned and a catch is charged.
  * • After CATCH_LIMIT catches the player is eliminated.
  * • Survivors score SURVIVAL_POINTS at round end.
- * • Guards have randomised patrol jitter: random angle deviation and occasional
- *   spontaneous direction-reversal to be less predictable.
- * • Player-player soft collision: players push each other apart instead of
- *   stacking on top of each other.
- * • Map is regenerated each game (seeded from Date.now()).
+ *
+ * Guard behaviour
+ * ───────────────
+ * • Smooth patrol: facing angle is lerped rather than snapped — no twitching.
+ * • Wander offset drifts slowly so guards aren't perfectly predictable.
+ * • Occasional direction reversal for unpredictability.
+ * • On alert (detection meter >= ALERT_THRESHOLD): enters "alert" mode.
+ * • On full detection (meter >= 100): enters "chase" mode.
+ * • After player is caught: guard returns to patrol immediately.
+ *
+ * Player movement
+ * ───────────────
+ * • Sub-tile collision: checks four corners of the player bounding box.
+ * • Player-player soft push-apart collision.
  *
  * Server Update Loop (20 Hz)
  * ──────────────────────────
- *   1. Move all guards (ignore walls, random jitter)
+ *   1. Move all guards (ignore walls, smooth angle lerp)
  *   2. For each player, run LOS check against each guard
  *   3. Update detection meters
  *   4. Handle catches / eliminations
@@ -55,28 +66,35 @@ const TICK_RATE_MS = 50;
 const DETECTION_INCREMENT = 4;
 const DETECTION_DECREMENT = 2;
 
-const BASE_GUARD_SPEED = 2.0;       // tiles/s
+const BASE_GUARD_SPEED = 1.8;       // tiles/s
 const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
 const CAUGHT_PENALTY = 20;
 const FOV_HALF_ANGLE = Math.PI / 3; // 60° each side
-const GUARD_RANGE = 7;              // slightly larger than before
+const GUARD_RANGE = 7;
 const ALERT_THRESHOLD = 30;
 
 /** Max guards regardless of round number. */
 const MAX_GUARDS = 4;
 
-/** Probability (per tick) that a patrolling guard adds random angle jitter. */
-const JITTER_PROBABILITY = 0.03;
-/** Max random jitter to patrol angle (radians). */
-const JITTER_ANGLE = Math.PI / 5;
+/** Angle lerp rate (radians/tick) — controls how quickly guard turns. Higher = snappier. */
+const ANGLE_LERP_RATE = 0.12;
 
 /** Probability (per tick) that a patrolling guard reverses patrol direction. */
-const REVERSE_PROBABILITY = 0.005;
+const REVERSE_PROBABILITY = 0.004;
 
-/** Player collision push radius in tiles. */
+/** Wander radius (tiles): how far off a waypoint the guard drifts. */
+const WANDER_RADIUS = 2.0;
+
+/** Player bounding-box half-size for wall collision (tiles). */
+const PLAYER_HALF = 0.35;
+
+/** Player-player soft push radius (tiles). */
 const PLAYER_COLLISION_RADIUS = 0.55;
+
+/** Minimum tile distance required between guard spawn and nearest player spawn. */
+const MIN_GUARD_PLAYER_DIST = 6;
 
 // ── Input message type ────────────────────────────────────────────────────────
 
@@ -90,12 +108,23 @@ interface InputMessage {
 
 interface GuardRuntime {
   id: string;
-  /** Current jitter offset added to patrol direction. */
-  angleJitter: number;
   /** +1 or -1 — patrol direction multiplier. */
   patrolDir: number;
-  /** Random seed for this guard's jitter RNG. */
-  jitterSeed: number;
+  /** LCG seed for this guard's per-tick RNG. */
+  rngSeed: number;
+  /** Current lateral wander offset (tiles) applied to waypoint target. */
+  wanderX: number;
+  wanderY: number;
+}
+
+// ── Angle lerp helper ─────────────────────────────────────────────────────────
+
+/** Lerp between two angles (radians) taking the shortest arc. */
+function lerpAngle(current: number, target: number, t: number): number {
+  let diff = target - current;
+  while (diff > Math.PI)  diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return current + diff * t;
 }
 
 // ── Game class ────────────────────────────────────────────────────────────────
@@ -109,6 +138,10 @@ export default class DontGetCaughtGame extends BaseGame {
   static override hasInstructionsPhase = true;
   static override instructionsDelivery = "broadcast" as const;
 
+  static override activityLevel: "none" | "some" | "full" = "none";
+  static override requiresSameRoom = false;
+  static override requiresSecondaryDisplay = false;
+
   private guardSpeed: number = BASE_GUARD_SPEED;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
   private caughtThisRound = new Map<string, number>();
@@ -119,48 +152,48 @@ export default class DontGetCaughtGame extends BaseGame {
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
-    // Generate a fresh map for this game
-    const seed = Date.now();
-    resetMap(seed);
-    refreshLegacyExports();
+    // Clear guards — map is regenerated per round in runRound()
+    this.room.state.guards.clear();
 
-    // Broadcast tile data to clients
-    this.room.state.mapTiles = JSON.stringify(getCurrentTiles());
-    this.room.state.mapWidth  = MAP_WIDTH;
-    this.room.state.mapHeight = MAP_HEIGHT;
-
-    // Spawn players
-    const spawnPositions = getSpawnPositions();
-    const players = [...this.room.state.players.values()];
-    players.forEach((p, i) => {
-      const spawn = spawnPositions[i % spawnPositions.length];
-      p.x = spawn.x;
-      p.y = spawn.y;
+    // Initialise player fields (positions assigned in runRound after map is ready)
+    for (const p of this.room.state.players.values()) {
       p.isDetected = false;
       p.detectionMeter = 0;
       p.timesCaught = 0;
       p.isEliminated = false;
       p.isReady = false;
-    });
-
-    // Clear guards
-    this.room.state.guards.clear();
+    }
   }
 
   protected override async runRound(round: number): Promise<void> {
     this.currentRound = round;
     this.caughtThisRound.clear();
 
-    // Reset per-round state
-    for (const p of this.room.state.players.values()) {
+    // Regenerate the map each round — different layout every time
+    const seed = Date.now() + round * 1_000_003;
+    resetMap(seed);
+    refreshLegacyExports();
+
+    // Broadcast new tile data to clients
+    this.room.state.mapTiles  = JSON.stringify(getCurrentTiles());
+    this.room.state.mapWidth  = MAP_WIDTH;
+    this.room.state.mapHeight = MAP_HEIGHT;
+
+    // Reset per-round player state and place them in the new map
+    const spawnPositions = getSpawnPositions();
+    const players = [...this.room.state.players.values()];
+    players.forEach((p, i) => {
       if (!p.isEliminated) {
         p.isDetected = false;
         p.detectionMeter = 0;
         p.timesCaught = 0;
+        const spawn = spawnPositions[i % spawnPositions.length];
+        p.x = spawn.x + 0.5;
+        p.y = spawn.y + 0.5;
       }
-    }
+    });
 
-    // Spawn guards (one extra per round, up to MAX_GUARDS)
+    // Spawn guards spread across the map, away from players
     const guardCount = Math.min(round, MAX_GUARDS);
     this._spawnGuards(guardCount);
 
@@ -182,10 +215,11 @@ export default class DontGetCaughtGame extends BaseGame {
       p.score = Math.max(0, p.score - caught * CAUGHT_PENALTY);
     }
 
+    // Adaptive difficulty: speed up guards if the round was easy
     const totalPlayers = this.room.state.players.size;
     const caughtCount = [...this.caughtThisRound.values()].filter((n) => n > 0).length;
     if (caughtCount < totalPlayers / 2) {
-      this.guardSpeed = Math.min(this.guardSpeed * 1.2, BASE_GUARD_SPEED * 2);
+      this.guardSpeed = Math.min(this.guardSpeed * 1.15, BASE_GUARD_SPEED * 2);
     } else {
       this.guardSpeed = Math.max(this.guardSpeed * 0.95, BASE_GUARD_SPEED);
     }
@@ -217,27 +251,47 @@ export default class DontGetCaughtGame extends BaseGame {
     this.room.state.guards.clear();
     this.guardRuntimes = [];
 
-    const guardStart = getGuardStart();
     const patrolPath = getPatrolPath();
+    const spawnPositions = getSpawnPositions();
 
     for (let i = 0; i < count; i++) {
       const g = new GuardState();
       const key = String(i);
       g.id = key;
-      // Offset starting positions along the patrol path so guards start spread out
-      g.x = patrolPath[i % patrolPath.length]?.x ?? guardStart.x;
-      g.y = patrolPath[i % patrolPath.length]?.y ?? guardStart.y;
+
+      // Pick patrol start waypoint that is well separated from player spawns
+      let bestIdx = i % patrolPath.length;
+      let bestMinDist = 0;
+      for (let pi = 0; pi < patrolPath.length; pi++) {
+        const wp = patrolPath[pi];
+        const minDist = spawnPositions.reduce((min, sp) => {
+          const d = Math.sqrt((wp.x - sp.x) ** 2 + (wp.y - sp.y) ** 2);
+          return Math.min(min, d);
+        }, Infinity);
+        if (minDist > bestMinDist && minDist >= MIN_GUARD_PLAYER_DIST) {
+          bestMinDist = minDist;
+          bestIdx = pi;
+        }
+      }
+
+      // Distribute multiple guards evenly along the patrol path
+      const startIdx = (bestIdx + Math.floor((i * patrolPath.length) / count)) % patrolPath.length;
+      const startWp = patrolPath[startIdx];
+
+      g.x = (startWp?.x ?? getGuardStart().x) + 0.5;
+      g.y = (startWp?.y ?? getGuardStart().y) + 0.5;
       g.facingAngle = (i / count) * Math.PI * 2;
-      g.patrolIndex = i % patrolPath.length;
+      g.patrolIndex = startIdx;
       g.guardMode = "patrol";
       g.targetPlayerId = "";
 
       this.room.state.guards.set(key, g);
       this.guardRuntimes.push({
         id: key,
-        angleJitter: 0,
         patrolDir: 1,
-        jitterSeed: i * 31337 + this.currentRound * 997,
+        rngSeed: i * 31337 + 997,
+        wanderX: 0,
+        wanderY: 0,
       });
     }
   }
@@ -262,14 +316,18 @@ export default class DontGetCaughtGame extends BaseGame {
       const guard = this.room.state.guards.get(rt.id);
       if (!guard) continue;
 
+      // Per-guard LCG random number
+      rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
+      const rand = rt.rngSeed / 0x100000000;
+
+      // Chase mode: move directly towards target
       if (guard.guardMode === "chase" && guard.targetPlayerId) {
         const target = this.room.state.players.get(guard.targetPlayerId);
         if (!target || target.isEliminated || !target.isConnected) {
           guard.guardMode = "patrol";
           guard.targetPlayerId = "";
         } else {
-          // Guards ignore walls: move directly towards target
-          this._moveTowardsIgnoreWalls(
+          this._moveTowardsSmooth(
             guard,
             target.x,
             target.y,
@@ -279,48 +337,48 @@ export default class DontGetCaughtGame extends BaseGame {
         }
       }
 
-      // Random jitter (simple LCG inline — no import needed)
-      rt.jitterSeed = (Math.imul(1664525, rt.jitterSeed) + 1013904223) >>> 0;
-      const rand = rt.jitterSeed / 0x100000000;
-
-      if (rand < JITTER_PROBABILITY) {
-        rt.jitterSeed = (Math.imul(1664525, rt.jitterSeed) + 1013904223) >>> 0;
-        const jrand = rt.jitterSeed / 0x100000000;
-        rt.angleJitter = (jrand - 0.5) * 2 * JITTER_ANGLE;
-      }
+      // Occasionally reverse patrol direction
       if (rand < REVERSE_PROBABILITY) {
         rt.patrolDir *= -1;
       }
 
-      // Patrol mode: move towards current waypoint (ignoring walls)
-      const waypointIdx = ((guard.patrolIndex * rt.patrolDir) % patrolPath.length + patrolPath.length) % patrolPath.length;
+      // Occasionally update the wander offset (smooth drift, not per-tick jitter)
+      if (rand < 0.02) {
+        rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
+        const r2 = rt.rngSeed / 0x100000000;
+        rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
+        const r3 = rt.rngSeed / 0x100000000;
+        rt.wanderX = (r2 - 0.5) * 2 * WANDER_RADIUS;
+        rt.wanderY = (r3 - 0.5) * 2 * WANDER_RADIUS;
+      }
+
+      // Patrol: move towards current waypoint + wander
+      const waypointIdx =
+        ((guard.patrolIndex * rt.patrolDir) % patrolPath.length + patrolPath.length) %
+        patrolPath.length;
       const waypoint = patrolPath[waypointIdx % patrolPath.length];
       if (!waypoint) continue;
 
-      // Apply jitter to target position (wander slightly off waypoint)
-      const jitterDist = 1.5;
-      const targetX = waypoint.x + Math.cos(rt.angleJitter) * jitterDist * rand;
-      const targetY = waypoint.y + Math.sin(rt.angleJitter) * jitterDist * rand;
+      const targetX = waypoint.x + 0.5 + rt.wanderX;
+      const targetY = waypoint.y + 0.5 + rt.wanderY;
 
-      const arrived = this._moveTowardsIgnoreWalls(
-        guard,
-        targetX,
-        targetY,
-        this.guardSpeed * dt,
-      );
+      const arrived = this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt);
       if (arrived) {
-        guard.patrolIndex = (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
-        rt.angleJitter = 0; // reset jitter on waypoint arrival
+        guard.patrolIndex =
+          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+        rt.wanderX = 0;
+        rt.wanderY = 0;
       }
     }
   }
 
   /**
-   * Move an entity towards (targetX, targetY) at most `speed` tiles.
-   * Guards pass through walls — no collision check here.
-   * Returns true when arrived.
+   * Move entity towards (targetX, targetY) at most `speed` tiles.
+   * Guards pass through walls (no walkability check).
+   * Facing angle is lerped — no snapping to prevent twitching.
+   * Returns true when arrived at destination.
    */
-  private _moveTowardsIgnoreWalls(
+  private _moveTowardsSmooth(
     entity: { x: number; y: number; facingAngle: number },
     targetX: number,
     targetY: number,
@@ -332,7 +390,9 @@ export default class DontGetCaughtGame extends BaseGame {
 
     if (dist < 0.05) return true;
 
-    entity.facingAngle = Math.atan2(dy, dx);
+    // Lerp facing angle toward travel direction — eliminates twitching
+    const desiredAngle = Math.atan2(dy, dx);
+    entity.facingAngle = lerpAngle(entity.facingAngle, desiredAngle, ANGLE_LERP_RATE);
 
     if (dist <= speed) {
       entity.x = targetX;
@@ -374,16 +434,6 @@ export default class DontGetCaughtGame extends BaseGame {
             guard.targetPlayerId = player.id;
           }
         }
-
-        // Calm guard if its chase target has been cleared
-        if (
-          guard.guardMode === "chase" &&
-          guard.targetPlayerId === player.id &&
-          player.detectionMeter === 0
-        ) {
-          guard.guardMode = "patrol";
-          guard.targetPlayerId = "";
-        }
       }
 
       if (seenByAnyGuard) {
@@ -402,11 +452,6 @@ export default class DontGetCaughtGame extends BaseGame {
 
   // ── Player-player collision ───────────────────────────────────────────────
 
-  /**
-   * Soft push-apart collision between players.
-   * Players within PLAYER_COLLISION_RADIUS of each other are nudged apart.
-   * This is applied after movement so it can override positions.
-   */
   private _applyPlayerCollisions(): void {
     const players = [...this.room.state.players.values()].filter(
       (p) => p.isConnected && !p.isEliminated,
@@ -421,7 +466,6 @@ export default class DontGetCaughtGame extends BaseGame {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         if (dist < PLAYER_COLLISION_RADIUS && dist > 0.001) {
-          // Push apart by half the overlap each
           const overlap = PLAYER_COLLISION_RADIUS - dist;
           const nx = dx / dist;
           const ny = dy / dist;
@@ -432,15 +476,8 @@ export default class DontGetCaughtGame extends BaseGame {
           const bx = b.x + nx * halfPush;
           const by = b.y + ny * halfPush;
 
-          // Only apply push if the new position is walkable (or no change)
-          if (isWalkable(Math.floor(ax), Math.floor(ay))) {
-            a.x = ax;
-            a.y = ay;
-          }
-          if (isWalkable(Math.floor(bx), Math.floor(by))) {
-            b.x = bx;
-            b.y = by;
-          }
+          if (this._positionWalkable(ax, ay)) { a.x = ax; a.y = ay; }
+          if (this._positionWalkable(bx, by)) { b.x = bx; b.y = by; }
         }
       }
     }
@@ -459,7 +496,15 @@ export default class DontGetCaughtGame extends BaseGame {
     const roundCatches = (this.caughtThisRound.get(sessionId) ?? 0) + 1;
     this.caughtThisRound.set(sessionId, roundCatches);
 
-    // Respawn at furthest spawn from guards
+    // ALL guards that were chasing or on alert return to patrol immediately
+    for (const guard of this.room.state.guards.values()) {
+      if (guard.targetPlayerId === sessionId || guard.guardMode === "alert") {
+        guard.guardMode = "patrol";
+        guard.targetPlayerId = "";
+      }
+    }
+
+    // Respawn at the spawn farthest from any guard
     const spawnPositions = getSpawnPositions();
     const guards = [...this.room.state.guards.values()];
     const spawn = spawnPositions.reduce((best, sp) => {
@@ -474,16 +519,8 @@ export default class DontGetCaughtGame extends BaseGame {
       return minDistToGuard > bestMinDist ? sp : best;
     }, spawnPositions[0]);
 
-    player.x = spawn.x;
-    player.y = spawn.y;
-
-    // Reset all chasing guards that were targeting this player
-    for (const guard of this.room.state.guards.values()) {
-      if (guard.targetPlayerId === sessionId) {
-        guard.guardMode = "patrol";
-        guard.targetPlayerId = "";
-      }
-    }
+    player.x = spawn.x + 0.5;
+    player.y = spawn.y + 0.5;
 
     if (player.timesCaught >= CATCH_LIMIT) {
       player.isEliminated = true;
@@ -511,21 +548,34 @@ export default class DontGetCaughtGame extends BaseGame {
 
     const PLAYER_SPEED = 0.15; // tiles per input event (~20 events/s)
 
-    // Try full movement first, then slide along axes if blocked
     const nx = player.x + ndx * PLAYER_SPEED;
     const ny = player.y + ndy * PLAYER_SPEED;
 
-    if (isWalkable(Math.floor(nx), Math.floor(ny))) {
+    // Bounding box collision — try full move, then axis-slide
+    if (this._positionWalkable(nx, ny)) {
       player.x = nx;
       player.y = ny;
-    } else if (isWalkable(Math.floor(nx), Math.floor(player.y))) {
-      // Slide horizontally
+    } else if (this._positionWalkable(nx, player.y)) {
       player.x = nx;
-    } else if (isWalkable(Math.floor(player.x), Math.floor(ny))) {
-      // Slide vertically
+    } else if (this._positionWalkable(player.x, ny)) {
       player.y = ny;
     }
-    // Otherwise fully blocked — no movement
+    // Fully blocked — no movement applied
+  }
+
+  /**
+   * Returns true only if all 4 corners of the player bounding box at (x, y)
+   * are on walkable tiles. This prevents the player from clipping into walls
+   * at sub-tile positions.
+   */
+  private _positionWalkable(x: number, y: number): boolean {
+    const h = PLAYER_HALF;
+    return (
+      isWalkable(Math.floor(x - h), Math.floor(y - h)) &&
+      isWalkable(Math.floor(x + h), Math.floor(y - h)) &&
+      isWalkable(Math.floor(x - h), Math.floor(y + h)) &&
+      isWalkable(Math.floor(x + h), Math.floor(y + h))
+    );
   }
 
   // ── Round end ─────────────────────────────────────────────────────────────

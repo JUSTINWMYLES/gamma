@@ -11,6 +11,10 @@
     room.send("player_ready", {});
   }
 
+  function unready() {
+    room.send("player_unready", {});
+  }
+
   $: setupDone = (state.setupStep ?? 0) >= 4;
   $: selectedGameMeta = setupDone
     ? GAME_REGISTRY.find((g) => g.id === state.selectedGame)
@@ -99,11 +103,10 @@
     <button
       class="w-full max-w-xs py-4 rounded-xl text-lg font-bold transition-all active:scale-95
         {me?.isReady
-          ? 'bg-green-700 text-green-200 cursor-default'
+          ? 'bg-green-700 text-green-200 hover:bg-red-800 hover:text-red-200'
           : 'bg-indigo-600 hover:bg-indigo-500 text-white'}"
-      on:click={ready}
-      disabled={me?.isReady}
+      on:click={me?.isReady ? unready : ready}
       data-testid="ready-btn"
-    >{me?.isReady ? 'Ready ✓' : 'Ready Up'}</button>
+    >{me?.isReady ? 'Ready ✓ (tap to undo)' : 'Ready Up'}</button>
   {/if}
 </div>
