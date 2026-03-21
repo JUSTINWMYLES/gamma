@@ -16,6 +16,8 @@
   $: selectedGameMeta = setupDone
     ? GAME_REGISTRY.find((g) => g.id === state.selectedGame)
     : null;
+  $: allPlayersReady = [...state.players.values()].every((p) => !p.isConnected || p.isReady);
+  $: canStart = !!state.selectedGame && state.players.size >= 1 && allPlayersReady;
 
   const SETUP_STEP_LABELS: Record<number, string> = {
     1: "Host is choosing location…",
@@ -60,6 +62,10 @@
 
   function start() {
     room.send("start_game", {});
+  }
+
+  function kickPlayer(targetId: string) {
+    room.send("kick_player", { targetId });
   }
 
   function updateConfig(patch: Record<string, unknown>) {
@@ -276,9 +282,17 @@
         {#each [...state.players.values()] as p}
           <li class="flex items-center justify-between text-sm">
             <span class="{p.id === me?.id ? 'font-bold text-indigo-400' : 'text-gray-300'}">{p.name}{p.id === me?.id ? ' (you)' : ''}</span>
-            {#if p.isReady}
-              <span class="text-green-400 font-bold">✓</span>
-            {/if}
+            <span class="flex items-center gap-2">
+              {#if p.isReady}
+                <span class="text-green-400 font-bold">✓</span>
+              {/if}
+              {#if isHost && p.id !== me?.id}
+                <button
+                  class="text-red-400 text-xs font-bold px-2 py-0.5 rounded bg-gray-700 active:bg-red-900 transition-colors"
+                  on:click={() => kickPlayer(p.id)}
+                >Kick</button>
+              {/if}
+            </span>
           </li>
         {/each}
       </ul>
@@ -288,13 +302,13 @@
     {#if isHost}
       <button
         class="w-full max-w-xs py-4 rounded-xl text-lg font-bold transition-all active:scale-95
-          {state.selectedGame && state.players.size >= 1
+          {canStart
             ? 'bg-indigo-600 active:bg-indigo-500 text-white'
             : 'bg-gray-700 text-gray-500'}"
-        disabled={!state.selectedGame || state.players.size < 1}
+        disabled={!canStart}
         on:click={start}
         data-testid="start-btn"
-      >Start Game</button>
+      >{canStart ? 'Start Game' : !state.selectedGame ? 'Pick a game' : !allPlayersReady ? 'Waiting for players...' : 'Start Game'}</button>
     {:else}
       <button
         class="w-full max-w-xs py-4 rounded-xl text-lg font-bold transition-all active:scale-95

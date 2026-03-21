@@ -1,9 +1,12 @@
 <script lang="ts">
+  import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  export let room: Room;
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 
   $: winner = sortedPlayers[0];
+  $: allTied = sortedPlayers.length > 1 && sortedPlayers.every((p) => p.score === sortedPlayers[0].score);
 
   // Top-3 podium data (bar chart)
   $: top3 = sortedPlayers.slice(0, 3);
@@ -35,7 +38,7 @@
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="game-over-screen">
-  <h1 class="text-6xl font-black text-yellow-400">Game Over!</h1>
+  <h1 class="text-6xl font-black text-yellow-400">{allTied ? "It's a Tie!" : "Game Over!"}</h1>
 
   {#if top3.length > 0}
     <!-- Podium bar chart -->
@@ -79,6 +82,6 @@
 
   <button
     class="mt-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-lg font-bold transition-colors"
-    on:click={() => window.location.reload()}
+    on:click={() => room.send("play_again", {})}
   >Play Again</button>
 </div>

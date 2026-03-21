@@ -167,6 +167,11 @@ export abstract class BaseGame {
       this.room.state.phaseStartedAt = Date.now();
       this._roundStartMs = Date.now();
 
+      // Give clients time to detect the phase change, unmount the countdown
+      // screen, mount the game-specific component, and register their
+      // onMessage() listeners before the game broadcasts initial messages.
+      await this.delay(500);
+
       await this.runRound(r);
 
       // Record round duration

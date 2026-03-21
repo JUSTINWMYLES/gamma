@@ -193,6 +193,28 @@ export class GammaRoom extends Room<RoomState> {
       if (p && this.state.phase === "lobby") p.isReady = false;
     });
 
+    /** Host kicks a player from the room (lobby only). */
+    this.onMessage("kick_player", (client, data: { targetId: string }) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase !== "lobby") return;
+      const targetId = data.targetId;
+      if (!targetId || targetId === client.sessionId) return; // can't kick self
+
+      // Remove from state
+      this.state.players.delete(targetId);
+
+      // Disconnect the client
+      const targetClient = [...(this.clients as Iterable<Client>)].find(
+        (c) => c.sessionId === targetId,
+      );
+      if (targetClient) {
+        targetClient.send("kicked", { message: "You were removed from the room by the host." });
+        targetClient.leave(4001); // custom close code for "kicked"
+      }
+
+      console.log(`[GammaRoom] host kicked player — target=${targetId}`);
+    });
+
     /** Host selects a game from the list. TV / first player only. */
     this.onMessage("select_game", (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;
@@ -256,6 +278,13 @@ export class GammaRoom extends Room<RoomState> {
     this.onMessage("game_input", (client, data: unknown) => {
       if (this.game) this.game.handleInput(client, data);
     });
+
+    /** Host presses Play Again — resets room back to lobby (game_over phase only). */
+    this.onMessage("play_again", (client, _data) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase !== "game_over") return;
+      this._resetToLobby();
+    });
   }
 
   // ── Game start ────────────────────────────────────────────────────────────
@@ -270,6 +299,17 @@ export class GammaRoom extends Room<RoomState> {
       return;
     }
 
+    // Enforce all players ready before starting
+    const allPlayers = [...this.state.players.values()];
+    const notReady = allPlayers.filter((p) => p.isConnected && !p.isReady);
+    if (notReady.length > 0) {
+      this.broadcast("error", {
+        message: `Waiting for ${notReady.length} player${notReady.length > 1 ? "s" : ""} to ready up.`,
+      });
+      console.warn(`[GammaRoom] start_game blocked — ${notReady.length} players not ready`);
+      return;
+    }
+
     const GameClass = await loadGame(this.state.selectedGame);
 
     // Enforce view screen requirement
@@ -281,6 +321,11 @@ export class GammaRoom extends Room<RoomState> {
     // Apply plugin defaults to config (host overrides take precedence)
     if (this.state.gameConfig.roundCount === 1 && GameClass.defaultRoundCount > 1) {
       this.state.gameConfig.roundCount = GameClass.defaultRoundCount;
+    }
+
+    // Reset all players' isReady so instructions phase waitForAllReady() works
+    for (const p of this.state.players.values()) {
+      p.isReady = false;
     }
 
     // ── OTEL: start game session span + counter ────────────────────
@@ -329,6 +374,51 @@ export class GammaRoom extends Room<RoomState> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /** Reset the entire room back to lobby state so everyone can play again. */
+  private _resetToLobby(): void {
+    // Tear down active game
+    if (this.game) {
+      this.game.teardown();
+      this.game = null;
+    }
+
+    // End active OTEL span
+    if (this.gameSessionSpan) {
+      this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
+      this.gameSessionSpan.end();
+      this.gameSessionSpan = null;
+    }
+
+    // Reset all player states (keep name, id, connection — reset game state)
+    for (const p of this.state.players.values()) {
+      p.score = 0;
+      p.isReady = false;
+      p.isEliminated = false;
+      p.x = 0;
+      p.y = 0;
+      p.isDetected = false;
+      p.detectionMeter = 0;
+      p.timesCaught = 0;
+      p.bracketSeed = -1;
+      p.currentMatchOpponentId = "";
+    }
+
+    // Reset room-level game state
+    this.state.selectedGame = "";
+    this.state.currentRound = 0;
+    this.state.phaseStartedAt = 0;
+    this.state.roundDurationSecs = 60;
+    this.state.mapTiles = "";
+    this.state.mapWidth = 0;
+    this.state.mapHeight = 0;
+    this.state.guards.clear();
+
+    // Return to lobby phase — setup is preserved so they skip the wizard
+    this.state.phase = "lobby";
+
+    console.log(`[GammaRoom] reset to lobby — code=${this.state.roomCode}`);
+  }
 
   private _isHost(client: Client): boolean {
     return client.sessionId === this.state.hostSessionId;
