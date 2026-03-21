@@ -1,0 +1,50 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gamma-operator-role
+rules:
+  # CRD management
+  - apiGroups: ["gamma.io"]
+    resources:
+      - gammaclusters
+      - gammagamedeployments
+      - gammaoperatorpolicies
+      - gammahubrequests
+      - gammaclusters/status
+      - gammagamedeployments/status
+      - gammahubrequests/status
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Core resources
+  - apiGroups: [""]
+    resources: ["namespaces", "secrets", "configmaps", "services", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+
+  # Apps
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # HPA
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gamma-operator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gamma-operator-role
+subjects:
+  - kind: ServiceAccount
+    name: gamma-operator
+    namespace: gamma-system

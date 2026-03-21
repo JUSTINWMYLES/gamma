@@ -1,0 +1,73 @@
+# helm/gamma-operator/values.yaml
+#
+# Default values for the gamma-operator Helm chart.
+# Override these with --set or a custom values file.
+
+# ── Operator image ────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/gamma/gamma-operator
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ── Replica count for the hub operator deployment ─────────────────────────────
+replicaCount: 1
+
+# ── Namespace the operator watches for CRDs ───────────────────────────────────
+watchNamespace: ""  # empty = cluster-scoped (all namespaces)
+
+# ── Service account ───────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: gamma-operator
+  annotations: {}
+
+# ── RBAC ──────────────────────────────────────────────────────────────────────
+rbac:
+  create: true
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# ── CRD installation ──────────────────────────────────────────────────────────
+crds:
+  install: true   # Set to false if you manage CRDs separately
+
+# ── Leader election (required for HA) ────────────────────────────────────────
+leaderElection:
+  enabled: true
+  leaseDuration: 15s
+  renewDeadline: 10s
+  retryPeriod: 2s
+
+# ── Metrics / monitoring ──────────────────────────────────────────────────────
+metrics:
+  enabled: true
+  port: 8080
+  serviceMonitor:
+    enabled: false   # Set true if Prometheus Operator is installed
+
+# ── Log level ─────────────────────────────────────────────────────────────────
+logLevel: info
+
+# ── Pod security ─────────────────────────────────────────────────────────────
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# ── Node affinity / tolerations ───────────────────────────────────────────────
+nodeSelector: {}
+tolerations: []
+affinity: {}
