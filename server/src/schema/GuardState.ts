@@ -1,13 +1,16 @@
 /**
  * server/src/schema/GuardState.ts
  *
- * Schema for the AI guard in registry-14.
- * Replicated to all clients so both TV and phones can render the guard.
+ * Schema for a single AI guard in registry-14.
+ * Replicated to all clients so both TV and phones can render all guards.
+ * Multiple guards are stored in RoomState.guards (MapSchema keyed by index string).
  */
 
 import { Schema, type } from "@colyseus/schema";
 
 export class GuardState extends Schema {
+  /** Unique string key for this guard (matches the MapSchema key). */
+  @type("string") id: string = "";
   /** World-space X position (tile units). */
   @type("number") x: number = 0;
   /** World-space Y position (tile units). */

@@ -1,7 +1,10 @@
 <script lang="ts">
   /**
-   * TV Game screen — renders the tile map, players, and guard.
+   * TV Game screen — renders the procedural tile map, players, and all guards.
    * Uses an HTML Canvas element for the 2-D top-down view.
+   *
+   * Tile data is received from the server via state.mapTiles (JSON string).
+   * Multiple guards are in state.guards (Map keyed by index string).
    *
    * Coordinate system: tile units (0,0) = top-left.
    * Each tile is TILE_SIZE_PX pixels.
@@ -9,32 +12,10 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../shared/types";
-  import { TILE_SIZE_PX, MAP_WIDTH, MAP_HEIGHT, TILE } from "../../../shared/types";
+  import { TILE_SIZE_PX, TILE } from "../../../shared/types";
 
   export let room: Room;
   export let state: RoomState;
-
-  // Raw tile data (mirrored from server tilemap — same layout)
-  // prettier-ignore
-  const TILES: number[] = [
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    1,0,0,0,0,2,0,0,0,0,2,0,0,0,0,1,
-    1,0,1,1,0,0,0,1,1,0,0,0,1,1,0,1,
-    1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,
-    1,0,0,0,3,0,0,0,0,0,0,3,0,0,0,1,
-    1,0,0,0,3,0,0,0,0,0,0,3,0,0,0,1,
-    1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,
-    1,0,1,1,0,0,0,1,1,0,0,0,1,1,0,1,
-    1,0,0,0,0,2,0,0,0,0,2,0,0,0,0,1,
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  ];
-
-  const TILE_COLORS: Record<number, string> = {
-    [TILE.FLOOR]: "#1e1e2e",
-    [TILE.WALL]:  "#374151",
-    [TILE.BUSH]:  "#14532d",
-    [TILE.CRATE]: "#78350f",
-  };
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -45,7 +26,6 @@
   let ctx: CanvasRenderingContext2D;
   let animFrame: number;
 
-  // Timer
   let timeLeft = 0;
   let timerInterval: ReturnType<typeof setInterval>;
 
@@ -73,32 +53,40 @@
     animFrame = requestAnimationFrame(draw);
     if (!ctx) return;
 
-    const W = MAP_WIDTH * TILE_SIZE_PX;
-    const H = MAP_HEIGHT * TILE_SIZE_PX;
-    canvas.width = W;
+    const mapWidth  = state.mapWidth  || 24;
+    const mapHeight = state.mapHeight || 16;
+    const W = mapWidth  * TILE_SIZE_PX;
+    const H = mapHeight * TILE_SIZE_PX;
+    canvas.width  = W;
     canvas.height = H;
 
+    // Parse tile data (cached — only re-parse when mapTiles changes)
+    let tiles: number[] = [];
+    if (state.mapTiles) {
+      try { tiles = JSON.parse(state.mapTiles); } catch { /* ignore */ }
+    }
+
     // ── Draw tiles ────────────────────────────────────────────────
-    for (let row = 0; row < MAP_HEIGHT; row++) {
-      for (let col = 0; col < MAP_WIDTH; col++) {
-        const tileId = TILES[row * MAP_WIDTH + col];
-        ctx.fillStyle = TILE_COLORS[tileId] ?? "#000";
+    for (let row = 0; row < mapHeight; row++) {
+      for (let col = 0; col < mapWidth; col++) {
+        const tileId = tiles[row * mapWidth + col] ?? TILE.WALL;
+        ctx.fillStyle = tileId === TILE.WALL ? "#374151" : "#1e1e2e";
         ctx.fillRect(col * TILE_SIZE_PX, row * TILE_SIZE_PX, TILE_SIZE_PX, TILE_SIZE_PX);
 
-        // Tile border
         ctx.strokeStyle = "rgba(255,255,255,0.03)";
         ctx.strokeRect(col * TILE_SIZE_PX, row * TILE_SIZE_PX, TILE_SIZE_PX, TILE_SIZE_PX);
       }
     }
 
-    // ── Draw guard vision cone ────────────────────────────────────
-    const g = state.guard;
-    if (g) {
+    // ── Draw all guards ───────────────────────────────────────────
+    const guards = [...(state.guards?.values() ?? [])];
+    for (const g of guards) {
       const gx = g.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
       const gy = g.y * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-      const range = 6 * TILE_SIZE_PX;
+      const range = 7 * TILE_SIZE_PX;
       const fov = Math.PI / 3;
 
+      // Vision cone
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(gx, gy);
@@ -106,19 +94,20 @@
       ctx.closePath();
       ctx.fillStyle =
         g.guardMode === "chase"
-          ? "rgba(239,68,68,0.15)"
+          ? "rgba(239,68,68,0.18)"
           : g.guardMode === "alert"
-          ? "rgba(245,158,11,0.12)"
+          ? "rgba(245,158,11,0.14)"
           : "rgba(99,102,241,0.10)";
       ctx.fill();
       ctx.restore();
 
-      // Guard sprite (circle)
+      // Guard body
       ctx.beginPath();
       ctx.arc(gx, gy, TILE_SIZE_PX * 0.38, 0, Math.PI * 2);
       ctx.fillStyle =
         g.guardMode === "chase" ? "#ef4444" : g.guardMode === "alert" ? "#f59e0b" : "#6366f1";
       ctx.fill();
+
       // Direction indicator
       ctx.beginPath();
       ctx.moveTo(gx, gy);
@@ -132,9 +121,9 @@
 
       // Guard label
       ctx.fillStyle = "white";
-      ctx.font = "bold 11px monospace";
+      ctx.font = `bold ${Math.max(9, TILE_SIZE_PX * 0.26)}px monospace`;
       ctx.textAlign = "center";
-      ctx.fillText("GUARD", gx, gy - TILE_SIZE_PX * 0.55);
+      ctx.fillText(`G${Number(g.id) + 1}`, gx, gy - TILE_SIZE_PX * 0.55);
     }
 
     // ── Draw players ──────────────────────────────────────────────
@@ -147,11 +136,9 @@
       const color = PLAYER_COLORS[i % PLAYER_COLORS.length];
 
       ctx.save();
-      if (p.isEliminated) {
-        ctx.globalAlpha = 0.3;
-      }
+      if (p.isEliminated) ctx.globalAlpha = 0.3;
 
-      // Detection indicator ring
+      // Detection ring
       if (p.isDetected && !p.isEliminated) {
         ctx.beginPath();
         ctx.arc(px, py, TILE_SIZE_PX * 0.48, 0, Math.PI * 2);
@@ -163,7 +150,7 @@
       // Player circle
       ctx.beginPath();
       ctx.arc(px, py, TILE_SIZE_PX * 0.32, 0, Math.PI * 2);
-      ctx.fillStyle = p.isHiding ? "#4b5563" : color;
+      ctx.fillStyle = color;
       ctx.fill();
       ctx.strokeStyle = "white";
       ctx.lineWidth = 2;
@@ -171,15 +158,9 @@
 
       // Name label
       ctx.fillStyle = "white";
-      ctx.font = "bold 10px sans-serif";
+      ctx.font = `bold ${Math.max(8, TILE_SIZE_PX * 0.24)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(p.name.slice(0, 6), px, py - TILE_SIZE_PX * 0.48);
-
-      // Hiding icon
-      if (p.isHiding) {
-        ctx.font = "14px serif";
-        ctx.fillText("🌿", px, py + TILE_SIZE_PX * 0.6);
-      }
 
       ctx.restore();
     });
@@ -188,12 +169,12 @@
 
 <div class="flex-1 flex" data-testid="game-screen">
   <!-- Canvas -->
-  <div class="flex-1 flex items-center justify-center p-4">
+  <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
     <canvas bind:this={canvas} class="rounded-xl shadow-2xl max-w-full max-h-full" />
   </div>
 
   <!-- HUD sidebar -->
-  <div class="w-56 bg-gray-800 p-4 flex flex-col gap-4">
+  <div class="w-56 bg-gray-800 p-4 flex flex-col gap-4 flex-shrink-0">
     <!-- Timer -->
     <div class="text-center">
       <p class="text-xs text-gray-400 uppercase tracking-widest">Time</p>
@@ -227,14 +208,16 @@
       </ul>
     </div>
 
-    <!-- Guard status -->
+    <!-- Guards status -->
     <div class="mt-auto">
-      <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Guard</p>
-      <p class="text-sm font-semibold capitalize
-        {state.guard.guardMode === 'chase' ? 'text-red-400' :
-         state.guard.guardMode === 'alert' ? 'text-yellow-400' : 'text-green-400'}">
-        {state.guard.guardMode}
-      </p>
+      <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Guards</p>
+      {#each [...(state.guards?.values() ?? [])] as g}
+        <p class="text-sm font-semibold capitalize
+          {g.guardMode === 'chase' ? 'text-red-400' :
+           g.guardMode === 'alert' ? 'text-yellow-400' : 'text-green-400'}">
+          G{Number(g.id) + 1}: {g.guardMode}
+        </p>
+      {/each}
     </div>
   </div>
 </div>

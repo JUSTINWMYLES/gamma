@@ -55,6 +55,27 @@ export abstract class BaseGame {
   static instructionsDelivery: "broadcast" | "staggered" | "private" =
     "broadcast";
 
+  // ── Setup criteria metadata ───────────────────────────────────────────────
+
+  /**
+   * Physical activity level required.
+   * "none" = seated/phone only; "some" = light physical activity;
+   * "full" = active movement required.
+   */
+  static activityLevel: "none" | "some" | "full" = "none";
+
+  /**
+   * If true, this game is designed for players who are physically
+   * in the same room (e.g. benefits from shared screen, proximity).
+   */
+  static requiresSameRoom: boolean = false;
+
+  /**
+   * If true, the game requires a secondary TV/display screen.
+   * (e.g. TV client must be connected for meaningful gameplay.)
+   */
+  static requiresSecondaryDisplay: boolean = false;
+
   // ── Instance ─────────────────────────────────────────────────────────────
 
   protected room: Room<RoomState>;

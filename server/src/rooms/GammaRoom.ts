@@ -159,6 +159,31 @@ export class GammaRoom extends Room<RoomState> {
       },
     );
 
+    /** Host updates lobby setup criteria (location, activity, display). */
+    this.onMessage(
+      "update_setup",
+      (client, data: Partial<{
+        locationMode: string;
+        activityLevel: string;
+        hasSecondaryDisplay: boolean;
+        setupStep: number;
+      }>) => {
+        if (!this._isHost(client)) return;
+        if (data.locationMode === "same" || data.locationMode === "remote") {
+          this.state.locationMode = data.locationMode;
+        }
+        if (data.activityLevel === "none" || data.activityLevel === "some" || data.activityLevel === "full") {
+          this.state.activityLevel = data.activityLevel;
+        }
+        if (data.hasSecondaryDisplay !== undefined) {
+          this.state.hasSecondaryDisplay = !!data.hasSecondaryDisplay;
+        }
+        if (data.setupStep !== undefined) {
+          this.state.setupStep = Math.max(0, Math.min(data.setupStep, 4));
+        }
+      },
+    );
+
     /** Host presses Start Game. */
     this.onMessage("start_game", (client, _data) => {
       if (!this._isHost(client)) return;
