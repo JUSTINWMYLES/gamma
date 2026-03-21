@@ -2,8 +2,9 @@
   /**
    * Phone in-game screen for registry-14.
    *
-   * Controls:
-   *   • Virtual joystick (touch drag from centre) → sends "move" messages
+   * Controls (player selects before round):
+   *   • Virtual joystick (touch drag) — holds even when finger leaves shape
+   *   • Device tilt (DeviceOrientation API)
    *
    * There is NO hiding mechanic — just run from the guards.
    * Detection meter shows danger level.
@@ -17,6 +18,17 @@
   export let me: PlayerState | undefined;
   export let myId: string;
 
+  // Control mode — persisted in localStorage per device
+  type ControlMode = "joystick" | "tilt";
+  let controlMode: ControlMode = (localStorage.getItem("gamma_control_mode") as ControlMode) ?? "joystick";
+
+  function setControlMode(m: ControlMode) {
+    controlMode = m;
+    localStorage.setItem("gamma_control_mode", m);
+    if (m === "tilt") requestTiltPermission();
+    else stopTilt();
+  }
+
   // ── Joystick state ────────────────────────────────────────────────
   let joystickEl: HTMLDivElement;
   let knobEl: HTMLDivElement;
@@ -27,7 +39,6 @@
   let dy = 0;
 
   const RADIUS = 60;
-  let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   function startJoystick(e: TouchEvent | MouseEvent) {
     const touch = "touches" in e ? e.touches[0] : e;
@@ -37,10 +48,10 @@
       y: rect.top + rect.height / 2,
     };
     joystickActive = true;
-    moveJoystick(touch as Touch);
+    moveJoystickRaw(touch as Touch);
   }
 
-  function moveJoystick(touch: Touch | MouseEvent | EventTarget) {
+  function moveJoystickRaw(touch: Touch | MouseEvent) {
     if (!joystickActive) return;
     const t = touch as Touch;
     const rawDx = t.clientX - origin.x;
@@ -49,10 +60,7 @@
     const clamped = Math.min(dist, RADIUS);
     dx = dist > 0 ? (rawDx / dist) * clamped : 0;
     dy = dist > 0 ? (rawDy / dist) * clamped : 0;
-
-    if (knobEl) {
-      knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
-    }
+    if (knobEl) knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
   }
 
   function releaseJoystick() {
@@ -62,24 +70,110 @@
     if (knobEl) knobEl.style.transform = "translate(0,0)";
   }
 
+  // ── Global pointer/touch event listeners ─────────────────────────
+  // Attach move/release to the document so the joystick keeps working
+  // even if the finger moves outside the joystick element.
+  function onGlobalTouchMove(e: TouchEvent) {
+    if (!joystickActive) return;
+    moveJoystickRaw(e.touches[0]);
+  }
+  function onGlobalMouseMove(e: MouseEvent) {
+    if (!joystickActive) return;
+    moveJoystickRaw(e);
+  }
+  function onGlobalRelease() {
+    if (joystickActive) releaseJoystick();
+  }
+
+  // ── Tilt control ──────────────────────────────────────────────────
+  let tiltEnabled = false;
+  let tiltDx = 0;
+  let tiltDy = 0;
+
+  async function requestTiltPermission() {
+    // iOS 13+ requires a user-gesture permission call
+    if (typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === "function") {
+      try {
+        const perm = await (DeviceOrientationEvent as unknown as { requestPermission: () => Promise<string> }).requestPermission();
+        if (perm === "granted") startTilt();
+      } catch {
+        controlMode = "joystick";
+      }
+    } else {
+      startTilt();
+    }
+  }
+
+  function startTilt() {
+    tiltEnabled = true;
+    window.addEventListener("deviceorientation", onDeviceOrientation);
+  }
+
+  function stopTilt() {
+    tiltEnabled = false;
+    window.removeEventListener("deviceorientation", onDeviceOrientation);
+    tiltDx = 0;
+    tiltDy = 0;
+  }
+
+  function onDeviceOrientation(e: DeviceOrientationEvent) {
+    if (!tiltEnabled) return;
+    // gamma = left/right tilt, beta = forward/back tilt
+    const gamma = e.gamma ?? 0; // -90 to 90 (left-right)
+    const beta  = e.beta  ?? 0; // -180 to 180 (front-back), typically 0 upright
+
+    // Clamp to ±30° and normalise to -1..1
+    const DEAD = 5; // degrees dead-zone
+    const RANGE = 30;
+    const gn = Math.max(-1, Math.min(1, (gamma - Math.sign(gamma) * DEAD) / RANGE));
+    const bn = Math.max(-1, Math.min(1, ((beta - 45) - Math.sign(beta - 45) * DEAD) / RANGE));
+
+    tiltDx = Math.abs(gamma) > DEAD ? gn : 0;
+    tiltDy = Math.abs(beta - 45) > DEAD ? bn : 0;
+  }
+
+  // ── Send loop ─────────────────────────────────────────────────────
+  let sendInterval: ReturnType<typeof setInterval> | null = null;
+
   onMount(() => {
+    // Global listeners for joystick — keeps drag alive outside element
+    document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
+    document.addEventListener("mousemove", onGlobalMouseMove);
+    document.addEventListener("touchend", onGlobalRelease);
+    document.addEventListener("mouseup", onGlobalRelease);
+
     sendInterval = setInterval(() => {
-      if (joystickActive && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-        room.send("game_input", {
-          action: "move",
-          dx: dx / RADIUS,
-          dy: dy / RADIUS,
-        });
+      if (controlMode === "joystick") {
+        if (joystickActive && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+          room.send("game_input", { action: "move", dx: dx / RADIUS, dy: dy / RADIUS });
+        }
+      } else if (controlMode === "tilt") {
+        if (Math.abs(tiltDx) > 0.05 || Math.abs(tiltDy) > 0.05) {
+          room.send("game_input", { action: "move", dx: tiltDx, dy: tiltDy });
+        }
       }
     }, 50);
 
+    // Activate tilt if that's the stored preference
+    if (controlMode === "tilt") requestTiltPermission();
+
     return () => {
+      document.removeEventListener("touchmove", onGlobalTouchMove);
+      document.removeEventListener("mousemove", onGlobalMouseMove);
+      document.removeEventListener("touchend", onGlobalRelease);
+      document.removeEventListener("mouseup", onGlobalRelease);
       if (sendInterval) clearInterval(sendInterval);
+      stopTilt();
     };
   });
 
   onDestroy(() => {
     if (sendInterval) clearInterval(sendInterval);
+    stopTilt();
+    document.removeEventListener("touchmove", onGlobalTouchMove);
+    document.removeEventListener("mousemove", onGlobalMouseMove);
+    document.removeEventListener("touchend", onGlobalRelease);
+    document.removeEventListener("mouseup", onGlobalRelease);
   });
 
   // Time remaining
@@ -92,6 +186,8 @@
     }, 200);
     return () => clearInterval(timerInterval);
   });
+
+  $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
 <div class="flex-1 flex flex-col select-none" data-testid="phone-game">
@@ -134,7 +230,7 @@
   <!-- Game controls -->
   <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6">
     {#if !me?.isEliminated}
-      <!-- Catch counter -->
+      <!-- Catch counter (lives) -->
       <div class="flex gap-2">
         {#each Array(3) as _, i}
           <div
@@ -143,29 +239,53 @@
         {/each}
       </div>
 
-      <!-- Virtual joystick -->
-      <div class="relative" style="width:150px;height:150px">
-        <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-        <div
-          bind:this={joystickEl}
-          role="group"
-          class="absolute inset-0 rounded-full bg-gray-800 border-2 border-gray-600"
-          on:touchstart|preventDefault={(e) => startJoystick(e)}
-          on:touchmove|preventDefault={(e) => moveJoystick(e.touches[0])}
-          on:touchend|preventDefault={releaseJoystick}
-          on:mousedown={(e) => startJoystick(e)}
-          on:mousemove={(e) => { if (joystickActive) moveJoystick(e); }}
-          on:mouseup={releaseJoystick}
-          on:mouseleave={releaseJoystick}
-        >
-          <!-- Knob -->
-          <div
-            bind:this={knobEl}
-            class="absolute top-1/2 left-1/2 w-16 h-16 -mt-8 -ml-8 rounded-full bg-indigo-500 border-2 border-indigo-300 shadow-lg transition-none"
-            data-testid="joystick-knob"
-          ></div>
-        </div>
+      <!-- Control mode toggle -->
+      <div class="flex gap-2 rounded-xl overflow-hidden border border-gray-700">
+        <button
+          class="px-4 py-2 text-sm font-bold transition-colors
+            {controlMode === 'joystick' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}"
+          on:click={() => setControlMode("joystick")}
+        >Joystick</button>
+        <button
+          class="px-4 py-2 text-sm font-bold transition-colors
+            {controlMode === 'tilt' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}"
+          on:click={() => setControlMode("tilt")}
+        >Tilt</button>
       </div>
+
+      {#if controlMode === "joystick"}
+        <!-- Virtual joystick -->
+        <div class="relative" style="width:150px;height:150px">
+          <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+          <div
+            bind:this={joystickEl}
+            role="group"
+            class="absolute inset-0 rounded-full bg-gray-800 border-2 border-gray-600"
+            on:touchstart|preventDefault={(e) => startJoystick(e)}
+            on:mousedown={(e) => startJoystick(e)}
+          >
+            <!-- Knob -->
+            <div
+              bind:this={knobEl}
+              class="absolute top-1/2 left-1/2 w-16 h-16 -mt-8 -ml-8 rounded-full bg-indigo-500 border-2 border-indigo-300 shadow-lg transition-none pointer-events-none"
+              data-testid="joystick-knob"
+            ></div>
+          </div>
+        </div>
+      {:else}
+        <!-- Tilt indicator -->
+        <div class="flex flex-col items-center gap-3">
+          <div
+            class="w-20 h-20 rounded-full border-4 flex items-center justify-center
+              {tiltEnabled ? 'border-indigo-500 bg-indigo-900/30' : 'border-gray-700 bg-gray-900'}"
+          >
+            <span class="text-3xl">{tiltEnabled ? "📱" : "⏳"}</span>
+          </div>
+          <p class="text-xs text-gray-500 text-center">
+            {tiltEnabled ? "Tilt your phone to move" : "Requesting sensor permission…"}
+          </p>
+        </div>
+      {/if}
     {:else}
       <p class="text-gray-400 text-center text-lg">You're out — watch the TV!</p>
     {/if}

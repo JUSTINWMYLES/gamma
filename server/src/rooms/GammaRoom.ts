@@ -136,6 +136,12 @@ export class GammaRoom extends Room<RoomState> {
       if (p) p.isReady = true;
     });
 
+    /** Player cancels their ready state while still in lobby. */
+    this.onMessage("player_unready", (client, _data) => {
+      const p = this.state.players.get(client.sessionId);
+      if (p && this.state.phase === "lobby") p.isReady = false;
+    });
+
     /** Host selects a game from the list. TV / first player only. */
     this.onMessage("select_game", (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;

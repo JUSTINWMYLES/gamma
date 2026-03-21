@@ -2,6 +2,8 @@
   import type { RoomState, PlayerState } from "../../../shared/types";
   export let state: RoomState;
   export let me: PlayerState | undefined;
+
+  $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="phone-round-end">
@@ -14,5 +16,10 @@
     <p class="text-red-400 font-semibold">You were eliminated this round.</p>
   {:else}
     <p class="text-green-400 font-semibold">You survived! +100 pts</p>
+  {/if}
+  {#if isLastRound}
+    <p class="text-yellow-400 font-bold text-lg">That's the last round — game over!</p>
+  {:else}
+    <p class="text-gray-400 text-sm">Get ready for round {state.currentRound + 1}…</p>
   {/if}
 </div>
