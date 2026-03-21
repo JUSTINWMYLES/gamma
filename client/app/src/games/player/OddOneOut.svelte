@@ -32,15 +32,19 @@
   let currentWindow = 0;
   let totalWindows = 0;
   let windowTimeLeft = 0;
+  let windowEndTime = 0;
   let windowTimer: ReturnType<typeof setInterval> | null = null;
+  let oddPrompt = "";  // The odd player's prompt — shown to everyone during observation
 
   // Pause
   let pauseTimeLeft = 0;
+  let pauseEndTime = 0;
   let pauseTimer: ReturnType<typeof setInterval> | null = null;
 
   // Voting
   let votablePlayers: { id: string; name: string }[] = [];
   let votingTimeLeft = 0;
+  let votingEndTime = 0;
   let votingTimer: ReturnType<typeof setInterval> | null = null;
   let myVote: string | null = null;
   let voteConfirmed = false;
@@ -75,37 +79,45 @@
     }
   }
 
-  function onWindowStart(data: { windowNumber: number; totalWindows: number; durationMs: number }) {
+  function onWindowStart(data: { windowNumber: number; totalWindows: number; durationMs: number; serverTimestamp: number; oddPrompt: string }) {
     subPhase = "observing";
     currentWindow = data.windowNumber;
     totalWindows = data.totalWindows;
-    windowTimeLeft = data.durationMs / 1000;
+    oddPrompt = data.oddPrompt;
+
+    // Use server timestamp to compute end time — immune to setInterval throttling
+    windowEndTime = data.serverTimestamp + data.durationMs;
+    windowTimeLeft = Math.max(0, (windowEndTime - Date.now()) / 1000);
 
     clearTimer("window");
     windowTimer = setInterval(() => {
-      windowTimeLeft = Math.max(0, windowTimeLeft - 0.2);
+      windowTimeLeft = Math.max(0, (windowEndTime - Date.now()) / 1000);
     }, 200);
   }
 
-  function onWindowPause(data: { nextWindowIn: number }) {
+  function onWindowPause(data: { nextWindowIn: number; serverTimestamp: number }) {
     subPhase = "paused";
     clearTimer("window");
-    pauseTimeLeft = data.nextWindowIn / 1000;
+
+    pauseEndTime = data.serverTimestamp + data.nextWindowIn;
+    pauseTimeLeft = Math.max(0, (pauseEndTime - Date.now()) / 1000);
 
     clearTimer("pause");
     pauseTimer = setInterval(() => {
-      pauseTimeLeft = Math.max(0, pauseTimeLeft - 0.2);
+      pauseTimeLeft = Math.max(0, (pauseEndTime - Date.now()) / 1000);
     }, 200);
   }
 
-  function onVotingStart(data: { durationMs: number; playerIds: { id: string; name: string }[] }) {
+  function onVotingStart(data: { durationMs: number; serverTimestamp: number; playerIds: { id: string; name: string }[] }) {
     subPhase = "voting";
     clearTimer("window");
     clearTimer("pause");
 
     // Filter out self from votable list
     votablePlayers = data.playerIds.filter((p) => p.id !== me?.id);
-    votingTimeLeft = data.durationMs / 1000;
+
+    votingEndTime = data.serverTimestamp + data.durationMs;
+    votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
     myVote = null;
     voteConfirmed = false;
     votesIn = 0;
@@ -113,7 +125,7 @@
 
     clearTimer("voting");
     votingTimer = setInterval(() => {
-      votingTimeLeft = Math.max(0, votingTimeLeft - 0.2);
+      votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
     }, 200);
   }
 
@@ -226,6 +238,12 @@
       <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 max-w-xs">
         <p class="text-sm text-gray-300 font-medium">{myPrompt}</p>
       </div>
+      {#if oddPrompt}
+        <div class="bg-indigo-900/50 border border-indigo-600 rounded-xl p-3 max-w-xs">
+          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-1">Odd One Out's Prompt</p>
+          <p class="text-sm text-indigo-200 font-medium">{oddPrompt}</p>
+        </div>
+      {/if}
       <p class="text-xs text-gray-500">Perform your action. Watch other players carefully.</p>
     </div>
 
