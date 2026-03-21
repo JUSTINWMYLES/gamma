@@ -21,7 +21,7 @@ The canonical design documents for each registry item live in `docs/registry/` a
 - [Match Fire (Blow & Fan)](docs/registry/registry-17-fire-match-blow-shake.md)
 - [Slap-and-Run](docs/registry/registry-18-slap-run.md)
 - [Shave The Yak](docs/registry/registry-19-shave-the-yak.md)
-- [Find The Non-Blinker](docs/registry/registry-20-blink-identify.md)
+- [Odd One Out](docs/registry/registry-20-odd-one-out.md)
 - [Phone Notes Song Match](docs/registry/registry-21-phone-notes-song.md)
 - [Evil Laugh Overlay](docs/registry/registry-22-evil-laugh-overlay.md)
 - [Dad Joke Word Mess-Up](docs/registry/registry-23-dad-joke-mess-up.md)

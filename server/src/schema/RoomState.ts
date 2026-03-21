@@ -2,7 +2,7 @@
  * server/src/schema/RoomState.ts
  *
  * Root Colyseus Schema for a GammaRoom.
- * Every field here is replicated to all connected clients (TV + phones).
+ * Every field here is replicated to all connected clients (view screen + players).
  * Private per-player data is sent via room.send() instead.
  */
 
@@ -29,11 +29,11 @@ export class RoomState extends Schema {
   /** 4-char uppercase alphanumeric code shown on TV for players to join. */
   @type("string") roomCode: string = "";
 
-  /** Session ID of the TV display client (or first player if no TV). */
+  /** Session ID of the host/admin client (view screen if present, else creating player). */
   @type("string") hostSessionId: string = "";
 
-  /** True while a TV client is connected. Some games require this. */
-  @type("boolean") tvConnected: boolean = false;
+  /** True while a view-screen client is connected. Some games require this. */
+  @type("boolean") viewScreenConnected: boolean = false;
 
   /** Registry ID of the game currently selected (e.g. "registry-14-dont-get-caught"). */
   @type("string") selectedGame: string = "";

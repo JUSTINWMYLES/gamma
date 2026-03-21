@@ -4,22 +4,25 @@
  * Shared Colyseus connection helpers used by both TV and phone clients.
  *
  * Server URL resolution (in priority order):
- *   1. Build-time define: __SERVER_URL__ (set via Vite `define` in vite.config.ts)
+ *   1. Build-time define: __SERVER_URL__ (set via VITE_SERVER_URL env var at build time)
  *   2. Runtime env var:   import.meta.env.VITE_SERVER_URL
  *   3. Auto-derived:      ws(s)://<same-host-as-page>:2567
  *
  * The auto-derive strategy (3) means that when a phone opens the page via the
  * host machine's LAN IP (e.g. http://192.168.1.5:5174), the server URL is
  * automatically resolved to ws://192.168.1.5:2567 — no manual config needed.
+ *
+ * IMPORTANT: vite.config.ts only injects __SERVER_URL__ when VITE_SERVER_URL
+ * is explicitly set, so in dev mode the auto-derive always runs.
  */
 
 import * as Colyseus from "colyseus.js";
 
-// __SERVER_URL__ is replaced at build time by Vite
-declare const __SERVER_URL__: string;
+// __SERVER_URL__ is replaced at build time by Vite only when VITE_SERVER_URL is set.
+declare const __SERVER_URL__: string | undefined;
 
 function resolveServerUrl(): string {
-  // 1. Build-time override (production builds can bake in the server URL)
+  // 1. Build-time override (only set when VITE_SERVER_URL env var is present at build)
   if (typeof __SERVER_URL__ !== "undefined" && __SERVER_URL__) {
     return __SERVER_URL__;
   }
@@ -52,16 +55,18 @@ export function getClient(): Colyseus.Client {
 }
 
 /**
- * Create a new room as the TV display.
+ * Create a new room as a view screen (TV, laptop browser, projector).
+ * The view screen becomes the host/admin and drives the setup wizard.
  * Returns the Colyseus Room instance.
  */
 export async function hostRoom(): Promise<Colyseus.Room> {
-  return getClient().create("gamma_room", { role: "tv" });
+  return getClient().create("gamma_room", { role: "view_screen" });
 }
 
 /**
- * Create a new room as a player (phone-only, no TV).
- * The first phone becomes the host in this mode.
+ * Create a new room as a player (no view screen required).
+ * The creating player becomes the host/admin and drives the setup wizard
+ * from their device.
  *
  * @param name  Player display name (max 20 chars)
  */
@@ -72,7 +77,7 @@ export async function createRoom(name: string): Promise<Colyseus.Room> {
 /**
  * Join an existing room as a player.
  *
- * @param roomCode  4-char room code shown on the TV
+ * @param roomCode  4-char room code shown on the view screen or host device
  * @param name      Player display name (max 20 chars)
  */
 export async function joinRoom(roomCode: string, name: string): Promise<Colyseus.Room> {
