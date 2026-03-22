@@ -25,8 +25,8 @@ import { seededRng } from "./rng";
 
 // ── Dimensions ────────────────────────────────────────────────────────────────
 
-export const MAP_WIDTH  = 24;
-export const MAP_HEIGHT = 16;
+export const MAP_WIDTH  = 36;
+export const MAP_HEIGHT = 24;
 
 /** Tile IDs that block movement (players cannot enter). */
 export const WALL_TILE_IDS = new Set<number>([1]);
@@ -64,10 +64,10 @@ export function generateMap(seed: number): GeneratedMap {
     return tiles[row * MAP_WIDTH + col];
   }
 
-  // Carve rooms: 3-col × 3-row grid of rooms, each 4-6 tiles wide/tall
+  // Carve rooms: 5-col × 4-row grid of rooms, each variable size
   // leaving 1-tile wall corridors between them
-  const ROOM_COLS = 4;
-  const ROOM_ROWS = 3;
+  const ROOM_COLS = 5;
+  const ROOM_ROWS = 4;
   type Room = { x: number; y: number; w: number; h: number };
   const rooms: Room[] = [];
 
@@ -132,6 +132,31 @@ export function generateMap(seed: number): GeneratedMap {
     }
   }
 
+  // Add extra random corridors between non-adjacent rooms for more interconnectivity.
+  // This creates alternate routes and prevents the map from feeling too grid-like.
+  const EXTRA_CORRIDORS = 3 + Math.floor(rng() * 3); // 3-5 extra connections
+  for (let ec = 0; ec < EXTRA_CORRIDORS; ec++) {
+    const aIdx = Math.floor(rng() * rooms.length);
+    const bIdx = Math.floor(rng() * rooms.length);
+    if (aIdx === bIdx) continue;
+    const a = rooms[aIdx];
+    const b = rooms[bIdx];
+    const aCx = Math.floor(a.x + a.w / 2);
+    const aCy = Math.floor(a.y + a.h / 2);
+    const bCx = Math.floor(b.x + b.w / 2);
+    const bCy = Math.floor(b.y + b.h / 2);
+
+    // L-shaped corridor: go horizontal first, then vertical
+    for (let col = Math.min(aCx, bCx); col <= Math.max(aCx, bCx); col++) {
+      set(col, aCy, 0);
+      if (aCy + 1 < MAP_HEIGHT - 1) set(col, aCy + 1, 0); // 2-wide
+    }
+    for (let row = Math.min(aCy, bCy); row <= Math.max(aCy, bCy); row++) {
+      set(bCx, row, 0);
+      if (bCx + 1 < MAP_WIDTH - 1) set(bCx + 1, row, 0); // 2-wide
+    }
+  }
+
   // Ensure border is all walls
   for (let col = 0; col < MAP_WIDTH; col++) {
     set(col, 0, 1);
@@ -148,11 +173,23 @@ export function generateMap(seed: number): GeneratedMap {
     y: Math.floor(r.y + r.h / 2),
   }));
 
-  // ── Patrol path: perimeter of room centres ────────────────────────────────
-  // Pick 6 evenly-spaced rooms for the patrol loop
-  const patrolIndices = [0, ROOM_COLS - 1, ROOM_COLS * ROOM_ROWS - 1,
-    ROOM_COLS * (ROOM_ROWS - 1), Math.floor(ROOM_COLS / 2), ROOM_COLS + ROOM_COLS - 2];
-  const patrolPath: Vec2[] = patrolIndices
+  // ── Patrol path: spread across room centres for diverse guard coverage ──────
+  // Pick evenly-spaced rooms for the patrol loop — corners, midpoints, and center
+  const patrolIndices: number[] = [];
+  // Four corners
+  patrolIndices.push(0);                                          // top-left
+  patrolIndices.push(ROOM_COLS - 1);                              // top-right
+  patrolIndices.push(ROOM_COLS * ROOM_ROWS - 1);                  // bottom-right
+  patrolIndices.push(ROOM_COLS * (ROOM_ROWS - 1));                // bottom-left
+  // Mid-edge rooms
+  patrolIndices.push(Math.floor(ROOM_COLS / 2));                  // top-center
+  patrolIndices.push(ROOM_COLS * (ROOM_ROWS - 1) + Math.floor(ROOM_COLS / 2)); // bottom-center
+  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS);     // left-center
+  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS + ROOM_COLS - 1); // right-center
+  // Center room
+  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS + Math.floor(ROOM_COLS / 2));
+
+  const patrolPath: Vec2[] = [...new Set(patrolIndices)]
     .filter((i) => i < rooms.length)
     .map((i) => ({ x: Math.floor(rooms[i].x + rooms[i].w / 2), y: Math.floor(rooms[i].y + rooms[i].h / 2) }));
 

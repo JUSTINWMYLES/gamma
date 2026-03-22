@@ -12,7 +12,7 @@ Light a match, blow into the mic to extinguish, shake to fan — mini-game with 
 
 ## Long Description
 
-Players perform a sequence: strike a match (tap), blow into microphone to simulate extinguishing, then shake phone to fan, then tap rapidly to put out embers. Each action fills a meter; reaching required thresholds completes the step.
+Players perform a sequence: strike a match (tap 10 times), blow into microphone to simulate extinguishing, then shake phone to fan, then tap rapidly to put out embers. Each action fills a meter; reaching required thresholds completes the step.
 
 ## Target Platforms
 

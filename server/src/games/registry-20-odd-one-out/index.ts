@@ -6,18 +6,20 @@
  * Game Rules
  * ──────────
  * • Each round, one or more players are secretly designated "odd".
- * • Every player receives a private micro-action prompt (e.g., "Try not to
- *   blink", "Wink once every 10 seconds"). The "odd" players get a distinctly
- *   different prompt from the majority.
+ * • The "odd" players get a secret micro-action prompt (e.g., "Wink once
+ *   every 10 seconds"). Normal players see NO action — just "You are normal".
  * • Players observe each other through repeated 10-second windows.
- * • After observation, players vote on who they think is "odd".
+ * • Normal players can vote at ANY TIME during observation or the final
+ *   voting phase. The odd player(s) do NOT vote — they earn points based
+ *   on deception (incorrect guesses against them).
  * • Correct voters earn base points + a speed bonus. Incorrect voters get 0.
- * • The "odd" player(s) earn points if enough voters get it wrong.
+ * • The "odd" player(s) earn deception points for each incorrect vote.
  *
  * Server Flow
  * ───────────
  *   onLoad()    — reset player state
- *   runRound()  — assign roles → send prompts → observation windows → voting → results
+ *   runRound()  — assign roles → send prompts → observation windows (voting
+ *                 open throughout) → final voting window → results
  *   scoreRound()— apply points
  *   handleInput()— handle "vote" and "acknowledge_prompt" messages
  *
@@ -150,11 +152,13 @@ export default class OddOneOutGame extends BaseGame {
     //    after the phase state change (Colyseus patches at ~50ms intervals).
     await this.delay(200);
 
+    // Normal players: role "normal", NO prompt (just told they're normal)
+    // Odd players: role "odd", get the odd prompt
     for (const player of players) {
       const isOdd = oddPlayerIds.has(player.id);
       this.send(player.id, "assign_prompt", {
         role: isOdd ? "odd" : "normal",
-        prompt: isOdd ? promptPair.odd : promptPair.normal,
+        prompt: isOdd ? promptPair.odd : "",
         windowCount: OBSERVATION_WINDOWS,
         windowDurationMs: WINDOW_DURATION_MS,
       });
@@ -169,7 +173,20 @@ export default class OddOneOutGame extends BaseGame {
     this.broadcast("phase_info", { subPhase: "prompt_acknowledge" });
     await this.waitForAllReady(15_000);
 
-    // 5. Run observation windows
+    // 5. Open voting at the start of observation — players can vote ANY TIME
+    //    from now until the final voting window closes.
+    //    Odd players are excluded from voting — only normal players vote.
+    const voters = players.filter((p) => !oddPlayerIds.has(p.id));
+    this.roundData.votingStartedAt = Date.now();
+    this.broadcast("voting_open", {
+      serverTimestamp: Date.now(),
+      // Send ALL player IDs as vote targets (so normals can vote for anyone
+      // including other normals), but mark who the voters are
+      playerIds: players.map((p) => ({ id: p.id, name: p.name })),
+      voterCount: voters.length,
+    });
+
+    // 6. Run observation windows (voting is open throughout)
     for (let w = 1; w <= OBSERVATION_WINDOWS; w++) {
       this.broadcast("window_start", {
         windowNumber: w,
@@ -180,43 +197,49 @@ export default class OddOneOutGame extends BaseGame {
       });
       await this.delay(WINDOW_DURATION_MS);
 
+      // Check if all votes are already in — can skip remaining windows
+      if (this._allVotesIn()) break;
+
       if (w < OBSERVATION_WINDOWS) {
         this.broadcast("window_pause", {
           nextWindowIn: INTER_WINDOW_PAUSE_MS,
           serverTimestamp: Date.now(),
         });
         await this.delay(INTER_WINDOW_PAUSE_MS);
+
+        if (this._allVotesIn()) break;
       }
     }
 
-    // 6. Voting phase
-    this.roundData.votingStartedAt = Date.now();
-    this.broadcast("voting_start", {
-      durationMs: VOTING_DURATION_MS,
-      serverTimestamp: Date.now(),
-      playerIds: players.map((p) => ({ id: p.id, name: p.name })),
-    });
+    // 7. Final voting window — "last chance" for anyone who hasn't voted
+    if (!this._allVotesIn()) {
+      this.broadcast("voting_final", {
+        durationMs: VOTING_DURATION_MS,
+        serverTimestamp: Date.now(),
+        playerIds: players.map((p) => ({ id: p.id, name: p.name })),
+      });
 
-    // Wait for all votes or timeout
-    await new Promise<void>((resolve) => {
-      this.roundResolve = resolve;
+      // Wait for all votes or timeout
+      await new Promise<void>((resolve) => {
+        this.roundResolve = resolve;
 
-      const checkVotes = setInterval(() => {
-        if (this._allVotesIn()) {
+        const checkVotes = setInterval(() => {
+          if (this._allVotesIn()) {
+            clearInterval(checkVotes);
+            resolve();
+          }
+        }, 200);
+
+        setTimeout(() => {
           clearInterval(checkVotes);
           resolve();
-        }
-      }, 200);
+        }, VOTING_DURATION_MS);
+      });
 
-      setTimeout(() => {
-        clearInterval(checkVotes);
-        resolve();
-      }, VOTING_DURATION_MS);
-    });
+      this.roundResolve = null;
+    }
 
-    this.roundResolve = null;
-
-    // 7. Reveal results
+    // 8. Reveal results
     const results = this._computeResults();
     this.broadcast("round_result", results);
     await this.delay(RESULTS_DISPLAY_MS);
@@ -271,6 +294,9 @@ export default class OddOneOutGame extends BaseGame {
 
     const voterId = client.sessionId;
 
+    // Odd players cannot vote
+    if (this.roundData.oddPlayerIds.has(voterId)) return;
+
     // Can't vote for yourself
     if (suspectId === voterId) return;
 
@@ -286,10 +312,13 @@ export default class OddOneOutGame extends BaseGame {
     // Notify the voter their vote was recorded
     this.send(voterId, "vote_confirmed", { suspectId });
 
-    // Broadcast anonymous vote count update
+    // Broadcast anonymous vote count update — only normal players count as voters
+    const normalVoters = this._activePlayers().filter(
+      (p) => !this.roundData!.oddPlayerIds.has(p.id),
+    );
     this.broadcast("vote_count_update", {
       votesIn: this.roundData.votes.size,
-      totalVoters: this._activePlayers().length,
+      totalVoters: normalVoters.length,
     });
   }
 
@@ -323,11 +352,13 @@ export default class OddOneOutGame extends BaseGame {
     return idx;
   }
 
-  /** Check whether all active players have voted. */
+  /** Check whether all normal (non-odd) players have voted. */
   private _allVotesIn(): boolean {
     if (!this.roundData) return true;
-    const active = this._activePlayers();
-    return active.every((p) => this.roundData!.votes.has(p.id));
+    const normalVoters = this._activePlayers().filter(
+      (p) => !this.roundData!.oddPlayerIds.has(p.id),
+    );
+    return normalVoters.every((p) => this.roundData!.votes.has(p.id));
   }
 
   /** Compute results and per-player scores for the current round. */
@@ -354,15 +385,18 @@ export default class OddOneOutGame extends BaseGame {
     }
     correctVoteTimestamps.sort((a, b) => a - b);
 
-    // Score voters
+    // Score voters (only normal players can vote)
     let incorrectVoteCount = 0;
     for (const [voterId, suspectId] of votes.entries()) {
       if (oddPlayerIds.has(suspectId)) {
         // Correct vote — base points + speed bonus
         const voteTime = voteTimestamps.get(voterId) ?? Infinity;
         const elapsedMs = Math.max(0, voteTime - votingStartedAt);
-        // Speed bonus: faster voters get more. Linear decay over voting duration.
-        const speedFraction = Math.max(0, 1 - elapsedMs / VOTING_DURATION_MS);
+        // Speed bonus: faster voters get more. Linear decay over the total
+        // observation + voting duration.
+        const totalDurationMs = (OBSERVATION_WINDOWS * WINDOW_DURATION_MS) +
+          ((OBSERVATION_WINDOWS - 1) * INTER_WINDOW_PAUSE_MS) + VOTING_DURATION_MS;
+        const speedFraction = Math.max(0, 1 - elapsedMs / totalDurationMs);
         const speedBonus = Math.round(MAX_SPEED_BONUS * speedFraction);
         scores[voterId] = CORRECT_VOTE_POINTS + speedBonus;
       } else {
@@ -372,16 +406,18 @@ export default class OddOneOutGame extends BaseGame {
       }
     }
 
-    // Non-voters get 0
+    // Non-voters who are NORMAL get 0 (they should have voted)
     for (const p of this._activePlayers()) {
-      if (!(p.id in scores)) {
+      if (!(p.id in scores) && !oddPlayerIds.has(p.id)) {
         scores[p.id] = 0;
+        // Count non-voters as incorrect for deception purposes
+        incorrectVoteCount++;
       }
     }
 
-    // Odd players earn deception points for each incorrect vote
+    // Odd players earn deception points for each incorrect/missing vote
     for (const oddId of oddPlayerIds) {
-      scores[oddId] = (scores[oddId] ?? 0) + incorrectVoteCount * ODD_DECEPTION_POINTS;
+      scores[oddId] = incorrectVoteCount * ODD_DECEPTION_POINTS;
     }
 
     return {

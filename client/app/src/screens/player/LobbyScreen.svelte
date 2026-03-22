@@ -244,6 +244,20 @@
               on:change={(e) => updateConfig({ timeLimitSecs: Number(e.currentTarget.value) })}
             />
           </label>
+
+          {#if state.selectedGame === "registry-25-lowball-marketplace"}
+            <label class="flex items-center justify-between gap-3">
+              <span class="text-sm text-gray-300">Mode</span>
+              <select
+                class="bg-gray-700 text-white rounded px-2 py-1 text-sm"
+                value={state.gameConfig.gameMode === "funny_messages" ? "funny_messages" : "classic"}
+                on:change={(e) => updateConfig({ gameMode: e.currentTarget.value })}
+              >
+                <option value="classic">Classic Bidding</option>
+                <option value="funny_messages">Funny Messages</option>
+              </select>
+            </label>
+          {/if}
         </div>
       {/if}
     {:else}

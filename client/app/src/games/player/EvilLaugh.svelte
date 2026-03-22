@@ -76,8 +76,6 @@
 
   // Who is currently recording (for "watching others" state)
   let currentRecorderName = "";
-  let currentRecorderGifUrl = "";
-  let currentRecorderGifLabel = "";
   let isMyTurn = false;
 
   // ── Playback ────────────────────────────────────────────────────
@@ -111,14 +109,35 @@
   // ── Mic helpers ─────────────────────────────────────────────────
 
   async function requestMic(): Promise<boolean> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      micAllowed = false;
+      micError = "Microphone is unavailable in this browser/context. Use Safari/Chrome on HTTPS.";
+      return false;
+    }
+
+    if (!window.isSecureContext) {
+      micAllowed = false;
+      micError = "Microphone requires HTTPS (or localhost). Open the game over a secure connection.";
+      return false;
+    }
+
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micAllowed = true;
       micError = "";
       return true;
-    } catch {
+    } catch (err) {
       micAllowed = false;
-      micError = "Microphone access denied. Please allow mic access and try again.";
+      const name = err instanceof DOMException ? err.name : "UnknownError";
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        micError = "Microphone permission denied. Allow mic access in browser settings and try again.";
+      } else if (name === "NotFoundError") {
+        micError = "No microphone found on this device.";
+      } else if (name === "NotReadableError") {
+        micError = "Microphone is busy in another app. Close other apps and try again.";
+      } else {
+        micError = "Could not access microphone. Check browser permissions and HTTPS.";
+      }
       return false;
     }
   }
@@ -240,15 +259,11 @@
   function onRecordingTurn(data: {
     playerId: string;
     playerName: string;
-    gifUrl: string;
-    gifLabel: string;
     durationMs: number;
     serverTimestamp: number;
   }) {
     clearAllTimers();
     currentRecorderName = data.playerName;
-    currentRecorderGifUrl = data.gifUrl;
-    currentRecorderGifLabel = data.gifLabel;
     isMyTurn = data.playerId === me?.id;
 
     if (isMyTurn) {
@@ -453,7 +468,7 @@
     </div>
 
   {:else if subPhase === "gif_confirmed"}
-    <!-- Confirmed — waiting for others -->
+    <!-- Confirmed — waiting for others + mic permission prompt -->
     <div class="text-center space-y-4">
       <div class="bg-green-900 border border-green-600 rounded-xl p-4">
         <p class="text-green-200 font-bold text-lg">GIF Selected!</p>
@@ -469,6 +484,25 @@
       {#if selectionsTotal > 0}
         <p class="text-sm text-gray-400">{selectionsSubmitted}/{selectionsTotal} have picked</p>
       {/if}
+
+      <!-- Mic permission prompt — must be tapped by user (iOS requirement) -->
+      {#if !micAllowed}
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3">
+          <p class="text-gray-200 font-semibold">You'll need your microphone next!</p>
+          <p class="text-gray-400 text-sm">Tap below to allow mic access so you're ready to record.</p>
+          {#if micError}
+            <p class="text-red-400 text-sm">{micError}</p>
+          {/if}
+          <button
+            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
+            on:click={() => requestMic()}
+          >Allow Microphone</button>
+        </div>
+      {:else}
+        <div class="flex items-center gap-2 justify-center text-green-400 text-sm">
+          <span>Mic ready</span>
+        </div>
+      {/if}
     </div>
 
   {:else if subPhase === "watching_others"}
@@ -478,15 +512,22 @@
       <p class="text-lg text-gray-300">
         <span class="font-bold text-white">{currentRecorderName}</span> is dubbing a GIF...
       </p>
-      {#if currentRecorderGifUrl}
-        <img
-          src={currentRecorderGifUrl}
-          alt={currentRecorderGifLabel}
-          class="w-56 h-40 object-cover rounded-xl mx-auto border border-gray-700"
-        />
-      {/if}
       <p class="text-sm text-gray-500">{Math.ceil(recordingTimeLeft)}s remaining</p>
-      <p class="text-xs text-gray-600">Watch the TV for the live show!</p>
+      <p class="text-xs text-gray-600">Watch the TV!</p>
+
+      <!-- Mic permission prompt if they still haven't granted it -->
+      {#if !micAllowed}
+        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3 mt-4">
+          <p class="text-gray-200 font-semibold text-sm">Your turn is coming up!</p>
+          {#if micError}
+            <p class="text-red-400 text-sm">{micError}</p>
+          {/if}
+          <button
+            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
+            on:click={() => requestMic()}
+          >Allow Microphone</button>
+        </div>
+      {/if}
     </div>
 
   {:else if subPhase === "my_recording"}

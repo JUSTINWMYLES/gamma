@@ -40,7 +40,10 @@ async function main() {
 
   // ── Colyseus WebSocket layer ────────────────────────────────────────────────
   const gameServer = new Server({
-    transport: new WebSocketTransport({ server: httpServer }),
+    transport: new WebSocketTransport({
+      server: httpServer,
+      maxPayload: 4 * 1024 * 1024, // 4 MB – default 4 KB kills audio payloads
+    }),
   });
 
   /** Register all Colyseus rooms. Game plugins are loaded inside GammaRoom. */

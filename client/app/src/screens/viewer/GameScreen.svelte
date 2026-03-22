@@ -17,6 +17,8 @@
   import ShaveYakTV from "../../games/viewer/ShaveYakTV.svelte";
   import EvilLaughTV from "../../games/viewer/EvilLaughTV.svelte";
   import LowballMarketplaceTV from "../../games/viewer/LowballMarketplaceTV.svelte";
+  import FireMatchBlowShakeTV from "../../games/viewer/FireMatchBlowShakeTV.svelte";
+  import HotPotatoTV from "../../games/viewer/HotPotatoTV.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -26,6 +28,8 @@
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
+  $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
+  $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -40,7 +44,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball || isFireMatch || isHotPotato) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -64,8 +68,8 @@
     animFrame = requestAnimationFrame(draw);
     if (!ctx) return;
 
-    const mapWidth  = state.mapWidth  || 24;
-    const mapHeight = state.mapHeight || 16;
+    const mapWidth  = state.mapWidth  || 36;
+    const mapHeight = state.mapHeight || 24;
     const W = mapWidth  * TILE_SIZE_PX;
     const H = mapHeight * TILE_SIZE_PX;
     canvas.width  = W;
@@ -92,9 +96,11 @@
     // ── Draw all guards ───────────────────────────────────────────
     const guards = [...(state.guards?.values() ?? [])];
     for (const g of guards) {
-      const gx = g.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-      const gy = g.y * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-      const range = 5 * TILE_SIZE_PX;
+      // Guard positions already include +0.5 offset (center of tile),
+      // so multiply directly — no extra half-tile offset needed.
+      const gx = g.x * TILE_SIZE_PX;
+      const gy = g.y * TILE_SIZE_PX;
+      const range = 6 * TILE_SIZE_PX;
       const fov = Math.PI / 4;
 
       // Vision cone — clipped against walls via ray-marching
@@ -171,8 +177,10 @@
     players.forEach((p, i) => {
       if (!p.isConnected && p.isEliminated) return;
 
-      const px = p.x * TILE_SIZE_PX + TILE_SIZE_PX / 2;
-      const py = p.y * TILE_SIZE_PX + TILE_SIZE_PX / 2;
+      // Player positions already include +0.5 offset (center of tile),
+      // so multiply directly — no extra half-tile offset needed.
+      const px = p.x * TILE_SIZE_PX;
+      const py = p.y * TILE_SIZE_PX;
       const color = PLAYER_COLORS[i % PLAYER_COLORS.length];
 
       ctx.save();
@@ -213,6 +221,10 @@
   <EvilLaughTV {room} {state} />
 {:else if isLowball}
   <LowballMarketplaceTV {room} {state} />
+{:else if isFireMatch}
+  <FireMatchBlowShakeTV {room} {state} />
+{:else if isHotPotato}
+  <HotPotatoTV {room} {state} />
 {:else if isShaveYak}
   <ShaveYakTV {room} {state} />
 {:else}
