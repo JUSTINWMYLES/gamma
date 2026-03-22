@@ -4,6 +4,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // TV client Vite config
 export default defineConfig({
   root: ".",
+  publicDir: "../../audio",
   plugins: [
     svelte({
       preprocess: (await import("svelte-preprocess")).default(),
