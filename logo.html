@@ -37,12 +37,6 @@ pointer-events: none;
 position: relative;
 width: 150px;
 height: 150px;
-animation: logoPulse 4s ease-in-out infinite;
-}
-
-@keyframes logoPulse {
-0%,100% { filter: drop-shadow(0 4px 24px rgba(124,111,173,0.3)); }
-50%     { filter: drop-shadow(0 4px 40px rgba(124,111,173,0.55)); }
 }
 
 .logo-layer {
@@ -56,134 +50,12 @@ inset: 0;
 .logo-layer.mg {
 z-index: 2;
 mix-blend-mode: multiply;
-animation: logoMg 4s steps(1) infinite;
 }
 .logo-layer.tl {
 z-index: 2;
 mix-blend-mode: multiply;
-animation: logoTl 4s steps(1) infinite;
 }
 
-@keyframes logoMg {
-0%,88%  { transform:translate(0,0); opacity:0; }
-89%     { transform:translate(-6px,2px); opacity:0.9; }
-90%     { opacity:0; }
-94%     { transform:translate(-4px,0); opacity:0.75; }
-95%     { opacity:0; }
-100%    { opacity:0; }
-}
-@keyframes logoTl {
-0%,88%  { transform:translate(0,0); opacity:0; }
-89%     { transform:translate(6px,-2px); opacity:0.9; }
-90%     { opacity:0; }
-94%     { transform:translate(4px,1px); opacity:0.75; }
-95%     { opacity:0; }
-100%    { opacity:0; }
-}
-
-/* ── WORDMARK ── */
-.wordmark-wrap {
-position: relative;
-display: flex;
-align-items: center;
-justify-content: center;
-}
-
-.wordmark-glow {
-position: absolute;
-inset: -30px -60px;
-background: radial-gradient(ellipse at center, rgba(124,111,173,0.18) 0%, transparent 70%);
-pointer-events: none;
-animation: glowPulse 4s ease-in-out infinite;
-}
-@keyframes glowPulse {
-0%,100% { opacity:0.7; }
-50%     { opacity:1; }
-}
-
-.wordmark {
-position: relative;
-font-family: 'Bebas Neue', sans-serif;
-font-size: 112px;
-letter-spacing: 0.1em;
-line-height: 1;
-user-select: none;
-white-space: nowrap;
-z-index: 1;
-}
-
-.wordmark .layer {
-display: block;
-position: absolute;
-top: 0; left: 0;
-white-space: nowrap;
-}
-
-.wordmark .base {
-position: relative;
-color: #9b93b8;
-z-index: 3;
-}
-
-.wordmark .mg {
-color: #cc6ab5;
-z-index: 2;
-mix-blend-mode: multiply;
-animation: wmMg 3.8s steps(1) infinite;
-}
-
-.wordmark .tl {
-color: #5bbfb5;
-z-index: 2;
-mix-blend-mode: multiply;
-animation: wmTl 3.8s steps(1) infinite;
-}
-
-@keyframes wmMg {
-0%,84%  { opacity:0; clip-path:inset(100% 0 0 0); transform:translate(0); }
-85%     { opacity:1; clip-path:inset(12% 0 52% 0); transform:translate(-7px,0); }
-86%     { opacity:0; }
-90%     { opacity:1; clip-path:inset(58% 0 8% 0);  transform:translate(-5px,1px); }
-91%     { opacity:0; }
-95%     { opacity:1; clip-path:inset(32% 0 38% 0); transform:translate(-4px,0); }
-96%     { opacity:0; }
-100%    { opacity:0; }
-}
-
-@keyframes wmTl {
-0%,84%  { opacity:0; clip-path:inset(100% 0 0 0); transform:translate(0); }
-85%     { opacity:1; clip-path:inset(52% 0 12% 0); transform:translate(7px,0); }
-86%     { opacity:0; }
-90%     { opacity:1; clip-path:inset(8% 0 58% 0);  transform:translate(5px,-1px); }
-91%     { opacity:0; }
-95%     { opacity:1; clip-path:inset(38% 0 32% 0); transform:translate(4px,0); }
-96%     { opacity:0; }
-100%    { opacity:0; }
-}
-
-/* scan lines */
-.wordmark-wrap::after {
-content: '';
-position: absolute;
-inset: 0;
-background: repeating-linear-gradient(
-180deg,
-transparent 0px,
-transparent 3px,
-rgba(124,111,173,0.05) 3px,
-rgba(124,111,173,0.05) 4px
-);
-pointer-events: none;
-z-index: 10;
-}
-
-.label {
-font-family: 'Bebas Neue', sans-serif;
-letter-spacing: 0.35em;
-font-size: 13px;
-color: #b0a8cc;
-margin-top: -52px;
-}
 </style>
 
 </head>
@@ -222,19 +94,6 @@ margin-top: -52px;
 
 
   </div>
-
-  <!-- WORDMARK -->
-
-  <div class="wordmark-wrap">
-    <div class="wordmark-glow"></div>
-    <div class="wordmark">
-      <span class="layer mg">GAMMA</span>
-      <span class="layer tl">GAMMA</span>
-      <span class="base">GAMMA</span>
-    </div>
-  </div>
-
-  <div class="label">Party Game Platform</div>
 
 </body>
 </html>

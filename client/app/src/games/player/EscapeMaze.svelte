@@ -1,0 +1,355 @@
+<script lang="ts">
+  /**
+   * Phone game component for "Escape A Maze" (registry-04).
+   *
+   * Two modes:
+   * - Individual: D-pad / swipe controls to navigate the maze
+   * - Team: shake phone to move in your assigned direction
+   *
+   * Server messages listened:
+   *   maze_mode, maze_role, maze_generated, maze_move_ok, maze_wall_bump,
+   *   maze_team_moved, maze_you_escaped, maze_player_escaped,
+   *   maze_team_escaped, maze_positions, maze_team_positions, maze_timer
+   */
+  import { onMount, onDestroy } from "svelte";
+  import type { Room } from "colyseus.js";
+  import type { RoomState, PlayerState } from "../../../../shared/types";
+
+  export let room: Room;
+  export let state: RoomState;
+  export let me: PlayerState | undefined;
+
+  // ── Sub-phase state ──────────────────────────────────────────────
+
+  type SubPhase =
+    | "waiting"
+    | "instructions"
+    | "playing"
+    | "escaped"
+    | "time_up";
+
+  let subPhase: SubPhase = "waiting";
+
+  // ── Mode state ──────────────────────────────────────────────────
+
+  let gameMode: "individual" | "team" = "individual";
+  let controlType: "dpad" | "shake" = "dpad";
+
+  // ── Team state ──────────────────────────────────────────────────
+
+  let teamId = -1;
+  let myDirection: string = "";
+  let teamMembers: Array<{ id: string; name: string; direction: string }> = [];
+
+  // ── Position / movement ─────────────────────────────────────────
+
+  let myX = 1;
+  let myY = 1;
+  let escaped = false;
+  let escapeOrder = 0;
+  let escapeTimeMs = 0;
+  let wallBumpFeedback = false;
+  let wallBumpTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  // ── Timer ───────────────────────────────────────────────────────
+
+  let timeRemaining = 60000;
+  let finishCount = 0;
+
+  // ── Shake detection ─────────────────────────────────────────────
+
+  let shakeListening = false;
+  let lastAccelMagnitude = 0;
+  const SHAKE_THRESHOLD = 15; // m/s^2 above gravity
+
+  // ── Maze info ───────────────────────────────────────────────────
+
+  let mazeWidth = 0;
+  let mazeHeight = 0;
+  let exitX = 0;
+  let exitY = 0;
+
+  // ── Message handlers ────────────────────────────────────────────
+
+  const handlers: Array<{ type: string; fn: (msg: any) => void }> = [];
+
+  function listen(type: string, fn: (msg: any) => void) {
+    room.onMessage(type, fn);
+    handlers.push({ type, fn });
+  }
+
+  onMount(() => {
+    listen("maze_mode", (msg) => {
+      gameMode = msg.mode;
+    });
+
+    listen("maze_role", (msg) => {
+      if (msg.mode === "team") {
+        gameMode = "team";
+        controlType = "shake";
+        teamId = msg.teamId;
+        myDirection = msg.direction;
+        teamMembers = msg.teamMembers;
+        startShakeDetection();
+      } else {
+        gameMode = "individual";
+        controlType = "dpad";
+      }
+      subPhase = "playing";
+    });
+
+    listen("maze_generated", (msg) => {
+      mazeWidth = msg.width;
+      mazeHeight = msg.height;
+      exitX = msg.exitX;
+      exitY = msg.exitY;
+      myX = msg.startX;
+      myY = msg.startY;
+      escaped = false;
+      escapeOrder = 0;
+      escapeTimeMs = 0;
+      subPhase = "playing";
+    });
+
+    listen("maze_move_ok", (msg) => {
+      myX = msg.x;
+      myY = msg.y;
+    });
+
+    listen("maze_wall_bump", (_msg) => {
+      wallBumpFeedback = true;
+      if (wallBumpTimeout) clearTimeout(wallBumpTimeout);
+      wallBumpTimeout = setTimeout(() => {
+        wallBumpFeedback = false;
+      }, 200);
+    });
+
+    listen("maze_team_moved", (msg) => {
+      myX = msg.x;
+      myY = msg.y;
+    });
+
+    listen("maze_you_escaped", (msg) => {
+      escaped = true;
+      escapeOrder = msg.order;
+      escapeTimeMs = msg.timeMs;
+      subPhase = "escaped";
+      stopShakeDetection();
+    });
+
+    listen("maze_timer", (msg) => {
+      timeRemaining = msg.timeRemaining;
+      finishCount = msg.finishCount;
+
+      if (timeRemaining <= 0 && !escaped) {
+        subPhase = "time_up";
+        stopShakeDetection();
+      }
+    });
+  });
+
+  onDestroy(() => {
+    stopShakeDetection();
+    if (wallBumpTimeout) clearTimeout(wallBumpTimeout);
+  });
+
+  // ── D-pad movement (individual mode) ────────────────────────────
+
+  function sendMove(direction: string) {
+    if (escaped || subPhase !== "playing") return;
+    room.send("game_input", { action: "move", direction });
+  }
+
+  // ── Shake detection (team mode) ─────────────────────────────────
+
+  function startShakeDetection() {
+    if (shakeListening) return;
+    shakeListening = true;
+
+    // Request permission on iOS
+    if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
+      (DeviceMotionEvent as any).requestPermission().then((perm: string) => {
+        if (perm === "granted") {
+          window.addEventListener("devicemotion", onDeviceMotion);
+        }
+      }).catch(() => {
+        // Fall back — can't access motion on this device
+      });
+    } else {
+      window.addEventListener("devicemotion", onDeviceMotion);
+    }
+  }
+
+  function stopShakeDetection() {
+    if (!shakeListening) return;
+    shakeListening = false;
+    window.removeEventListener("devicemotion", onDeviceMotion);
+  }
+
+  function onDeviceMotion(e: DeviceMotionEvent) {
+    if (!shakeListening || escaped) return;
+
+    const accel = e.accelerationIncludingGravity;
+    if (!accel) return;
+
+    const x = accel.x ?? 0;
+    const y = accel.y ?? 0;
+    const z = accel.z ?? 0;
+    const magnitude = Math.sqrt(x * x + y * y + z * z);
+
+    // Detect a sharp acceleration spike
+    if (magnitude > SHAKE_THRESHOLD && magnitude - lastAccelMagnitude > SHAKE_THRESHOLD * 0.5) {
+      room.send("game_input", { action: "shake" });
+    }
+
+    lastAccelMagnitude = magnitude;
+  }
+
+  // ── Derived values ──────────────────────────────────────────────
+
+  $: timeLeftSecs = Math.ceil(timeRemaining / 1000);
+  $: directionLabel = myDirection ? myDirection.charAt(0).toUpperCase() + myDirection.slice(1) : "";
+  $: directionEmoji = myDirection === "up" ? "^" : myDirection === "down" ? "v" : myDirection === "left" ? "<" : myDirection === "right" ? ">" : "";
+</script>
+
+{#if subPhase === "waiting"}
+  <!-- Waiting for maze generation -->
+  <div class="flex-1 flex flex-col items-center justify-center p-6">
+    <div class="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+    <p class="text-gray-400 text-lg">Generating maze...</p>
+  </div>
+
+{:else if subPhase === "escaped"}
+  <!-- Escaped! -->
+  <div class="flex-1 flex flex-col items-center justify-center p-6 bg-gradient-to-b from-green-900/30 to-gray-900">
+    <div class="text-6xl mb-4">&#x1f3c6;</div>
+    <h2 class="text-3xl font-black text-green-400 mb-2">ESCAPED!</h2>
+    <p class="text-gray-300 text-lg">
+      #{escapeOrder} finish &mdash; {(escapeTimeMs / 1000).toFixed(1)}s
+    </p>
+    <p class="text-gray-500 text-sm mt-4">Waiting for others...</p>
+  </div>
+
+{:else if subPhase === "time_up"}
+  <!-- Time's up -->
+  <div class="flex-1 flex flex-col items-center justify-center p-6">
+    <div class="text-5xl mb-4">&#x23F0;</div>
+    <h2 class="text-2xl font-black text-red-400 mb-2">TIME'S UP</h2>
+    <p class="text-gray-400">You didn't escape this time.</p>
+  </div>
+
+{:else if subPhase === "playing" && gameMode === "individual"}
+  <!-- Individual mode: D-pad controls -->
+  <div class="flex-1 flex flex-col select-none" data-testid="maze-individual">
+    <!-- Top HUD -->
+    <div class="px-4 py-3 bg-gray-900/80 flex items-center gap-3">
+      <div class="flex-1">
+        <p class="text-xs text-gray-400">Position</p>
+        <p class="text-sm font-mono text-white">{myX},{myY}</p>
+      </div>
+      <div class="text-center">
+        <p class="text-xs text-gray-400">Escaped</p>
+        <p class="text-sm font-bold text-green-400">{finishCount}</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-mono font-black {timeLeftSecs < 10 ? 'text-red-400' : 'text-white'}">{timeLeftSecs}</p>
+      </div>
+    </div>
+
+    {#if wallBumpFeedback}
+      <div class="bg-red-900/50 text-center py-1 text-xs text-red-300 font-bold animate-pulse">
+        Wall!
+      </div>
+    {/if}
+
+    <!-- D-pad -->
+    <div class="flex-1 flex items-center justify-center">
+      <div class="relative" style="width:200px;height:200px">
+        <!-- Up -->
+        <button
+          class="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
+          on:click={() => sendMove("up")}
+        >&#x25B2;</button>
+
+        <!-- Down -->
+        <button
+          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
+          on:click={() => sendMove("down")}
+        >&#x25BC;</button>
+
+        <!-- Left -->
+        <button
+          class="absolute left-0 top-1/2 -translate-y-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
+          on:click={() => sendMove("left")}
+        >&#x25C0;</button>
+
+        <!-- Right -->
+        <button
+          class="absolute right-0 top-1/2 -translate-y-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
+          on:click={() => sendMove("right")}
+        >&#x25B6;</button>
+
+        <!-- Center indicator -->
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-600 flex items-center justify-center">
+          <span class="text-xs text-gray-400 font-mono">{myX},{myY}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{:else if subPhase === "playing" && gameMode === "team"}
+  <!-- Team mode: shake controls -->
+  <div class="flex-1 flex flex-col select-none" data-testid="maze-team">
+    <!-- Top HUD -->
+    <div class="px-4 py-3 bg-gray-900/80 flex items-center gap-3">
+      <div class="flex-1">
+        <p class="text-xs text-gray-400">Team {teamId + 1}</p>
+        <p class="text-sm font-mono text-white">Pos: {myX},{myY}</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-mono font-black {timeLeftSecs < 10 ? 'text-red-400' : 'text-white'}">{timeLeftSecs}</p>
+      </div>
+    </div>
+
+    {#if wallBumpFeedback}
+      <div class="bg-red-900/50 text-center py-1 text-xs text-red-300 font-bold animate-pulse">
+        Wall! Can't go {myDirection}
+      </div>
+    {/if}
+
+    <!-- Direction role display -->
+    <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6">
+      <!-- Big direction indicator -->
+      <div class="w-32 h-32 rounded-full bg-indigo-600/30 border-4 border-indigo-500 flex items-center justify-center">
+        <span class="text-5xl font-black text-indigo-300">{directionEmoji}</span>
+      </div>
+
+      <div class="text-center">
+        <h2 class="text-2xl font-black text-white mb-1">You move {directionLabel}</h2>
+        <p class="text-gray-400 text-sm">Shake your phone to move!</p>
+      </div>
+
+      <!-- Manual shake button (fallback / desktop) -->
+      <button
+        class="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-2xl text-white font-bold text-lg shadow-lg active:scale-95 transition-transform"
+        on:click={() => room.send("game_input", { action: "shake" })}
+      >
+        SHAKE ({directionLabel})
+      </button>
+
+      <!-- Team roster -->
+      <div class="w-full max-w-xs bg-gray-800/60 rounded-xl p-3">
+        <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Your Team</p>
+        {#each teamMembers as member}
+          <div class="flex items-center gap-2 py-1 {member.id === me?.id ? 'text-indigo-400 font-bold' : 'text-gray-300'}">
+            <span class="w-6 text-center font-mono">
+              {member.direction === "up" ? "^" : member.direction === "down" ? "v" : member.direction === "left" ? "<" : ">"}
+            </span>
+            <span class="text-sm">{member.name}</span>
+            <span class="text-xs text-gray-500 ml-auto">{member.direction}</span>
+          </div>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}

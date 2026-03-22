@@ -7,6 +7,7 @@
    *   - "Player" → enters the player flow (join or host)
    */
   import { createEventDispatcher } from "svelte";
+  import GammaTitle from "../components/GammaTitle.svelte";
 
   const dispatch = createEventDispatcher<{
     selectViewer: void;
@@ -18,8 +19,7 @@
   <!-- Hero -->
   <div class="flex-1 flex flex-col items-center justify-center gap-10 px-8 pt-16 pb-8">
     <div class="text-center space-y-3">
-      <h1 class="text-7xl font-black tracking-tight text-indigo-400">gamma</h1>
-      <p class="text-xl text-gray-300 font-medium">Party games for everyone</p>
+      <GammaTitle subtitle="Party games for everyone" size="lg" />
     </div>
 
     <div class="text-center">
@@ -28,8 +28,8 @@
       <div class="w-full max-w-md grid grid-cols-1 sm:grid-cols-2 gap-4">
         <!-- Viewer / Display -->
         <button
-          class="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-gray-700 bg-gray-800
-                 hover:border-indigo-500 hover:bg-indigo-900 active:scale-95 transition-all"
+          class="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-gray-700 bg-gray-800/90
+                 hover:border-indigo-500 hover:bg-indigo-900/90 active:scale-95 transition-all backdrop-blur-sm"
           on:click={() => dispatch("selectViewer")}
           data-testid="role-viewer-btn"
         >
@@ -42,8 +42,8 @@
 
         <!-- Player -->
         <button
-          class="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-gray-700 bg-gray-800
-                 hover:border-indigo-500 hover:bg-indigo-900 active:scale-95 transition-all"
+          class="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-gray-700 bg-gray-800/90
+                 hover:border-indigo-500 hover:bg-indigo-900/90 active:scale-95 transition-all backdrop-blur-sm"
           on:click={() => dispatch("selectPlayer")}
           data-testid="role-player-btn"
         >

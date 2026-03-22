@@ -19,6 +19,9 @@
   import LowballMarketplaceTV from "../../games/viewer/LowballMarketplaceTV.svelte";
   import FireMatchBlowShakeTV from "../../games/viewer/FireMatchBlowShakeTV.svelte";
   import HotPotatoTV from "../../games/viewer/HotPotatoTV.svelte";
+  import TapSpeedTV from "../../games/viewer/TapSpeedTV.svelte";
+  import SoundReplicationTV from "../../games/viewer/SoundReplicationTV.svelte";
+  import EscapeMazeTV from "../../games/viewer/EscapeMazeTV.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -30,6 +33,9 @@
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
   $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
   $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
+  $: isTapSpeed = state.selectedGame === "registry-03-tap-speed";
+  $: isSoundReplication = state.selectedGame === "registry-06-sound-replication";
+  $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -44,7 +50,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball || isFireMatch || isHotPotato) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -215,7 +221,13 @@
   }
 </script>
 
-{#if isOddOneOut}
+{#if isTapSpeed}
+  <TapSpeedTV {room} {state} />
+{:else if isSoundReplication}
+  <SoundReplicationTV {room} {state} />
+{:else if isEscapeMaze}
+  <EscapeMazeTV {room} {state} />
+{:else if isOddOneOut}
   <OddOneOutTV {room} {state} />
 {:else if isEvilLaugh}
   <EvilLaughTV {room} {state} />

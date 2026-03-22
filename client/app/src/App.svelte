@@ -9,10 +9,13 @@
    *   2a. Viewer path: auto-creates room as view_screen, shows TV screens
    *   2b. Player path: Landing → Join/Host → room screens
    */
-  import { onDestroy } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
-  import { hostRoom, joinRoom, createRoom } from "../../shared/colyseusClient";
+  import { hostRoom, joinRoom, createRoom, joinAsViewer } from "../../shared/colyseusClient";
   import type { RoomState, Phase, PlayerState } from "../../shared/types";
+
+  // ── Shared components ─────────────────────────────────────────────
+  import FloatingBackground from "./components/FloatingBackground.svelte";
 
   // ── Role selection ────────────────────────────────────────────────
   import RoleSelectScreen from "./screens/RoleSelectScreen.svelte";
@@ -42,9 +45,11 @@
 
   type Role = "none" | "viewer" | "player";
   type PlayerView = "landing" | "join" | "host" | "room";
+  type ViewerView = "join_code" | "room";
 
   let role: Role = "none";
   let playerView: PlayerView = "landing";
+  let viewerView: ViewerView = "join_code";
 
   let room: Room<RoomState> | null = null;
   let state: RoomState | null = null;
@@ -52,18 +57,82 @@
   let myId: string = "";
   let error: string = "";
   let connecting = false;
+  let leavingVoluntarily = false;
+
+  // ── Viewer-only background music ──────────────────────────────────
+  let cloudDancerTrack: HTMLAudioElement | null = null;
+  let fartingAroundTrack: HTMLAudioElement | null = null;
+  let currentTrack: "cloud" | "fart" | null = null;
+  let audioBlocked = false;
+
+  function pauseAllTracks() {
+    if (cloudDancerTrack) cloudDancerTrack.pause();
+    if (fartingAroundTrack) fartingAroundTrack.pause();
+  }
+
+  function desiredTrack(): "cloud" | "fart" | null {
+    if (role !== "viewer" || !state) return null;
+    if (phase === "in_round" && state.selectedGame === "registry-19-shave-the-yak") {
+      return "fart";
+    }
+    if (phase === "lobby") {
+      return "cloud";
+    }
+    return null;
+  }
+
+  async function syncTrackPlayback() {
+    if (!cloudDancerTrack || !fartingAroundTrack) return;
+
+    const next = desiredTrack();
+    if (!next) {
+      pauseAllTracks();
+      currentTrack = null;
+      return;
+    }
+
+    if (next === currentTrack) return;
+
+    pauseAllTracks();
+
+    const target = next === "cloud" ? cloudDancerTrack : fartingAroundTrack;
+    target.currentTime = 0;
+    try {
+      await target.play();
+      currentTrack = next;
+      audioBlocked = false;
+    } catch {
+      currentTrack = null;
+      audioBlocked = true;
+    }
+  }
+
+  function onUserInteraction() {
+    if (!audioBlocked) return;
+    void syncTrackPlayback();
+  }
+
+  function enableSound() {
+    void syncTrackPlayback();
+  }
 
   // ── Role selection handlers ───────────────────────────────────────
 
   async function selectViewer() {
     role = "viewer";
+    viewerView = "join_code";
+  }
+
+  async function viewerJoinRoom(roomCode: string) {
     connecting = true;
+    error = "";
     try {
-      const r = await hostRoom();
+      const r = await joinAsViewer(roomCode);
       wireRoom(r);
+      viewerView = "room";
       connecting = false;
     } catch (e) {
-      error = `Could not create room: ${String(e)}`;
+      error = `Could not join room: ${String(e)}`;
       connecting = false;
     }
   }
@@ -91,6 +160,7 @@
     });
 
     r.onLeave((code: number) => {
+      if (leavingVoluntarily) return;
       if (code === 4001) {
         error = "You were kicked from the room by the host.";
       } else {
@@ -124,6 +194,7 @@
   }
 
   function resetToRoleSelect() {
+    leavingVoluntarily = true;
     room?.leave();
     room = null;
     state = null;
@@ -133,9 +204,45 @@
     connecting = false;
     role = "none";
     playerView = "landing";
+    viewerView = "join_code";
+    leavingVoluntarily = false;
+    pauseAllTracks();
+    currentTrack = null;
   }
 
-  onDestroy(() => room?.leave());
+  onMount(() => {
+    cloudDancerTrack = new Audio("/cloud_dancer.mp3");
+    cloudDancerTrack.loop = true;
+    cloudDancerTrack.volume = 0.35;
+
+    fartingAroundTrack = new Audio("/farting_around.mp3");
+    fartingAroundTrack.loop = true;
+    fartingAroundTrack.volume = 0.42;
+
+    // Safety net: restart track if 'ended' fires despite loop=true
+    const restartOnEnd = (e: Event) => {
+      const audio = e.target as HTMLAudioElement;
+      if (audio.loop && audio.paused) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+    };
+    cloudDancerTrack.addEventListener("ended", restartOnEnd);
+    fartingAroundTrack.addEventListener("ended", restartOnEnd);
+
+    window.addEventListener("pointerdown", onUserInteraction);
+    window.addEventListener("keydown", onUserInteraction);
+    window.addEventListener("touchstart", onUserInteraction, { passive: true });
+  });
+
+  onDestroy(() => {
+    window.removeEventListener("pointerdown", onUserInteraction);
+    window.removeEventListener("keydown", onUserInteraction);
+    window.removeEventListener("touchstart", onUserInteraction);
+    pauseAllTracks();
+    leavingVoluntarily = true;
+    room?.leave();
+  });
 
   // ── Derived state ─────────────────────────────────────────────────
 
@@ -145,6 +252,26 @@
   $: sortedPlayers = state
     ? [...state.players.values()].sort((a, b) => b.score - a.score)
     : [];
+
+  // Keep viewer music in sync with room phase + selected game.
+  $: if (role === "viewer" && !connecting && !error && state) {
+    void syncTrackPlayback();
+  } else {
+    pauseAllTracks();
+    currentTrack = null;
+  }
+
+  $: activeTrackAttribution =
+    currentTrack === "cloud"
+      ? 'Music: "Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0'
+      : currentTrack === "fart"
+        ? 'Music: "Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0'
+        : "";
+
+  // Show floating background on pre-game screens only (not during active games)
+  const gamePhases: Phase[] = ["instructions", "countdown", "in_round", "round_end", "scoreboard", "game_over", "game_loading"];
+  $: showBackground = !gamePhases.includes(phase);
+
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════════ -->
@@ -152,6 +279,10 @@
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
 <div class="min-h-screen flex flex-col bg-gray-950 text-white">
+
+  {#if showBackground}
+    <FloatingBackground dark={true} />
+  {/if}
 
   <!-- ── Error overlay ─────────────────────────────────────────────── -->
   {#if error}
@@ -176,7 +307,41 @@
   <!-- VIEWER PATH                                                     -->
   <!-- ═══════════════════════════════════════════════════════════════ -->
   {:else if role === "viewer"}
-    {#if connecting}
+    {#if viewerView === "join_code" && !state}
+      <!-- Viewer: enter room code to join existing room -->
+      <div class="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+        <h2 class="text-2xl font-bold text-gray-200">Join a Room as Display</h2>
+        <p class="text-gray-400 text-sm text-center max-w-md">Enter the room code shown on the host's device. A player must create the room first.</p>
+        {#if connecting}
+          <p class="text-xl animate-pulse text-indigo-400">Connecting...</p>
+        {:else}
+          <form
+            class="flex flex-col items-center gap-4"
+            on:submit|preventDefault={(e) => {
+              const form = e.currentTarget;
+              const input = form.querySelector('input');
+              if (input && input.value.trim()) viewerJoinRoom(input.value.trim());
+            }}
+          >
+            <input
+              type="text"
+              placeholder="ROOM CODE"
+              maxlength="4"
+              class="text-center text-4xl font-mono tracking-[0.3em] w-56 bg-gray-800 border-2 border-gray-600 rounded-xl px-4 py-3 text-white uppercase focus:border-indigo-500 focus:outline-none"
+              autofocus
+            />
+            <button
+              type="submit"
+              class="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-lg font-bold transition-colors"
+            >Join as Display</button>
+          </form>
+        {/if}
+        <button
+          class="text-sm text-gray-500 hover:text-gray-300 underline mt-4"
+          on:click={resetToRoleSelect}
+        >Back</button>
+      </div>
+    {:else if connecting}
       <div class="flex-1 flex items-center justify-center">
         <p class="text-2xl animate-pulse">Connecting to server...</p>
       </div>
@@ -268,5 +433,20 @@
         <PlayerGameOver room={typedRoom} state={typedState} {me} />
       {/if}
     {/if}
+  {/if}
+
+  {#if activeTrackAttribution}
+    <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
+      {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
+    </div>
+  {/if}
+
+  {#if audioBlocked}
+    <div class="fixed bottom-14 right-4 z-50">
+      <button
+        class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold shadow-lg"
+        on:click={enableSound}
+      >Enable sound</button>
+    </div>
   {/if}
 </div>

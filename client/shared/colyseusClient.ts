@@ -58,9 +58,27 @@ export function getClient(): Colyseus.Client {
  * Create a new room as a view screen (TV, laptop browser, projector).
  * The view screen becomes the host/admin and drives the setup wizard.
  * Returns the Colyseus Room instance.
+ *
+ * @deprecated TVs should no longer create rooms. Use joinAsViewer() instead.
  */
 export async function hostRoom(): Promise<Colyseus.Room> {
   return getClient().create("gamma_room", { role: "view_screen" });
+}
+
+/**
+ * Join an existing room as a view screen (TV, laptop, projector).
+ * The TV joins as a display-only participant — it cannot create rooms.
+ *
+ * @param roomCode  4-char room code created by a player host
+ */
+export async function joinAsViewer(roomCode: string): Promise<Colyseus.Room> {
+  const client = getClient();
+  const available = await client.getAvailableRooms("gamma_room");
+  const match = available.find(
+    (r) => (r.metadata as { roomCode?: string })?.roomCode === roomCode.toUpperCase(),
+  );
+  if (!match) throw new Error(`Room "${roomCode}" not found`);
+  return client.joinById(match.roomId, { role: "view_screen" });
 }
 
 /**

@@ -16,6 +16,9 @@
   import LowballMarketplace from "../../games/player/LowballMarketplace.svelte";
   import FireMatchBlowShake from "../../games/player/FireMatchBlowShake.svelte";
   import HotPotato from "../../games/player/HotPotato.svelte";
+  import TapSpeed from "../../games/player/TapSpeed.svelte";
+  import SoundReplication from "../../games/player/SoundReplication.svelte";
+  import EscapeMaze from "../../games/player/EscapeMaze.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -29,6 +32,9 @@
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
   $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
   $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
+  $: isTapSpeed = state.selectedGame === "registry-03-tap-speed";
+  $: isSoundReplication = state.selectedGame === "registry-06-sound-replication";
+  $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -192,7 +198,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isEvilLaugh || isLowball || isFireMatch || isHotPotato) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isEvilLaugh || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -257,7 +263,16 @@
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isOddOneOut}
+{#if isTapSpeed}
+  <!-- ── Registry-03: Tap Speed ──────────────────────────────────── -->
+  <TapSpeed {room} {state} {me} />
+{:else if isSoundReplication}
+  <!-- ── Registry-06: Sound Replication ──────────────────────────── -->
+  <SoundReplication {room} {state} {me} />
+{:else if isEscapeMaze}
+  <!-- ── Registry-04: Escape Maze ────────────────────────────────── -->
+  <EscapeMaze {room} {state} {me} />
+{:else if isOddOneOut}
   <!-- ── Registry-20: Odd One Out ──────────────────────────────────── -->
   <OddOneOut {room} {state} {me} />
 {:else if isEvilLaugh}

@@ -29,6 +29,7 @@
   let cloudDancerTrack: HTMLAudioElement | null = null;
   let fartingAroundTrack: HTMLAudioElement | null = null;
   let currentTrack: "cloud" | "fart" | null = null;
+  let audioBlocked = false;
 
   function pauseAllTracks() {
     if (cloudDancerTrack) cloudDancerTrack.pause();
@@ -65,10 +66,21 @@
     try {
       await target.play();
       currentTrack = next;
+      audioBlocked = false;
     } catch {
       // Browser autoplay policy may require user interaction.
       currentTrack = null;
+      audioBlocked = true;
     }
+  }
+
+  function onUserInteraction() {
+    if (!audioBlocked) return;
+    void syncTrackPlayback();
+  }
+
+  function enableSound() {
+    void syncTrackPlayback();
   }
 
   onMount(async () => {
@@ -79,6 +91,11 @@
     fartingAroundTrack = new Audio("/farting_around.mp3");
     fartingAroundTrack.loop = true;
     fartingAroundTrack.volume = 0.42;
+
+    // Retry playback on the first user interactions after autoplay blocking.
+    window.addEventListener("pointerdown", onUserInteraction);
+    window.addEventListener("keydown", onUserInteraction);
+    window.addEventListener("touchstart", onUserInteraction, { passive: true });
 
     try {
       room = await hostRoom();
@@ -107,6 +124,9 @@
   });
 
   onDestroy(() => {
+    window.removeEventListener("pointerdown", onUserInteraction);
+    window.removeEventListener("keydown", onUserInteraction);
+    window.removeEventListener("touchstart", onUserInteraction);
     pauseAllTracks();
     room?.leave();
   });
@@ -173,6 +193,15 @@
   {#if activeTrackAttribution}
     <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
       {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
+    </div>
+  {/if}
+
+  {#if audioBlocked}
+    <div class="fixed bottom-14 right-4 z-50">
+      <button
+        class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold shadow-lg"
+        on:click={enableSound}
+      >Enable sound</button>
     </div>
   {/if}
 </div>
