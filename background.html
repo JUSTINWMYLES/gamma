@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Floating Shapes Background</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+width: 100vw;
+height: 100vh;
+/* Toggle between these to test light/dark */
+background: #f0ede8;
+/* background: #111118; */
+overflow: hidden;
+}
+
+canvas {
+position: fixed;
+top: 0; left: 0;
+width: 100%;
+height: 100%;
+pointer-events: none;
+}
+
+/* Demo content to show it works as a background */
+.demo-content {
+position: relative;
+z-index: 1;
+display: flex;
+align-items: center;
+justify-content: center;
+height: 100vh;
+flex-direction: column;
+gap: 12px;
+}
+
+.demo-label {
+font-family: Georgia, serif;
+font-size: 13px;
+letter-spacing: 0.08em;
+color: rgba(0,0,0,0.35);
+}
+
+.toggle-btn {
+padding: 8px 20px;
+border: 1.5px solid rgba(0,0,0,0.2);
+background: rgba(255,255,255,0.5);
+backdrop-filter: blur(6px);
+border-radius: 100px;
+font-family: Georgia, serif;
+font-size: 12px;
+letter-spacing: 0.05em;
+cursor: pointer;
+color: rgba(0,0,0,0.5);
+transition: all 0.2s;
+}
+.toggle-btn:hover { background: rgba(255,255,255,0.75); }
+</style>
+
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div class="demo-content">
+  <span class="demo-label">floating shapes background</span>
+  <button class="toggle-btn" onclick="toggleTheme()">toggle light / dark</button>
+</div>
+
+<script>
+const canvas = document.getElementById('bg');
+const ctx = canvas.getContext('2d');
+
+let W = canvas.width = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+// Color palettes — light bg uses slightly muted, dark bg uses brighter
+const palettesLight = [
+  '#e05c5c', '#e07a3c', '#d4b84a', '#5bab6e',
+  '#4a8fc4', '#8b6fc4', '#c45c9e', '#4ab8b8',
+  '#c4824a', '#7aab4a'
+];
+const palettesDark = [
+  '#f07070', '#f09050', '#f0d060', '#70cc88',
+  '#60a8e8', '#a888e8', '#e870bc', '#60d8d8',
+  '#e09e60', '#90cc60'
+];
+
+let palette = palettesLight;
+
+// Shape types
+const SHAPES = ['circle', 'square', 'triangle', 'diamond', 'hexagon'];
+
+function randBetween(a, b) { return a + Math.random() * (b - a); }
+function randInt(a, b) { return Math.floor(randBetween(a, b)); }
+function pick(arr) { return arr[randInt(0, arr.length)]; }
+
+class Shape {
+  constructor(x, y) {
+    this.reset(x, y);
+  }
+
+  reset(x, y) {
+    this.x = x !== undefined ? x : randBetween(-60, W + 60);
+    this.y = y !== undefined ? y : randBetween(-60, H + 60);
+    this.type = pick(SHAPES);
+    this.size = randBetween(8, 22);
+    this.color = pick(palette);
+    this.alpha = randBetween(0.25, 0.65);
+    this.lineWidth = randBetween(1.2, 2.5);
+    this.rotation = randBetween(0, Math.PI * 2);
+
+    // Gentle drift — mostly horizontal/upward like cereal bobbing
+    const angle = randBetween(-Math.PI * 0.6, -Math.PI * 0.4); // upward bias
+    const speed = randBetween(0.18, 0.55);
+    this.vx = Math.cos(angle) * speed * randBetween(-1.5, 1.5);
+    this.vy = Math.sin(angle) * speed;
+
+    // Slight wobble
+    this.wobbleAmp = randBetween(0.0003, 0.001);
+    this.wobbleOffset = randBetween(0, Math.PI * 2);
+    this.rotSpeed = randBetween(-0.004, 0.004);
+    this.t = 0;
+  }
+
+  update() {
+    this.t++;
+    this.x += this.vx + Math.sin(this.t * this.wobbleAmp * 60 + this.wobbleOffset) * 0.3;
+    this.y += this.vy;
+    this.rotation += this.rotSpeed;
+
+    // Respawn when off screen
+    if (this.y < -80 || this.y > H + 80 || this.x < -100 || this.x > W + 100) {
+      // Re-enter from bottom or sides
+      const edge = Math.random();
+      if (edge < 0.6) {
+        // from bottom
+        this.reset(randBetween(0, W), H + 40);
+      } else if (edge < 0.8) {
+        // from left
+        this.reset(-40, randBetween(0, H));
+      } else {
+        // from right
+        this.reset(W + 40, randBetween(0, H));
+      }
+    }
+  }
+
+  draw() {
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = this.lineWidth;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+
+    ctx.beginPath();
+    const s = this.size;
+
+    switch (this.type) {
+      case 'circle':
+        ctx.arc(0, 0, s, 0, Math.PI * 2);
+        break;
+
+      case 'square':
+        ctx.rect(-s, -s, s * 2, s * 2);
+        break;
+
+      case 'triangle':
+        ctx.moveTo(0, -s);
+        ctx.lineTo(s * 0.866, s * 0.5);
+        ctx.lineTo(-s * 0.866, s * 0.5);
+        ctx.closePath();
+        break;
+
+      case 'diamond':
+        ctx.moveTo(0, -s * 1.2);
+        ctx.lineTo(s * 0.75, 0);
+        ctx.lineTo(0, s * 1.2);
+        ctx.lineTo(-s * 0.75, 0);
+        ctx.closePath();
+        break;
+
+      case 'hexagon':
+        for (let i = 0; i < 6; i++) {
+          const a = (Math.PI / 3) * i - Math.PI / 6;
+          if (i === 0) ctx.moveTo(Math.cos(a) * s, Math.sin(a) * s);
+          else ctx.lineTo(Math.cos(a) * s, Math.sin(a) * s);
+        }
+        ctx.closePath();
+        break;
+    }
+
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// Spawn shapes spread across canvas initially
+const COUNT = Math.min(120, Math.floor((W * H) / 8000));
+const shapes = [];
+
+for (let i = 0; i < COUNT; i++) {
+  shapes.push(new Shape());
+}
+
+function animate() {
+  ctx.clearRect(0, 0, W, H);
+  shapes.forEach(s => { s.update(); s.draw(); });
+  requestAnimationFrame(animate);
+}
+
+animate();
+
+// Theme toggle
+let dark = false;
+function toggleTheme() {
+  dark = !dark;
+  document.body.style.background = dark ? '#111118' : '#f0ede8';
+  palette = dark ? palettesDark : palettesLight;
+  // Update existing shapes' colors
+  shapes.forEach(s => s.color = pick(palette));
+}
+</script>
+
+</body>
+</html>
