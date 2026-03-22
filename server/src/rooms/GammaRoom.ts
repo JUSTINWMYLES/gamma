@@ -219,12 +219,32 @@ export class GammaRoom extends Room<RoomState> {
     this.onMessage("select_game", (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;
       this.state.selectedGame = data.gameId;
+
+      // Keep game-specific config sane when switching games.
+      if (data.gameId === "registry-25-lowball-marketplace") {
+        if (
+          this.state.gameConfig.gameMode !== "classic" &&
+          this.state.gameConfig.gameMode !== "funny_messages"
+        ) {
+          this.state.gameConfig.gameMode = "classic";
+        }
+      } else {
+        this.state.gameConfig.gameMode = "default";
+      }
     });
 
     /** Host adjusts game config (round count, time limit, match mode). */
     this.onMessage(
       "update_config",
-      (client, data: Partial<{ roundCount: number; timeLimitSecs: number; matchMode: string }>) => {
+      (
+        client,
+        data: Partial<{
+          roundCount: number;
+          timeLimitSecs: number;
+          matchMode: string;
+          gameMode: string;
+        }>,
+      ) => {
         if (!this._isHost(client)) return;
         if (data.roundCount !== undefined) {
           this.state.gameConfig.roundCount = Math.max(1, Math.min(data.roundCount, 10));
@@ -234,6 +254,14 @@ export class GammaRoom extends Room<RoomState> {
         }
         if (data.matchMode === "ffa" || data.matchMode === "1v1_bracket") {
           this.state.gameConfig.matchMode = data.matchMode;
+        }
+        if (
+          data.gameMode !== undefined &&
+          (data.gameMode === "default" ||
+            data.gameMode === "classic" ||
+            data.gameMode === "funny_messages")
+        ) {
+          this.state.gameConfig.gameMode = data.gameMode;
         }
       },
     );

@@ -25,8 +25,8 @@
  *   "gif_selection_update" { submitted, total }
  *   "gif_assigned"         { gifUrl, gifLabel, originalPicker, durationMs, serverTimestamp }
  *                          ↑ sent privately to the recording player
- *   "recording_turn"       { playerId, playerName, gifUrl, gifLabel, durationMs, serverTimestamp }
- *                          ↑ broadcast to all (TV shows it, other players wait)
+ *   "recording_turn"       { playerId, playerName, durationMs, serverTimestamp }
+ *                          ↑ broadcast to all (TV shows "recording...", other players wait)
  *   "recording_submitted"  { playerId }
  *   "playback_entry"       { playerId, playerName, gifUrl, gifLabel, audioBase64 }
  *   "playback_done"        {}
@@ -242,12 +242,10 @@ export default class EvilLaughOverlayGame extends BaseGame {
       const assignment = this.session.assignments.get(playerId);
       if (!assignment) continue;
 
-      // Tell everyone whose turn it is (TV shows the GIF, others wait)
+      // Tell everyone whose turn it is (TV shows "recording in progress", no GIF)
       this.broadcast("recording_turn", {
         playerId: assignment.playerId,
         playerName: assignment.playerName,
-        gifUrl: assignment.gifUrl,
-        gifLabel: assignment.gifLabel,
         durationMs: RECORDING_DURATION_MS,
         serverTimestamp: Date.now(),
       });

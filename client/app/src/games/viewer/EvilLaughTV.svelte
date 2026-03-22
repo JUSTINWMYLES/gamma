@@ -43,8 +43,6 @@
   // ── Recording phase ─────────────────────────────────────────────
 
   let recorderName = "";
-  let recorderGifUrl = "";
-  let recorderGifLabel = "";
   let recordingTimeLeft = 0;
   let recordingEndTime = 0;
   let recordingTimer: ReturnType<typeof setInterval> | null = null;
@@ -130,8 +128,6 @@
   function onRecordingTurn(data: {
     playerId: string;
     playerName: string;
-    gifUrl: string;
-    gifLabel: string;
     durationMs: number;
     serverTimestamp: number;
   }) {
@@ -139,8 +135,6 @@
     clearAllTimers();
 
     recorderName = data.playerName;
-    recorderGifUrl = data.gifUrl;
-    recorderGifLabel = data.gifLabel;
     recorderSubmitted = false;
 
     recordingEndTime = data.serverTimestamp + data.durationMs;
@@ -295,33 +289,23 @@
     </div>
 
   {:else if subPhase === "recording"}
-    <!-- Recording — show who's recording + the GIF they're dubbing -->
+    <!-- Recording — show who's recording (no GIF — that's revealed during playback) -->
     <div class="text-center space-y-6 w-full max-w-3xl">
       <h1 class="text-3xl font-black text-red-400 animate-pulse">Recording Live!</h1>
 
-      <div class="relative rounded-2xl overflow-hidden bg-gray-800 shadow-2xl">
-        <!-- The GIF being dubbed -->
-        {#if recorderGifUrl}
-          <img
-            src={recorderGifUrl}
-            alt={recorderGifLabel}
-            class="w-full max-h-[400px] object-contain"
-          />
-        {/if}
-
-        <!-- Overlay with recorder info -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-6">
-          <p class="text-sm text-gray-400 uppercase tracking-widest">Now dubbing...</p>
-          <p class="text-3xl font-black text-white">{recorderName}</p>
-          <p class="text-sm text-gray-400 mt-1">GIF: {recorderGifLabel}</p>
-        </div>
+      <div class="rounded-2xl bg-gray-800 shadow-2xl p-10 space-y-6">
+        <p class="text-sm text-gray-400 uppercase tracking-widest">Now dubbing...</p>
+        <p class="text-5xl font-black text-white">{recorderName}</p>
+        <p class="text-lg text-gray-400">Recording their evil laugh...</p>
 
         <!-- Recording indicator -->
-        <div class="absolute top-4 right-4 flex items-center gap-2 px-3 py-1.5 bg-red-600 rounded-full">
-          <div class="w-3 h-3 rounded-full bg-white animate-pulse"></div>
-          <span class="text-white text-sm font-bold">
-            {recorderSubmitted ? 'DONE' : 'REC'}
-          </span>
+        <div class="flex items-center justify-center gap-2">
+          <div class="px-4 py-2 bg-red-600 rounded-full flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-white animate-pulse"></div>
+            <span class="text-white text-sm font-bold">
+              {recorderSubmitted ? 'DONE' : 'REC'}
+            </span>
+          </div>
         </div>
       </div>
 

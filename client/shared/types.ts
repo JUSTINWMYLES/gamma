@@ -40,6 +40,7 @@ export interface GameConfig {
   roundCount: number;
   timeLimitSecs: number;
   matchMode: "ffa" | "1v1_bracket";
+  gameMode: string;
 }
 
 export interface GuardState {
@@ -83,7 +84,7 @@ export const TILE = {
   FLOOR: 0,
 } as const;
 
-export const TILE_SIZE_PX = 36; // pixels per tile — smaller to fit the larger 24×16 map
+export const TILE_SIZE_PX = 28; // pixels per tile — fits the 36×24 map on standard displays
 
 // ── Game registry (client-side metadata for filtering / display) ──────────────
 
@@ -102,6 +103,14 @@ export const GAME_REGISTRY: GameMeta[] = [
     label: "Don't Get Caught",
     description: "Avoid supernatural guards on a procedural map. More guards each round.",
     activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
+  {
+    id: "registry-17-fire-match-blow-shake",
+    label: "Camp Fire",
+    description: "Strike a match, blow to grow the flame, shake to fan it, then tap to extinguish!",
+    activityLevel: "some",
     requiresSameRoom: false,
     requiresSecondaryDisplay: false,
   },
@@ -135,6 +144,14 @@ export const GAME_REGISTRY: GameMeta[] = [
     description: "Bid on ridiculous items in a fake marketplace. Go low... but not TOO low!",
     activityLevel: "none",
     requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+  },
+  {
+    id: "registry-07-hot-potato",
+    label: "Hot Potato",
+    description: "Pass the phone before the timer runs out! Don't get caught holding the potato!",
+    activityLevel: "some",
+    requiresSameRoom: true,
     requiresSecondaryDisplay: false,
   },
 ];

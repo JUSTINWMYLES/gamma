@@ -3,11 +3,18 @@
    * Phone game component for "Odd One Out" (registry-20).
    *
    * Sub-phases during `in_round`:
-   *   prompt_acknowledge → observing → voting → results
+   *   prompt_acknowledge → observing (voting open for normals) → voting_final → results
+   *
+   * Key behavior changes:
+   *   - Normal players: see "You are normal" with no action prompt, can vote
+   *     at ANY time during observation or the final voting window.
+   *   - Odd players: see their secret action prompt, perform it during
+   *     observation, CANNOT vote — they earn points from deception.
    *
    * Server messages listened:
-   *   assign_prompt, phase_info, window_start, window_pause,
-   *   voting_start, vote_confirmed, vote_count_update, round_result
+   *   assign_prompt, phase_info, voting_open, window_start, window_pause,
+   *   voting_final, vote_confirmed, vote_count_update, round_result,
+   *   round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -19,10 +26,10 @@
 
   // ── Local state ────────────────────────────────────────────────────
 
-  type SubPhase = "waiting" | "prompt" | "observing" | "paused" | "voting" | "results";
+  type SubPhase = "waiting" | "prompt" | "observing" | "paused" | "voting_final" | "results";
   let subPhase: SubPhase = "waiting";
 
-  // Prompt
+  // Prompt / role
   let myRole: "odd" | "normal" | "" = "";
   let myPrompt = "";
   let windowCount = 0;
@@ -41,15 +48,18 @@
   let pauseEndTime = 0;
   let pauseTimer: ReturnType<typeof setInterval> | null = null;
 
-  // Voting
+  // Voting (available during observation for normal players)
   let votablePlayers: { id: string; name: string }[] = [];
-  let votingTimeLeft = 0;
-  let votingEndTime = 0;
-  let votingTimer: ReturnType<typeof setInterval> | null = null;
+  let votingOpen = false;
   let myVote: string | null = null;
   let voteConfirmed = false;
   let votesIn = 0;
   let totalVoters = 0;
+
+  // Final voting window timer
+  let votingTimeLeft = 0;
+  let votingEndTime = 0;
+  let votingTimer: ReturnType<typeof setInterval> | null = null;
 
   // Results
   let results: {
@@ -77,6 +87,21 @@
     if (data.subPhase === "prompt_acknowledge") {
       subPhase = "prompt";
     }
+  }
+
+  function onVotingOpen(data: {
+    serverTimestamp: number;
+    playerIds: { id: string; name: string }[];
+    voterCount: number;
+  }) {
+    // Voting is now open — normal players can vote at any time
+    votingOpen = true;
+    // Filter out self from votable list
+    votablePlayers = data.playerIds.filter((p) => p.id !== me?.id);
+    myVote = null;
+    voteConfirmed = false;
+    votesIn = 0;
+    totalVoters = data.voterCount;
   }
 
   function onWindowStart(data: { windowNumber: number; totalWindows: number; durationMs: number; serverTimestamp: number; oddPrompt: string }) {
@@ -108,20 +133,16 @@
     }, 200);
   }
 
-  function onVotingStart(data: { durationMs: number; serverTimestamp: number; playerIds: { id: string; name: string }[] }) {
-    subPhase = "voting";
+  function onVotingFinal(data: { durationMs: number; serverTimestamp: number; playerIds: { id: string; name: string }[] }) {
+    subPhase = "voting_final";
     clearTimer("window");
     clearTimer("pause");
 
-    // Filter out self from votable list
+    // Update votable list in case it changed
     votablePlayers = data.playerIds.filter((p) => p.id !== me?.id);
 
     votingEndTime = data.serverTimestamp + data.durationMs;
     votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
-    myVote = null;
-    voteConfirmed = false;
-    votesIn = 0;
-    totalVoters = data.playerIds.length;
 
     clearTimer("voting");
     votingTimer = setInterval(() => {
@@ -141,6 +162,7 @@
   function onRoundResult(data: typeof results) {
     subPhase = "results";
     results = data;
+    votingOpen = false;
     clearTimer("window");
     clearTimer("pause");
     clearTimer("voting");
@@ -165,6 +187,7 @@
 
   function castVote(suspectId: string) {
     if (myVote || voteConfirmed) return;
+    if (myRole === "odd") return; // odd players can't vote
     myVote = suspectId;
     room.send("game_input", { action: "vote", suspectId });
   }
@@ -174,9 +197,10 @@
   onMount(() => {
     room.onMessage("assign_prompt", onAssignPrompt);
     room.onMessage("phase_info", onPhaseInfo);
+    room.onMessage("voting_open", onVotingOpen);
     room.onMessage("window_start", onWindowStart);
     room.onMessage("window_pause", onWindowPause);
-    room.onMessage("voting_start", onVotingStart);
+    room.onMessage("voting_final", onVotingFinal);
     room.onMessage("vote_confirmed", onVoteConfirmed);
     room.onMessage("vote_count_update", onVoteCountUpdate);
     room.onMessage("round_result", onRoundResult);
@@ -192,6 +216,8 @@
   // Derive my score from results
   $: myScore = results?.scores[me?.id ?? ""] ?? 0;
   $: wasOdd = results?.oddPlayerIds.includes(me?.id ?? "") ?? false;
+  $: isOdd = myRole === "odd";
+  $: canVote = myRole === "normal" && votingOpen && !voteConfirmed;
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="odd-one-out">
@@ -205,20 +231,37 @@
 
   {:else if subPhase === "waiting"}
     <!-- Waiting for server to assign prompt -->
-    <p class="text-gray-400 text-center">Getting ready…</p>
+    <p class="text-gray-400 text-center">Getting ready...</p>
 
   {:else if subPhase === "prompt"}
     <!-- Prompt display + acknowledge -->
     <div class="w-full max-w-sm text-center space-y-4">
-      <h2 class="text-xl font-black text-indigo-400">Your Secret Action</h2>
-      <p class="text-xs text-gray-400 uppercase tracking-widest">
-        {myRole === "odd" ? "You are the odd one out" : "You are normal"}
-      </p>
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-6">
-        <p class="text-lg font-semibold text-white">{myPrompt}</p>
-      </div>
+      {#if isOdd}
+        <!-- ODD player: sees their secret action -->
+        <h2 class="text-xl font-black text-red-400">You Are the Odd One Out!</h2>
+        <div class="bg-red-900/40 border border-red-600 rounded-xl p-6">
+          <p class="text-xs text-red-400 uppercase tracking-widest mb-2">Your Secret Action</p>
+          <p class="text-lg font-semibold text-white">{myPrompt}</p>
+        </div>
+        <p class="text-xs text-gray-400">
+          Perform this action during observation windows. Try not to get caught!
+          You earn points when others guess wrong.
+        </p>
+      {:else}
+        <!-- NORMAL player: no action prompt, just told they're normal -->
+        <h2 class="text-xl font-black text-indigo-400">You Are Normal</h2>
+        <div class="bg-indigo-900/40 border border-indigo-600 rounded-xl p-6">
+          <p class="text-lg font-semibold text-white">Watch everyone carefully!</p>
+          <p class="text-sm text-gray-400 mt-2">
+            One or more players have a secret action. Spot who's doing something different.
+          </p>
+        </div>
+        <p class="text-xs text-gray-400">
+          You can vote at any time during the observation windows.
+        </p>
+      {/if}
       <p class="text-xs text-gray-500">
-        Remember your action. There will be {windowCount} observation windows of {windowDurationMs / 1000}s each.
+        There will be {windowCount} observation windows of {windowDurationMs / 1000}s each.
       </p>
       <button
         class="w-full py-4 rounded-xl text-lg font-bold bg-indigo-600 active:bg-indigo-500 text-white transition-all active:scale-95"
@@ -228,39 +271,104 @@
 
   {:else if subPhase === "observing"}
     <!-- Observation window -->
-    <div class="text-center space-y-4">
-      <p class="text-xs text-gray-400 uppercase tracking-widest">
-        Window {currentWindow} / {totalWindows}
-      </p>
-      <p class="text-6xl font-mono font-black text-white" data-testid="window-timer">
-        {Math.ceil(windowTimeLeft)}
-      </p>
-      <div class="bg-gray-800 border border-gray-700 rounded-xl p-4 max-w-xs">
-        <p class="text-sm text-gray-300 font-medium">{myPrompt}</p>
+    <div class="w-full max-w-sm space-y-4">
+      <div class="text-center">
+        <p class="text-xs text-gray-400 uppercase tracking-widest">
+          Window {currentWindow} / {totalWindows}
+        </p>
+        <p class="text-5xl font-mono font-black text-white mt-2" data-testid="window-timer">
+          {Math.ceil(windowTimeLeft)}
+        </p>
       </div>
-      {#if oddPrompt}
-        <div class="bg-indigo-900/50 border border-indigo-600 rounded-xl p-3 max-w-xs">
-          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-1">Odd One Out's Prompt</p>
-          <p class="text-sm text-indigo-200 font-medium">{oddPrompt}</p>
+
+      {#if isOdd}
+        <!-- ODD: show their action reminder -->
+        <div class="bg-red-900/40 border border-red-600 rounded-xl p-4 text-center">
+          <p class="text-xs text-red-400 uppercase tracking-widest mb-1">Your Action</p>
+          <p class="text-sm text-white font-medium">{myPrompt}</p>
         </div>
+        <p class="text-xs text-gray-500 text-center">Perform your action. Don't get caught!</p>
+      {:else}
+        <!-- NORMAL: show the odd prompt (what to look for) + vote buttons -->
+        {#if oddPrompt}
+          <div class="bg-indigo-900/50 border border-indigo-600 rounded-xl p-3 text-center">
+            <p class="text-xs text-indigo-400 uppercase tracking-widest mb-1">Look For This Action</p>
+            <p class="text-sm text-indigo-200 font-medium">{oddPrompt}</p>
+          </div>
+        {/if}
+
+        <!-- Inline voting during observation -->
+        {#if canVote}
+          <div class="border-t border-gray-700 pt-3">
+            <p class="text-xs text-indigo-400 uppercase tracking-widest text-center mb-2">
+              Vote when you're ready
+            </p>
+            <div class="space-y-2">
+              {#each votablePlayers as player}
+                <button
+                  class="w-full text-left px-4 py-2 rounded-lg border transition-colors text-sm
+                    {myVote === player.id
+                      ? 'border-indigo-500 bg-indigo-900 text-white'
+                      : 'border-gray-700 bg-gray-800 text-gray-300 active:border-indigo-500'}"
+                  on:click={() => castVote(player.id)}
+                  disabled={!!myVote}
+                >
+                  <p class="font-semibold">{player.name}</p>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {:else if voteConfirmed}
+          <div class="bg-green-900/50 border border-green-600 rounded-xl p-3 text-center">
+            <p class="text-green-200 font-bold text-sm">Vote submitted!</p>
+          </div>
+        {/if}
       {/if}
-      <p class="text-xs text-gray-500">Perform your action. Watch other players carefully.</p>
+
+      <!-- Vote progress (shown to all) -->
+      {#if votesIn > 0}
+        <p class="text-xs text-gray-500 text-center">{votesIn}/{totalVoters} votes in</p>
+      {/if}
     </div>
 
   {:else if subPhase === "paused"}
     <!-- Between windows -->
     <div class="text-center space-y-3">
-      <p class="text-gray-400">Next window in…</p>
+      <p class="text-gray-400">Next window in...</p>
       <p class="text-4xl font-mono font-black text-indigo-400">
         {Math.ceil(pauseTimeLeft)}
       </p>
+
+      {#if isOdd}
+        <p class="text-xs text-gray-500">Get ready to perform your action again</p>
+      {:else if canVote}
+        <p class="text-xs text-indigo-400">You can still vote below</p>
+        <div class="space-y-2 max-w-xs mx-auto">
+          {#each votablePlayers as player}
+            <button
+              class="w-full text-left px-4 py-2 rounded-lg border transition-colors text-sm
+                border-gray-700 bg-gray-800 text-gray-300 active:border-indigo-500"
+              on:click={() => castVote(player.id)}
+              disabled={!!myVote}
+            >
+              <p class="font-semibold">{player.name}</p>
+            </button>
+          {/each}
+        </div>
+      {:else if voteConfirmed}
+        <div class="bg-green-900/50 border border-green-600 rounded-xl p-3 text-center max-w-xs mx-auto">
+          <p class="text-green-200 font-bold text-sm">Vote submitted!</p>
+        </div>
+      {/if}
     </div>
 
-  {:else if subPhase === "voting"}
-    <!-- Vote UI -->
+  {:else if subPhase === "voting_final"}
+    <!-- Final voting window (last chance) -->
     <div class="w-full max-w-sm space-y-4">
       <div class="text-center">
-        <h2 class="text-xl font-black text-indigo-400">Who is the Odd One Out?</h2>
+        <h2 class="text-xl font-black text-indigo-400">
+          {isOdd ? "Survive!" : "Last Chance to Vote!"}
+        </h2>
         <p class="text-sm text-gray-400 mt-1">
           {Math.ceil(votingTimeLeft)}s remaining
           {#if votesIn > 0}
@@ -269,10 +377,18 @@
         </p>
       </div>
 
-      {#if voteConfirmed}
+      {#if isOdd}
+        <!-- Odd player: can't vote, just wait -->
+        <div class="bg-red-900/40 border border-red-600 rounded-xl p-4 text-center">
+          <p class="text-red-200 font-bold">You can't vote!</p>
+          <p class="text-red-400 text-sm mt-1">
+            You earn points for every wrong guess against you.
+          </p>
+        </div>
+      {:else if voteConfirmed}
         <div class="bg-green-900 border border-green-600 rounded-xl p-4 text-center">
           <p class="text-green-200 font-bold">Vote submitted!</p>
-          <p class="text-green-400 text-sm mt-1">Waiting for others…</p>
+          <p class="text-green-400 text-sm mt-1">Waiting for others...</p>
         </div>
       {:else}
         <div class="space-y-2">
@@ -313,13 +429,13 @@
 
         <!-- Prompts -->
         <div class="bg-gray-800 rounded-xl p-4 text-sm space-y-2">
-          <div class="flex justify-between text-gray-400">
-            <span>Normal:</span>
-            <span class="text-gray-200">{results.promptPair.normal}</span>
+          <div class="text-left">
+            <span class="text-gray-400">Normal:</span>
+            <span class="text-gray-200 ml-1">(no action — just observe)</span>
           </div>
-          <div class="flex justify-between text-gray-400">
-            <span>Odd:</span>
-            <span class="text-indigo-300">{results.promptPair.odd}</span>
+          <div class="text-left">
+            <span class="text-gray-400">Odd:</span>
+            <span class="text-indigo-300 ml-1">{results.promptPair.odd}</span>
           </div>
         </div>
 

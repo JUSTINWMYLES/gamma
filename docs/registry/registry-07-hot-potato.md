@@ -12,7 +12,7 @@ Random phone is selected and a timer counts down; players pass the phone before 
 
 ## Long Description
 
-At the start of a round, the system selects a phone to hold the "hot potato". The holder must pass the phone to another player within a decreasing timer. Passing is performed by tapping nearby devices or scanning a QR/gesture. The timer shortens each pass.
+At the start of a round, the system selects a phone to hold the "hot potato". The phone will display another users name on the device and the holder must pass the phone along to that player player within a decreasing timer. Once the user has received the phone they will touch a button and it will inform them of who to pass to next. The counter will continue to decrease and once it runs out the screen will show like an explosion on the phone. The user will then pick between the two users who could have been holding it to indicate which of them was holding the device. 
 
 ## Target Platforms
 
@@ -20,7 +20,7 @@ At the start of a round, the system selects a phone to hold the "hot potato". Th
 
 ## Core Mechanics
 
-- Random selection, countdown, pass detection (NFC/QR/peer discovery)
+- Random selection, countdown
 
 ## Player Interactions
 

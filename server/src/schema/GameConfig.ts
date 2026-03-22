@@ -18,4 +18,11 @@ export class GameConfig extends Schema {
 
   /** "ffa" = everyone competes together; "1v1_bracket" = random bracket pairs. */
   @type("string") matchMode: MatchMode = "ffa";
+
+  /**
+   * Game-specific mode selector.
+   *   - Lowball Marketplace: "classic" | "funny_messages"
+   *   - Other games: ignored (default "default")
+   */
+  @type("string") gameMode: string = "default";
 }
