@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Shelf</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --wood-dark: #3d2008;
+    --wood-mid:  #5c3010;
+    --wood-light:#7a4520;
+    --wood-edge: #2a1505;
+    --shelf-h:   28px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+min-height: 100vh;
+background: #1a0e06;
+font-family: ‘Crimson Text’, Georgia, serif;
+overflow-x: hidden;
+}
+
+/* Room wall texture */
+body::before {
+content:’’;
+position:fixed; inset:0;
+background:
+repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(0,0,0,0.03) 40px, rgba(0,0,0,0.03) 41px),
+repeating-linear-gradient(0deg,  transparent, transparent 40px, rgba(0,0,0,0.03) 40px, rgba(0,0,0,0.03) 41px),
+radial-gradient(ellipse at 50% 0%, #2e1a08 0%, #110a03 100%);
+pointer-events:none; z-index:0;
+}
+
+header {
+position: relative; z-index:1;
+text-align: center;
+padding: 48px 0 32px;
+}
+header h1 {
+font-family: ‘Playfair Display’, serif;
+font-size: clamp(2rem, 5vw, 3.5rem);
+font-weight: 900;
+color: #e8c87a;
+letter-spacing: 0.04em;
+text-shadow: 0 2px 20px rgba(200,140,30,0.4);
+}
+header p {
+color: rgba(200,160,80,0.5);
+font-size: 1rem;
+margin-top: 6px;
+font-style: italic;
+letter-spacing: 0.08em;
+}
+
+.shelving-unit {
+position: relative; z-index:1;
+max-width: 1100px;
+margin: 0 auto;
+padding: 0 32px 60px;
+display: flex;
+flex-direction: column;
+gap: 0;
+}
+
+/* ── Shelf row ── */
+.shelf-row {
+position: relative;
+margin-bottom: 52px;
+}
+
+.shelf-row .books {
+display: flex;
+align-items: flex-end;
+gap: 6px;
+padding: 0 18px 0 24px;
+min-height: 160px;
+}
+
+/* Wood plank */
+.shelf-plank {
+position: relative;
+height: var(–shelf-h);
+background: linear-gradient(180deg,
+#8b5a28 0%,
+#6b3f18 35%,
+#4e2d0f 70%,
+#3a2008 100%
+);
+border-radius: 2px;
+box-shadow:
+0 6px 24px rgba(0,0,0,0.7),
+0 2px 0px #b07030 inset,
+0 -1px 0px #2a1505 inset;
+margin-top: 4px;
+}
+.shelf-plank::before {
+content:’’;
+position:absolute; inset:0;
+background: repeating-linear-gradient(
+90deg,
+transparent, transparent 60px,
+rgba(0,0,0,0.06) 60px, rgba(0,0,0,0.06) 62px
+);
+border-radius:2px;
+}
+/* Left bracket */
+.shelf-plank::after {
+content:’’;
+position:absolute;
+left:-18px; bottom:0;
+width:18px; height:70px;
+background: linear-gradient(90deg, var(–wood-edge), var(–wood-dark));
+border-radius: 2px 0 0 4px;
+box-shadow: -2px 2px 8px rgba(0,0,0,0.5);
+}
+
+/* ── Box spine ── */
+.game-box {
+position: relative;
+cursor: pointer;
+flex-shrink: 0;
+transition: transform 0.25s cubic-bezier(.2,.8,.3,1.2);
+transform-origin: bottom center;
+}
+.game-box:hover {
+transform: translateY(-18px) scale(1.04);
+z-index: 10;
+}
+
+.spine {
+position: relative;
+border-radius: 3px 3px 0 0;
+display: flex;
+flex-direction: column;
+align-items: center;
+justify-content: space-between;
+padding: 10px 6px;
+overflow: hidden;
+box-shadow:
+3px 0 8px rgba(0,0,0,0.5),
+inset -3px 0 8px rgba(0,0,0,0.25),
+inset 2px 0 4px rgba(255,255,255,0.08);
+}
+/* Spine side face for 3D feel */
+.spine::after {
+content:’’;
+position:absolute;
+right:-6px; top:0;
+width:6px; height:100%;
+background: rgba(0,0,0,0.35);
+transform-origin: left;
+border-radius:0 2px 2px 0;
+}
+
+.spine-title {
+writing-mode: vertical-rl;
+text-orientation: mixed;
+transform: rotate(180deg);
+font-family: ‘Playfair Display’, serif;
+font-weight: 700;
+font-size: 0.78rem;
+letter-spacing: 0.12em;
+text-transform: uppercase;
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+max-height: 90%;
+}
+
+.spine-icon {
+font-size: 1.1rem;
+margin-top: 4px;
+flex-shrink: 0;
+}
+
+.player-count {
+writing-mode: vertical-rl;
+transform: rotate(180deg);
+font-size: 0.55rem;
+letter-spacing: 0.06em;
+opacity: 0.7;
+flex-shrink: 0;
+}
+
+/* ── Tooltip on hover ── */
+.box-tooltip {
+position: absolute;
+bottom: calc(100% + 12px);
+left: 50%;
+transform: translateX(-50%) scale(0.9);
+width: 160px;
+background: #1e1008;
+border: 1px solid rgba(200,160,60,0.3);
+border-radius: 6px;
+padding: 12px;
+opacity: 0;
+pointer-events: none;
+transition: opacity 0.18s, transform 0.18s;
+z-index: 20;
+box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+}
+.game-box:hover .box-tooltip {
+opacity: 1;
+transform: translateX(-50%) scale(1);
+}
+.box-tooltip h3 {
+font-family: ‘Playfair Display’, serif;
+font-size: 0.85rem;
+color: #e8c87a;
+margin-bottom: 4px;
+}
+.box-tooltip p {
+font-size: 0.72rem;
+color: rgba(220,180,100,0.6);
+line-height: 1.4;
+}
+.box-tooltip .meta {
+margin-top: 8px;
+display: flex;
+gap: 8px;
+}
+.box-tooltip .tag {
+font-size: 0.62rem;
+padding: 2px 6px;
+border-radius: 99px;
+background: rgba(200,140,30,0.15);
+color: rgba(220,180,100,0.7);
+border: 1px solid rgba(200,140,30,0.2);
+}
+
+/* ── Decorative items ── */
+.decor {
+flex-shrink: 0;
+display: flex;
+align-items: flex-end;
+font-size: 2rem;
+padding-bottom: 2px;
+filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+opacity: 0.75;
+}
+
+/* ── Game-specific color themes ── */
+.g-dragon   { –c1:#1a0a30; –c2:#3d1060; –c3:#c084fc; –tc:#e8d0ff; }
+.g-treasure { –c1:#1a1200; –c2:#3d2e00; –c3:#f59e0b; –tc:#fff3b0; }
+.g-ocean    { –c1:#001a2e; –c2:#003d5c; –c3:#22d3ee; –tc:#b0f0ff; }
+.g-forest   { –c1:#0a1a08; –c2:#1a3a10; –c3:#4ade80; –tc:#c0ffcc; }
+.g-lava     { –c1:#1a0500; –c2:#3d0e00; –c3:#f97316; –tc:#ffe0c0; }
+.g-ice      { –c1:#001822; –c2:#003040; –c3:#93c5fd; –tc:#daf0ff; }
+.g-arcane   { –c1:#10001a; –c2:#280040; –c3:#e879f9; –tc:#ffd0ff; }
+.g-shadow   { –c1:#080808; –c2:#181818; –c3:#a3a3a3; –tc:#e0e0e0; }
+.g-blood    { –c1:#1a0000; –c2:#3d0000; –c3:#ef4444; –tc:#ffc0c0; }
+.g-gold     { –c1:#1a1000; –c2:#3d2800; –c3:#eab308; –tc:#fff0a0; }
+.g-mint     { –c1:#001a12; –c2:#003828; –c3:#34d399; –tc:#b0ffe0; }
+.g-rose     { –c1:#1a0010; –c2:#3d0028; –c3:#fb7185; –tc:#ffc0cc; }
+
+.spine {
+background: linear-gradient(135deg, var(–c1) 0%, var(–c2) 100%);
+border-top: 3px solid var(–c3);
+}
+.spine-title { color: var(–tc); }
+.spine-icon  { color: var(–c3); }
+.player-count { color: var(–c3); }
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+.shelf-row .books { gap: 4px; padding: 0 10px; }
+}
+</style>
+
+</head>
+<body>
+
+<header>
+  <h1>The Game Room</h1>
+  <p>choose your adventure</p>
+</header>
+
+<div class="shelving-unit">
+
+  <!-- Row 1 -->
+
+  <div class="shelf-row">
+    <div class="books">
+      <div class="decor">🕯️</div>
+
+```
+  <div class="game-box g-dragon" style="--w:48px;--h:155px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🐉</span>
+      <span class="spine-title">Dragon's Keep</span>
+      <span class="player-count">2–6</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Dragon's Keep</h3>
+      <p>Siege the fortress. Survive the flames.</p>
+      <div class="meta"><span class="tag">2–6 players</span><span class="tag">Strategy</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-treasure" style="--w:56px;--h:140px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">💰</span>
+      <span class="spine-title">Treasure Run</span>
+      <span class="player-count">2–4</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Treasure Run</h3>
+      <p>Race to the vault before the clock runs out.</p>
+      <div class="meta"><span class="tag">2–4 players</span><span class="tag">Racing</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-ocean" style="--w:44px;--h:162px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🌊</span>
+      <span class="spine-title">Deep Current</span>
+      <span class="player-count">3–5</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Deep Current</h3>
+      <p>Navigate the abyss. What lurks below?</p>
+      <div class="meta"><span class="tag">3–5 players</span><span class="tag">Exploration</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-forest" style="--w:52px;--h:148px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🌲</span>
+      <span class="spine-title">Thornwood</span>
+      <span class="player-count">1–4</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Thornwood</h3>
+      <p>Build your village. Defend the canopy.</p>
+      <div class="meta"><span class="tag">1–4 players</span><span class="tag">Coop</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-lava" style="--w:60px;--h:158px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🌋</span>
+      <span class="spine-title">Molten Crown</span>
+      <span class="player-count">2–5</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Molten Crown</h3>
+      <p>Claim the throne before the island sinks.</p>
+      <div class="meta"><span class="tag">2–5 players</span><span class="tag">Area Control</span></div>
+    </div>
+  </div>
+
+  <div class="decor">📜</div>
+
+  <div class="game-box g-ice" style="--w:46px;--h:145px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">❄️</span>
+      <span class="spine-title">Glacial Rift</span>
+      <span class="player-count">2–4</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Glacial Rift</h3>
+      <p>Survive the long winter. Share nothing.</p>
+      <div class="meta"><span class="tag">2–4 players</span><span class="tag">Survival</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-arcane" style="--w:54px;--h:165px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🔮</span>
+      <span class="spine-title">Arcane Rift</span>
+      <span class="player-count">2–6</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Arcane Rift</h3>
+      <p>Weave spells. Unravel your rivals.</p>
+      <div class="meta"><span class="tag">2–6 players</span><span class="tag">Deck Build</span></div>
+    </div>
+  </div>
+</div>
+<div class="shelf-plank"></div>
+```
+
+  </div>
+
+  <!-- Row 2 -->
+
+  <div class="shelf-row">
+    <div class="books">
+
+```
+  <div class="game-box g-shadow" style="--w:50px;--h:152px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🕵️</span>
+      <span class="spine-title">Shadowfall</span>
+      <span class="player-count">4–8</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Shadowfall</h3>
+      <p>One traitor. Seven suspects. No mercy.</p>
+      <div class="meta"><span class="tag">4–8 players</span><span class="tag">Social</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-blood" style="--w:44px;--h:168px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">⚔️</span>
+      <span class="spine-title">Crimson War</span>
+      <span class="player-count">2–4</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Crimson War</h3>
+      <p>Total war. No diplomacy. No survivors.</p>
+      <div class="meta"><span class="tag">2–4 players</span><span class="tag">Wargame</span></div>
+    </div>
+  </div>
+
+  <div class="decor">🦉</div>
+
+  <div class="game-box g-gold" style="--w:58px;--h:142px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">👑</span>
+      <span class="spine-title">Gilded Age</span>
+      <span class="player-count">3–5</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Gilded Age</h3>
+      <p>Build your empire. Buy your allies.</p>
+      <div class="meta"><span class="tag">3–5 players</span><span class="tag">Economic</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-mint" style="--w:46px;--h:156px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🌿</span>
+      <span class="spine-title">Verdant Isle</span>
+      <span class="player-count">1–4</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Verdant Isle</h3>
+      <p>Tend the garden. Outgrow your rivals.</p>
+      <div class="meta"><span class="tag">1–4 players</span><span class="tag">Engine Build</span></div>
+    </div>
+  </div>
+
+  <div class="game-box g-rose" style="--w:52px;--h:160px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">🌹</span>
+      <span class="spine-title">The Masquerade</span>
+      <span class="player-count">4–10</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>The Masquerade</h3>
+      <p>Hidden roles. Secret goals. Trust no one.</p>
+      <div class="meta"><span class="tag">4–10 players</span><span class="tag">Hidden Role</span></div>
+    </div>
+  </div>
+
+  <div class="decor">🎲</div>
+
+  <div class="game-box g-arcane" style="--w:48px;--h:150px">
+    <div class="spine" style="width:var(--w);height:var(--h)">
+      <span class="spine-icon">⭐</span>
+      <span class="spine-title">Star Wanderer</span>
+      <span class="player-count">2–5</span>
+    </div>
+    <div class="box-tooltip">
+      <h3>Star Wanderer</h3>
+      <p>Chart the void. Claim the cosmos.</p>
+      <div class="meta"><span class="tag">2–5 players</span><span class="tag">4X</span></div>
+    </div>
+  </div>
+</div>
+<div class="shelf-plank"></div>
+```
+
+  </div>
+
+</div>
+
+</body>
+</html>
