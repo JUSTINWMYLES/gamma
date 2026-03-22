@@ -78,7 +78,7 @@ const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
 const CAUGHT_PENALTY = 20;
 const FOV_HALF_ANGLE = Math.PI / 4; // 45° each side = 90° total cone
-const GUARD_RANGE = 5;
+const GUARD_RANGE = 6;
 const ALERT_THRESHOLD = 30;
 
 /** Direct LOS bonus: if angle to player is within this from center, detection is boosted. */
@@ -107,10 +107,10 @@ const PLAYER_HALF = 0.3;
 const PLAYER_COLLISION_RADIUS = 0.55;
 
 /** Minimum tile distance required between guard spawn and nearest player spawn. */
-const MIN_GUARD_PLAYER_DIST = 6;
+const MIN_GUARD_PLAYER_DIST = 8;
 
 /** Minimum tile distance required between any two guard spawns. */
-const MIN_GUARD_GUARD_DIST = 5;
+const MIN_GUARD_GUARD_DIST = 7;
 
 // ── Input message type ────────────────────────────────────────────────────────
 
@@ -362,12 +362,18 @@ export default class DontGetCaughtGame extends BaseGame {
           guard.guardMode = "patrol";
           guard.targetPlayerId = "";
         } else {
-          this._moveTowardsSmooth(
+          const result = this._moveTowardsSmooth(
             guard,
             target.x,
             target.y,
             this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
           );
+          // If guard is fully blocked by walls during chase, drop back to patrol
+          // so it doesn't get permanently stuck against a wall.
+          if (result.blocked) {
+            guard.guardMode = "patrol";
+            guard.targetPlayerId = "";
+          }
           continue;
         }
       }
@@ -383,8 +389,28 @@ export default class DontGetCaughtGame extends BaseGame {
         const r2 = rt.rngSeed / 0x100000000;
         rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
         const r3 = rt.rngSeed / 0x100000000;
-        rt.wanderX = (r2 - 0.5) * 2 * WANDER_RADIUS;
-        rt.wanderY = (r3 - 0.5) * 2 * WANDER_RADIUS;
+        const candidateWX = (r2 - 0.5) * 2 * WANDER_RADIUS;
+        const candidateWY = (r3 - 0.5) * 2 * WANDER_RADIUS;
+
+        // Only accept wander offset if the resulting target is walkable.
+        // This prevents guards from heading towards a point inside a wall,
+        // which causes them to get stuck on wall edges.
+        const waypointForCheck = patrolPath[
+          ((guard.patrolIndex * rt.patrolDir) % patrolPath.length + patrolPath.length) %
+          patrolPath.length
+        ];
+        if (waypointForCheck) {
+          const testX = waypointForCheck.x + 0.5 + candidateWX;
+          const testY = waypointForCheck.y + 0.5 + candidateWY;
+          if (this._guardPositionWalkable(testX, testY)) {
+            rt.wanderX = candidateWX;
+            rt.wanderY = candidateWY;
+          } else {
+            // Reject bad wander — reset to zero so guard returns to waypoint center
+            rt.wanderX = 0;
+            rt.wanderY = 0;
+          }
+        }
       }
 
       // Patrol: move towards current waypoint + wander
@@ -394,15 +420,30 @@ export default class DontGetCaughtGame extends BaseGame {
       const waypoint = patrolPath[waypointIdx % patrolPath.length];
       if (!waypoint) continue;
 
-      const targetX = waypoint.x + 0.5 + rt.wanderX;
-      const targetY = waypoint.y + 0.5 + rt.wanderY;
+      let targetX = waypoint.x + 0.5 + rt.wanderX;
+      let targetY = waypoint.y + 0.5 + rt.wanderY;
 
-      const arrived = this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt);
-      if (arrived) {
+      // Final safety: if the wandered target is not walkable (e.g. map changed),
+      // fall back to the raw waypoint center
+      if (!this._guardPositionWalkable(targetX, targetY)) {
+        targetX = waypoint.x + 0.5;
+        targetY = waypoint.y + 0.5;
+        rt.wanderX = 0;
+        rt.wanderY = 0;
+      }
+
+      const moveResult = this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt);
+      if (moveResult.arrived) {
         guard.patrolIndex =
           (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
         rt.wanderX = 0;
         rt.wanderY = 0;
+      } else if (moveResult.blocked) {
+        // Guard is fully blocked patrolling — reset wander and advance to next waypoint
+        rt.wanderX = 0;
+        rt.wanderY = 0;
+        guard.patrolIndex =
+          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
       }
     }
   }
@@ -411,19 +452,20 @@ export default class DontGetCaughtGame extends BaseGame {
    * Move entity towards (targetX, targetY) at most `speed` tiles.
    * Guards respect wall collision with axis-sliding (same as players).
    * Facing angle is lerped — no snapping to prevent twitching.
-   * Returns true when arrived at destination.
+   * Returns { arrived: true } when at destination, { blocked: true } when
+   * fully blocked by walls (no axis could slide), or neither.
    */
   private _moveTowardsSmooth(
     entity: { x: number; y: number; facingAngle: number },
     targetX: number,
     targetY: number,
     speed: number,
-  ): boolean {
+  ): { arrived: boolean; blocked: boolean } {
     const dx = targetX - entity.x;
     const dy = targetY - entity.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist < 0.05) return true;
+    if (dist < 0.05) return { arrived: true, blocked: false };
 
     // Lerp facing angle toward travel direction — eliminates twitching
     const desiredAngle = Math.atan2(dy, dx);
@@ -447,10 +489,12 @@ export default class DontGetCaughtGame extends BaseGame {
       entity.x = moveX;
     } else if (this._guardPositionWalkable(entity.x, moveY)) {
       entity.y = moveY;
+    } else {
+      // Fully blocked — no movement at all
+      return { arrived: false, blocked: true };
     }
-    // Fully blocked — no movement
 
-    return dist <= speed;
+    return { arrived: dist <= speed, blocked: false };
   }
 
   /**

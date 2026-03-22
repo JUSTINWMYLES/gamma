@@ -10,6 +10,8 @@
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
+  $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
+  $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
   $: amReady = me?.isReady ?? false;
 
   function confirm() { room.send("player_ready", {}); }
@@ -47,6 +49,24 @@
       <li class="bg-gray-800 rounded-xl p-3">💰 Place lowball bids — go low, but not too low!</li>
       <li class="bg-gray-800 rounded-xl p-3">📝 Write funny messages to sellers</li>
       <li class="bg-gray-800 rounded-xl p-3">🗳️ Vote for the funniest bids and messages!</li>
+    </ul>
+  {:else if isFireMatch}
+    <h2 class="text-2xl font-black text-indigo-400">Camp Fire</h2>
+    <ul class="space-y-3 text-gray-200 w-full max-w-xs">
+      <li class="bg-gray-800 rounded-xl p-3">🔥 Tap rapidly to strike the match and light the fire</li>
+      <li class="bg-gray-800 rounded-xl p-3">💨 Blow into your mic (or tap) to grow the flame</li>
+      <li class="bg-gray-800 rounded-xl p-3">📳 Shake your phone to fan the flames bigger</li>
+      <li class="bg-gray-800 rounded-xl p-3">🧯 Tap rapidly to extinguish the fire at the end</li>
+      <li class="bg-gray-800 rounded-xl p-3">🏆 Work together — bigger contribution = more points</li>
+    </ul>
+  {:else if isHotPotato}
+    <h2 class="text-2xl font-black text-indigo-400">Hot Potato</h2>
+    <ul class="space-y-3 text-gray-200 w-full max-w-xs">
+      <li class="bg-gray-800 rounded-xl p-3">🥔 One player starts holding the hot potato</li>
+      <li class="bg-gray-800 rounded-xl p-3">📲 Pass it to the named player before time runs out!</li>
+      <li class="bg-gray-800 rounded-xl p-3">👆 Tap to accept the potato when it's passed to you</li>
+      <li class="bg-gray-800 rounded-xl p-3">💥 When the timer hits zero — BOOM! The holder is out</li>
+      <li class="bg-gray-800 rounded-xl p-3">🗳️ Vote on who you think was holding it at the end</li>
     </ul>
   {:else}
     <h2 class="text-2xl font-black text-indigo-400">Don't Get Caught!</h2>

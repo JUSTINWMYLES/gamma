@@ -2,12 +2,12 @@
   /**
    * TV game component for "Odd One Out" (registry-20).
    *
-   * Displays the shared-screen view: sub-phase info, observation timer,
-   * anonymous vote progress, and round results with scores.
+   * Displays the shared-screen view: sub-phase info, observation timer with
+   * live vote progress, final voting countdown, and round results with scores.
    *
    * Server messages listened:
-   *   phase_info, window_start, window_pause,
-   *   voting_start, vote_count_update, round_result
+   *   phase_info, voting_open, window_start, window_pause,
+   *   voting_final, vote_count_update, round_result, round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -18,7 +18,7 @@
 
   // ── Local state ────────────────────────────────────────────────────
 
-  type SubPhase = "waiting" | "prompts" | "observing" | "paused" | "voting" | "results";
+  type SubPhase = "waiting" | "prompts" | "observing" | "paused" | "voting_final" | "results";
   let subPhase: SubPhase = "waiting";
 
   // Observation windows
@@ -34,12 +34,15 @@
   let pauseEndTime = 0;
   let pauseTimer: ReturnType<typeof setInterval> | null = null;
 
-  // Voting
+  // Voting (open during observation)
+  let votingOpen = false;
+  let votesIn = 0;
+  let totalVoters = 0;
+
+  // Final voting timer
   let votingTimeLeft = 0;
   let votingEndTime = 0;
   let votingTimer: ReturnType<typeof setInterval> | null = null;
-  let votesIn = 0;
-  let totalVoters = 0;
 
   // Results
   let results: {
@@ -59,6 +62,16 @@
     if (data.subPhase === "prompt_acknowledge") {
       subPhase = "prompts";
     }
+  }
+
+  function onVotingOpen(data: {
+    serverTimestamp: number;
+    playerIds: { id: string; name: string }[];
+    voterCount: number;
+  }) {
+    votingOpen = true;
+    votesIn = 0;
+    totalVoters = data.voterCount;
   }
 
   function onWindowStart(data: { windowNumber: number; totalWindows: number; durationMs: number; serverTimestamp: number; oddPrompt: string }) {
@@ -89,15 +102,13 @@
     }, 100);
   }
 
-  function onVotingStart(data: { durationMs: number; serverTimestamp: number; playerIds: { id: string; name: string }[] }) {
-    subPhase = "voting";
+  function onVotingFinal(data: { durationMs: number; serverTimestamp: number; playerIds: { id: string; name: string }[] }) {
+    subPhase = "voting_final";
     clearTimer("window");
     clearTimer("pause");
 
     votingEndTime = data.serverTimestamp + data.durationMs;
     votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
-    votesIn = 0;
-    totalVoters = data.playerIds.length;
 
     clearTimer("voting");
     votingTimer = setInterval(() => {
@@ -113,6 +124,7 @@
   function onRoundResult(data: typeof results) {
     subPhase = "results";
     results = data;
+    votingOpen = false;
     clearTimer("window");
     clearTimer("pause");
     clearTimer("voting");
@@ -135,9 +147,10 @@
 
   onMount(() => {
     room.onMessage("phase_info", onPhaseInfo);
+    room.onMessage("voting_open", onVotingOpen);
     room.onMessage("window_start", onWindowStart);
     room.onMessage("window_pause", onWindowPause);
-    room.onMessage("voting_start", onVotingStart);
+    room.onMessage("voting_final", onVotingFinal);
     room.onMessage("vote_count_update", onVoteCountUpdate);
     room.onMessage("round_result", onRoundResult);
     room.onMessage("round_skipped", onRoundSkipped);
@@ -170,13 +183,13 @@
     <!-- Prompts being distributed -->
     <div class="text-center space-y-4">
       <h1 class="text-4xl font-black text-indigo-400">Check your phones!</h1>
-      <p class="text-xl text-gray-300">Each player is receiving a secret action…</p>
+      <p class="text-xl text-gray-300">Each player is receiving their role...</p>
       <div class="flex gap-3 justify-center flex-wrap mt-4">
         {#each [...state.players.values()] as p}
           <div class="px-4 py-2 bg-gray-800 rounded-lg text-center min-w-[100px]">
             <p class="font-semibold text-white">{p.name}</p>
             <p class="text-xs {p.isReady ? 'text-green-400' : 'text-gray-500'}">
-              {p.isReady ? 'Ready' : 'Reading…'}
+              {p.isReady ? 'Ready' : 'Reading...'}
             </p>
           </div>
         {/each}
@@ -193,26 +206,58 @@
       </p>
       {#if oddPrompt}
         <div class="bg-indigo-900/50 border border-indigo-600 rounded-xl p-4 max-w-md mx-auto">
-          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-2">The Odd One Out's Prompt</p>
+          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-2">The Odd One Out's Action</p>
           <p class="text-xl text-indigo-200 font-semibold">{oddPrompt}</p>
         </div>
       {/if}
-      <p class="text-lg text-gray-300">Watch each other carefully…</p>
+      <p class="text-lg text-gray-300">Watch each other carefully... vote on your phones when ready!</p>
+
+      <!-- Live vote progress during observation -->
+      {#if votingOpen && totalVoters > 0}
+        <div class="w-full max-w-md mx-auto">
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>Votes in</span>
+            <span>{votesIn} / {totalVoters}</span>
+          </div>
+          <div class="h-4 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-indigo-500 rounded-full transition-all"
+              style="width:{totalVoters > 0 ? (votesIn / totalVoters) * 100 : 0}%"
+            ></div>
+          </div>
+        </div>
+      {/if}
     </div>
 
   {:else if subPhase === "paused"}
     <!-- Between windows -->
     <div class="text-center space-y-4">
-      <p class="text-2xl text-gray-300">Next window in…</p>
+      <p class="text-2xl text-gray-300">Next window in...</p>
       <p class="text-6xl font-mono font-black text-indigo-400">
         {Math.ceil(pauseTimeLeft)}
       </p>
+
+      <!-- Vote progress during pause -->
+      {#if votingOpen && totalVoters > 0}
+        <div class="w-full max-w-md mx-auto">
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>Votes in</span>
+            <span>{votesIn} / {totalVoters}</span>
+          </div>
+          <div class="h-4 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-indigo-500 rounded-full transition-all"
+              style="width:{totalVoters > 0 ? (votesIn / totalVoters) * 100 : 0}%"
+            ></div>
+          </div>
+        </div>
+      {/if}
     </div>
 
-  {:else if subPhase === "voting"}
-    <!-- Voting in progress -->
+  {:else if subPhase === "voting_final"}
+    <!-- Final voting window (last chance) -->
     <div class="text-center space-y-6">
-      <h1 class="text-3xl font-bold text-indigo-400">Vote Now!</h1>
+      <h1 class="text-3xl font-bold text-indigo-400">Last Chance to Vote!</h1>
       <p class="text-6xl font-mono font-black {votingTimeLeft < 5 ? 'text-red-400' : 'text-white'}" data-testid="tv-voting-timer">
         {Math.ceil(votingTimeLeft)}
       </p>
@@ -255,11 +300,11 @@
         <!-- Prompts revealed -->
         <div class="grid grid-cols-2 gap-4 max-w-lg mx-auto">
           <div class="bg-gray-800 rounded-xl p-4 text-center">
-            <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Normal prompt</p>
-            <p class="text-white font-medium">{results.promptPair.normal}</p>
+            <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Normal players</p>
+            <p class="text-white font-medium">(no action — just observe)</p>
           </div>
           <div class="bg-indigo-900 rounded-xl p-4 text-center border border-indigo-600">
-            <p class="text-xs text-indigo-400 uppercase tracking-widest mb-2">Odd prompt</p>
+            <p class="text-xs text-indigo-400 uppercase tracking-widest mb-2">Odd action</p>
             <p class="text-white font-medium">{results.promptPair.odd}</p>
           </div>
         </div>
