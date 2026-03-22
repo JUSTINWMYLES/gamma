@@ -76,6 +76,16 @@ export class RoomState extends Schema {
   /** Height of the current game map in tiles. */
   @type("number") mapHeight: number = 0;
 
+  // ── Playlist / game queue ────────────────────────────────────────────────
+  // Populated when the host selects a collection or random preset.
+  // Each entry is a game registry ID. The queue is played in order.
+
+  /** Ordered list of game IDs to play through. Empty = single-game mode. */
+  @type(["string"]) gameQueue = new ArraySchema<string>();
+
+  /** Index into gameQueue for the currently active (or next) game. 0-based. */
+  @type("number") queueIndex: number = 0;
+
   // ── Lobby setup criteria ──────────────────────────────────────────────────
   // Set during the 3-step setup flow before game selection.
   // Used to filter/grey-out games that don't match the current setup.

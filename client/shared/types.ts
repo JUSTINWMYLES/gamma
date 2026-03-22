@@ -71,6 +71,11 @@ export interface RoomState {
   mapTiles: string;
   mapWidth: number;
   mapHeight: number;
+  // Playlist / game queue
+  /** Ordered list of game IDs to play through. Empty = single-game mode. */
+  gameQueue: string[];
+  /** Index into gameQueue for the currently active (or next) game. 0-based. */
+  queueIndex: number;
   // Setup criteria
   locationMode: "same" | "remote" | "";
   activityLevel: "none" | "some" | "full" | "";
@@ -95,56 +100,44 @@ export interface GameMeta {
   activityLevel: "none" | "some" | "full";
   requiresSameRoom: boolean;
   requiresSecondaryDisplay: boolean;
+  minPlayers: number;
+  maxPlayers: number;
+  tags: string[];
 }
 
 export const GAME_REGISTRY: GameMeta[] = [
   {
-    id: "registry-14-dont-get-caught",
-    label: "Don't Get Caught",
-    description: "Avoid supernatural guards on a procedural map. More guards each round.",
+    id: "registry-03-tap-speed",
+    label: "Tap Speed",
+    description: "Tap as fast as you can in a 1v1 bracket! Random timer between 5–20 seconds.",
     activityLevel: "none",
     requiresSameRoom: false,
     requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 16,
+    tags: ["competitive", "bracket", "speed"],
   },
   {
-    id: "registry-17-fire-match-blow-shake",
-    label: "Camp Fire",
-    description: "Strike a match, blow to grow the flame, shake to fan it, then tap to extinguish!",
+    id: "registry-04-escape-maze",
+    label: "Escape Maze",
+    description: "Navigate a random maze solo or shake your phone in a team of four!",
     activityLevel: "some",
     requiresSameRoom: false,
     requiresSecondaryDisplay: false,
+    minPlayers: 1,
+    maxPlayers: 16,
+    tags: ["puzzle", "maze", "team"],
   },
   {
-    id: "registry-19-shave-the-yak",
-    label: "Shave The Yak",
-    description: "Swipe to shave a cartoon yak before time runs out. Miss and the yak moves!",
-    activityLevel: "none",
-    requiresSameRoom: false,
-    requiresSecondaryDisplay: false,
-  },
-  {
-    id: "registry-20-odd-one-out",
-    label: "Odd One Out",
-    description: "One player has a secret action. Observe, deduce, and vote — who's the odd one?",
+    id: "registry-06-sound-replication",
+    label: "Sound Replication",
+    description: "Listen to a sound, then try to replicate it. Closest match wins!",
     activityLevel: "none",
     requiresSameRoom: true,
     requiresSecondaryDisplay: false,
-  },
-  {
-    id: "registry-26-evil-laugh-overlay",
-    label: "Evil Laugh Overlay",
-    description: "Record your most evil laugh, pick a villain scene, then vote for the best one!",
-    activityLevel: "none",
-    requiresSameRoom: true,
-    requiresSecondaryDisplay: false,
-  },
-  {
-    id: "registry-25-lowball-marketplace",
-    label: "Lowball Marketplace",
-    description: "Bid on ridiculous items in a fake marketplace. Go low... but not TOO low!",
-    activityLevel: "none",
-    requiresSameRoom: false,
-    requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 12,
+    tags: ["audio", "creative", "turn-based"],
   },
   {
     id: "registry-07-hot-potato",
@@ -153,6 +146,75 @@ export const GAME_REGISTRY: GameMeta[] = [
     activityLevel: "some",
     requiresSameRoom: true,
     requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 12,
+    tags: ["physical", "party", "fast"],
+  },
+  {
+    id: "registry-14-dont-get-caught",
+    label: "Don't Get Caught",
+    description: "Avoid supernatural guards on a procedural map. More guards each round.",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+    minPlayers: 1,
+    maxPlayers: 8,
+    tags: ["stealth", "strategy"],
+  },
+  {
+    id: "registry-17-fire-match-blow-shake",
+    label: "Camp Fire",
+    description: "Strike a match, blow to grow the flame, shake to fan it, then tap to extinguish!",
+    activityLevel: "some",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+    minPlayers: 1,
+    maxPlayers: 16,
+    tags: ["physical", "sensor", "fast"],
+  },
+  {
+    id: "registry-19-shave-the-yak",
+    label: "Shave The Yak",
+    description: "Swipe to shave a cartoon yak before time runs out. Miss and the yak moves!",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+    minPlayers: 1,
+    maxPlayers: 16,
+    tags: ["swipe", "reflex", "funny"],
+  },
+  {
+    id: "registry-20-odd-one-out",
+    label: "Odd One Out",
+    description: "One player has a secret action. Observe, deduce, and vote — who's the odd one?",
+    activityLevel: "none",
+    requiresSameRoom: true,
+    requiresSecondaryDisplay: false,
+    minPlayers: 3,
+    maxPlayers: 12,
+    tags: ["social", "deduction", "voting"],
+  },
+  {
+    id: "registry-25-lowball-marketplace",
+    label: "Lowball Marketplace",
+    description: "Bid on ridiculous items in a fake marketplace. Go low... but not TOO low!",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 12,
+    tags: ["bidding", "strategy", "funny"],
+  },
+  {
+    id: "registry-26-evil-laugh-overlay",
+    label: "Evil Laugh Overlay",
+    description: "Record your most evil laugh, pick a villain scene, then vote for the best one!",
+    activityLevel: "none",
+    requiresSameRoom: true,
+    requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 12,
+    tags: ["audio", "creative", "voting"],
   },
 ];
 
@@ -162,7 +224,7 @@ export const GAME_REGISTRY: GameMeta[] = [
  */
 export function getGameUnavailableReason(
   game: GameMeta,
-  state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay">,
+  state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay" | "players">,
 ): string | null {
   if (game.requiresSameRoom && state.locationMode === "remote") {
     return "Requires same-room play";
@@ -178,6 +240,14 @@ export function getGameUnavailableReason(
     if (required > selected) {
       return `Requires ${game.activityLevel} activity`;
     }
+  }
+  // Check player count
+  const playerCount = state.players?.size ?? 0;
+  if (playerCount > 0 && playerCount < game.minPlayers) {
+    return `Needs ${game.minPlayers}+ players`;
+  }
+  if (playerCount > 0 && playerCount > game.maxPlayers) {
+    return `Max ${game.maxPlayers} players`;
   }
   return null;
 }
