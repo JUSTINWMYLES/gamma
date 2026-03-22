@@ -28,6 +28,7 @@ import { loadGame } from "../games/gameLoader";
 import { generateRoomCode } from "../utils/rng";
 import { meter, tracer } from "../telemetry";
 import { SpanStatusCode, type Span } from "@opentelemetry/api";
+import { ArraySchema } from "@colyseus/schema";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -40,6 +41,9 @@ interface JoinOptions {
 export class GammaRoom extends Room<RoomState> {
   /** The active game plugin instance. Null in lobby. */
   private game: BaseGame | null = null;
+
+  /** Session ID of the connected view screen (TV/projector). */
+  private viewScreenSessionId: string | null = null;
 
   /** OTEL span tracking the entire game session (from start_game to game_over/dispose). */
   private gameSessionSpan: Span | null = null;
@@ -121,8 +125,9 @@ export class GammaRoom extends Room<RoomState> {
     }
 
     // If view screen disconnects, flip flag
-    if (client.sessionId === this.state.hostSessionId && this.state.viewScreenConnected) {
+    if (client.sessionId === this.viewScreenSessionId) {
       this.state.viewScreenConnected = false;
+      this.viewScreenSessionId = null;
       console.log("[GammaRoom] view screen disconnected");
     }
   }
@@ -146,9 +151,9 @@ export class GammaRoom extends Room<RoomState> {
 
   private _onViewScreenJoin(client: Client): void {
     this.state.viewScreenConnected = true;
-    if (!this.state.hostSessionId) {
-      this.state.hostSessionId = client.sessionId;
-    }
+    this.viewScreenSessionId = client.sessionId;
+    // TV/view screens are display-only — they never become the host.
+    // The room creator (phone player) retains all navigation privileges.
     GammaRoom.viewScreensJoined.add(1, { roomCode: this.state.roomCode });
     console.log(`[GammaRoom] view screen joined — sessionId=${client.sessionId}`);
   }
@@ -307,11 +312,47 @@ export class GammaRoom extends Room<RoomState> {
       if (this.game) this.game.handleInput(client, data);
     });
 
-    /** Host presses Play Again — resets room back to lobby (game_over phase only). */
+    /** Host presses Play Again — advances queue or resets to lobby. */
     this.onMessage("play_again", (client, _data) => {
       if (!this._isHost(client)) return;
       if (this.state.phase !== "game_over") return;
-      this._resetToLobby();
+      this._advanceOrResetToLobby();
+    });
+
+    /**
+     * Host sets the game queue (playlist).
+     * Expects { queue: string[] } — array of game registry IDs.
+     * Clears any prior queue/selection and sets queueIndex to 0.
+     */
+    this.onMessage("set_queue", (client, data: { queue: string[] }) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase !== "lobby") return;
+      if (!Array.isArray(data.queue)) return;
+
+      // Replace the queue
+      this.state.gameQueue = new ArraySchema<string>(...data.queue);
+      this.state.queueIndex = 0;
+
+      // Auto-select the first game in the queue
+      if (data.queue.length > 0) {
+        this.state.selectedGame = data.queue[0];
+      } else {
+        this.state.selectedGame = "";
+      }
+
+      console.log(`[GammaRoom] queue set — ${data.queue.length} games, code=${this.state.roomCode}`);
+    });
+
+    /**
+     * Host clears the queue and goes back to single-game selection.
+     */
+    this.onMessage("clear_queue", (client, _data) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase !== "lobby") return;
+      this.state.gameQueue = new ArraySchema<string>();
+      this.state.queueIndex = 0;
+      this.state.selectedGame = "";
+      console.log(`[GammaRoom] queue cleared — code=${this.state.roomCode}`);
     });
   }
 
@@ -327,9 +368,12 @@ export class GammaRoom extends Room<RoomState> {
       return;
     }
 
-    // Enforce all players ready before starting
+    // Enforce all non-host players ready before starting.
+    // The host (room creator) doesn't need to ready up — they press Start.
     const allPlayers = [...this.state.players.values()];
-    const notReady = allPlayers.filter((p) => p.isConnected && !p.isReady);
+    const notReady = allPlayers.filter(
+      (p) => p.isConnected && !p.isReady && p.id !== this.state.hostSessionId,
+    );
     if (notReady.length > 0) {
       this.broadcast("error", {
         message: `Waiting for ${notReady.length} player${notReady.length > 1 ? "s" : ""} to ready up.`,
@@ -403,6 +447,62 @@ export class GammaRoom extends Room<RoomState> {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
+  /**
+   * After a game ends, either advance to the next game in the queue
+   * or reset to lobby if the queue is empty/exhausted.
+   */
+  private _advanceOrResetToLobby(): void {
+    const queue = this.state.gameQueue;
+    const nextIdx = this.state.queueIndex + 1;
+
+    if (queue.length > 0 && nextIdx < queue.length) {
+      // Advance to next game in queue
+      this.state.queueIndex = nextIdx;
+      const nextGame = queue[nextIdx] ?? "";
+      this.state.selectedGame = nextGame;
+
+      // Reset player game state (keep scores for cumulative tracking)
+      for (const p of this.state.players.values()) {
+        p.isReady = false;
+        p.isEliminated = false;
+        p.x = 0;
+        p.y = 0;
+        p.isDetected = false;
+        p.detectionMeter = 0;
+        p.timesCaught = 0;
+        p.bracketSeed = -1;
+        p.currentMatchOpponentId = "";
+      }
+
+      // Reset round-level state
+      this.state.currentRound = 0;
+      this.state.phaseStartedAt = 0;
+      this.state.roundDurationSecs = 60;
+      this.state.mapTiles = "";
+      this.state.mapWidth = 0;
+      this.state.mapHeight = 0;
+      this.state.guards.clear();
+
+      // Tear down old game
+      if (this.game) {
+        this.game.teardown();
+        this.game = null;
+      }
+      if (this.gameSessionSpan) {
+        this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
+        this.gameSessionSpan.end();
+        this.gameSessionSpan = null;
+      }
+
+      // Return to lobby briefly so host can confirm / adjust config
+      this.state.phase = "lobby";
+      console.log(`[GammaRoom] queue advance — next=${nextGame} (${nextIdx + 1}/${queue.length}), code=${this.state.roomCode}`);
+    } else {
+      // Queue exhausted or no queue — full reset to lobby
+      this._resetToLobby();
+    }
+  }
+
   /** Reset the entire room back to lobby state so everyone can play again. */
   private _resetToLobby(): void {
     // Tear down active game
@@ -441,6 +541,10 @@ export class GammaRoom extends Room<RoomState> {
     this.state.mapWidth = 0;
     this.state.mapHeight = 0;
     this.state.guards.clear();
+
+    // Clear playlist queue
+    this.state.gameQueue = new ArraySchema<string>();
+    this.state.queueIndex = 0;
 
     // Return to lobby phase — setup is preserved so they skip the wizard
     this.state.phase = "lobby";

@@ -4,6 +4,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // Unified client Vite config — serves both viewer and player roles from one port
 export default defineConfig({
   root: ".",
+  publicDir: "../../audio",
   plugins: [
     svelte({
       preprocess: (await import("svelte-preprocess")).default(),
