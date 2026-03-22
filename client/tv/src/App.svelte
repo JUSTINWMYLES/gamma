@@ -19,14 +19,70 @@
   import GameOverScreen from "./screens/GameOverScreen.svelte";
 
   let room: Room<RoomState> | null = null;
+  let connectedRoom: Room<RoomState> | null = null;
   let state: RoomState | null = null;
   let phase: Phase = "lobby";
   let error: string = "";
   let connecting = true;
 
+  // TV-only background music tracks (served from /audio via Vite publicDir)
+  let cloudDancerTrack: HTMLAudioElement | null = null;
+  let fartingAroundTrack: HTMLAudioElement | null = null;
+  let currentTrack: "cloud" | "fart" | null = null;
+
+  function pauseAllTracks() {
+    if (cloudDancerTrack) cloudDancerTrack.pause();
+    if (fartingAroundTrack) fartingAroundTrack.pause();
+  }
+
+  function desiredTrack(): "cloud" | "fart" | null {
+    if (!state) return null;
+    if (phase === "in_round" && state.selectedGame === "registry-19-shave-the-yak") {
+      return "fart";
+    }
+    if (phase === "lobby") {
+      return "cloud";
+    }
+    return null;
+  }
+
+  async function syncTrackPlayback() {
+    if (!cloudDancerTrack || !fartingAroundTrack) return;
+
+    const next = desiredTrack();
+    if (!next) {
+      pauseAllTracks();
+      currentTrack = null;
+      return;
+    }
+
+    if (next === currentTrack) return;
+
+    pauseAllTracks();
+
+    const target = next === "cloud" ? cloudDancerTrack : fartingAroundTrack;
+    target.currentTime = 0;
+    try {
+      await target.play();
+      currentTrack = next;
+    } catch {
+      // Browser autoplay policy may require user interaction.
+      currentTrack = null;
+    }
+  }
+
   onMount(async () => {
+    cloudDancerTrack = new Audio("/cloud_dancer.mp3");
+    cloudDancerTrack.loop = true;
+    cloudDancerTrack.volume = 0.35;
+
+    fartingAroundTrack = new Audio("/farting_around.mp3");
+    fartingAroundTrack.loop = true;
+    fartingAroundTrack.volume = 0.42;
+
     try {
       room = await hostRoom();
+      connectedRoom = room;
       state = room.state;
       phase = state.phase;
 
@@ -51,6 +107,7 @@
   });
 
   onDestroy(() => {
+    pauseAllTracks();
     room?.leave();
   });
 
@@ -58,6 +115,22 @@
   $: sortedPlayers = state
     ? [...state.players.values()].sort((a, b) => b.score - a.score)
     : [];
+
+  // Keep TV music in sync with room phase + selected game.
+  $: if (!connecting && !error && state) {
+    void syncTrackPlayback();
+  } else {
+    pauseAllTracks();
+    currentTrack = null;
+  }
+
+  // Short in-app attribution (full details in ATTRIBUTIONS.md)
+  $: activeTrackAttribution =
+    currentTrack === "cloud"
+      ? 'Music: "Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0'
+      : currentTrack === "fart"
+        ? 'Music: "Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0'
+        : "";
 </script>
 
 <div class="min-h-screen bg-gray-900 text-white flex flex-col" data-testid="view-screen-app">
@@ -75,19 +148,19 @@
         >Reload</button>
       </div>
     </div>
-  {:else if state}
+  {:else if state && connectedRoom}
     {#if phase === "lobby"}
-      <LobbyScreen {room} {state} />
+      <LobbyScreen room={connectedRoom} {state} />
     {:else if phase === "game_loading"}
       <div class="flex-1 flex items-center justify-center">
         <p class="text-3xl animate-pulse">Loading game…</p>
       </div>
     {:else if phase === "instructions"}
-      <InstructionsScreen {room} {state} />
+      <InstructionsScreen room={connectedRoom} {state} />
     {:else if phase === "countdown"}
       <CountdownScreen {state} />
     {:else if phase === "in_round"}
-      <GameScreen {room} {state} />
+      <GameScreen room={connectedRoom} {state} />
     {:else if phase === "round_end"}
       <RoundEndScreen {state} {sortedPlayers} />
     {:else if phase === "scoreboard"}
@@ -95,5 +168,11 @@
     {:else if phase === "game_over"}
       <GameOverScreen {state} {sortedPlayers} />
     {/if}
+  {/if}
+
+  {#if activeTrackAttribution}
+    <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
+      {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
+    </div>
   {/if}
 </div>

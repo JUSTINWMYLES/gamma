@@ -204,3 +204,14 @@ No registration step — the loader finds games automatically by directory name.
 ## License
 
 See LICENSE.
+
+## Third-Party Audio Attribution
+
+This repository includes third-party music licensed under Creative Commons Attribution 4.0 International (CC BY 4.0):
+
+- "Cloud Dancer" — Kevin MacLeod (incompetech.com)
+- "Farting Around" — Kevin MacLeod (incompetech.com)
+
+License: https://creativecommons.org/licenses/by/4.0/
+
+Full attribution details are in ATTRIBUTIONS.md.
