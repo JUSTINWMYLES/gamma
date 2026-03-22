@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Cards</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cinzel:wght@700;900&family=Permanent+Marker&family=Orbitron:wght@700;900&family=MedievalSharp&family=Crimson+Text:ital,wght@0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    min-height: 100vh;
+    background: #111018;
+    font-family: 'Crimson Text', Georgia, serif;
+    padding: 48px 32px 80px;
+  }
+
+header {
+text-align: center;
+margin-bottom: 52px;
+}
+header h1 {
+font-family: ‘Cinzel’, serif;
+font-size: clamp(1.8rem, 4vw, 3rem);
+font-weight: 900;
+color: #e8e0d0;
+letter-spacing: 0.08em;
+}
+header p {
+color: rgba(200,190,170,0.4);
+font-style: italic;
+margin-top: 6px;
+letter-spacing: 0.1em;
+}
+
+.grid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+gap: 28px;
+max-width: 1200px;
+margin: 0 auto;
+}
+
+/* ── Base card ── */
+.card {
+border-radius: 12px;
+overflow: hidden;
+cursor: pointer;
+transition: transform 0.3s cubic-bezier(.2,.8,.3,1.2), box-shadow 0.3s;
+position: relative;
+aspect-ratio: 3/4;
+display: flex;
+flex-direction: column;
+}
+.card:hover {
+transform: translateY(-10px) scale(1.02);
+}
+
+.card-art {
+flex: 1;
+position: relative;
+display: flex;
+align-items: center;
+justify-content: center;
+overflow: hidden;
+}
+
+.card-footer {
+padding: 14px 16px 16px;
+position: relative;
+z-index: 2;
+}
+.card-name {
+display: block;
+margin-bottom: 4px;
+}
+.card-meta {
+display: flex;
+align-items: center;
+justify-content: space-between;
+font-size: 0.72rem;
+opacity: 0.65;
+}
+.card-tag {
+font-size: 0.65rem;
+padding: 2px 8px;
+border-radius: 99px;
+border: 1px solid currentColor;
+opacity: 0.6;
+}
+
+/* ────────────────────────────────────────────────
+1. DRAGON’S KEEP — dark fantasy, ember glow
+──────────────────────────────────────────────── */
+.card-dragon {
+box-shadow: 0 8px 40px rgba(180,60,0,0.4);
+}
+.card-dragon:hover { box-shadow: 0 20px 60px rgba(220,80,0,0.55); }
+.card-dragon .card-art {
+background: radial-gradient(ellipse at 50% 80%, #3d0a00 0%, #0d0302 100%);
+}
+.card-dragon .card-art::before {
+content:’’;
+position:absolute; inset:0;
+background:
+radial-gradient(ellipse at 50% 100%, rgba(255,80,0,0.25) 0%, transparent 60%),
+repeating-linear-gradient(45deg, transparent, transparent 18px, rgba(255,60,0,0.03) 18px, rgba(255,60,0,0.03) 19px);
+}
+.card-dragon .card-icon { font-size: 5rem; filter: drop-shadow(0 0 24px rgba(255,100,0,0.8)); z-index:1; }
+.card-dragon .card-footer { background: #1a0500; border-top: 1px solid rgba(255,80,0,0.2); }
+.card-dragon .card-name { font-family:‘Cinzel’,serif; font-size:1rem; color:#ff9050; letter-spacing:0.06em; }
+.card-dragon .card-meta { color: rgba(255,140,80,0.6); }
+
+/* ────────────────────────────────────────────────
+2. TREASURE RUN — golden adventure, map style
+──────────────────────────────────────────────── */
+.card-treasure {
+box-shadow: 0 8px 40px rgba(180,130,0,0.35);
+}
+.card-treasure:hover { box-shadow: 0 20px 60px rgba(220,170,0,0.5); }
+.card-treasure .card-art {
+background: #1e1500;
+background-image:
+repeating-linear-gradient(0deg, transparent, transparent 22px, rgba(180,130,20,0.07) 22px, rgba(180,130,20,0.07) 23px),
+repeating-linear-gradient(90deg, transparent, transparent 22px, rgba(180,130,20,0.07) 22px, rgba(180,130,20,0.07) 23px);
+}
+.card-treasure .card-art::after {
+content:’’; position:absolute;
+width:140px; height:140px;
+border: 2px dashed rgba(200,160,40,0.2);
+border-radius:50%;
+top:50%; left:50%; transform:translate(-50%,-50%);
+}
+.card-treasure .card-icon { font-size: 4.5rem; z-index:1; filter:drop-shadow(0 4px 16px rgba(220,160,0,0.6)); }
+.card-treasure .card-footer { background: #1a1200; border-top: 1px solid rgba(200,150,20,0.2); }
+.card-treasure .card-name { font-family:‘Bebas Neue’,sans-serif; font-size:1.4rem; color:#f0c040; letter-spacing:0.1em; }
+.card-treasure .card-meta { color: rgba(220,180,80,0.6); }
+
+/* ────────────────────────────────────────────────
+3. DEEP CURRENT — aquatic, bioluminescent
+──────────────────────────────────────────────── */
+.card-ocean {
+box-shadow: 0 8px 40px rgba(0,120,180,0.35);
+}
+.card-ocean:hover { box-shadow: 0 20px 60px rgba(0,180,220,0.5); }
+.card-ocean .card-art {
+background: radial-gradient(ellipse at 50% 30%, #001830 0%, #000810 100%);
+overflow: hidden;
+}
+.card-ocean .card-art::before {
+content:’’; position:absolute; inset:0;
+background: repeating-linear-gradient(
+180deg, transparent, transparent 3px,
+rgba(0,180,255,0.04) 3px, rgba(0,180,255,0.04) 4px
+);
+}
+.card-ocean .wave {
+position:absolute; bottom:0; left:-20px; right:-20px;
+height:60px;
+background: rgba(0,140,200,0.12);
+border-radius:50% 50% 0 0;
+animation: wave 4s ease-in-out infinite alternate;
+}
+.card-ocean .wave:nth-child(2) { height:45px; animation-delay:-2s; opacity:0.5; }
+@keyframes wave { from{transform:translateX(-8px)} to{transform:translateX(8px)} }
+.card-ocean .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 20px rgba(0,220,255,0.7)); }
+.card-ocean .card-footer { background:#000d18; border-top:1px solid rgba(0,180,220,0.2); }
+.card-ocean .card-name { font-family:‘Orbitron’,sans-serif; font-size:0.8rem; color:#40d8f0; letter-spacing:0.1em; }
+.card-ocean .card-meta { color:rgba(60,200,240,0.6); }
+
+/* ────────────────────────────────────────────────
+4. THORNWOOD — hand-drawn, naturalist illustration
+──────────────────────────────────────────────── */
+.card-forest {
+box-shadow: 0 8px 40px rgba(20,80,20,0.5);
+}
+.card-forest:hover { box-shadow: 0 20px 60px rgba(40,140,40,0.5); }
+.card-forest .card-art {
+background: #060e04;
+background-image: radial-gradient(ellipse at 50% 60%, #0a200a 0%, #040a03 100%);
+}
+.card-forest .card-art::before {
+content:’’; position:absolute; inset:0;
+background: repeating-conic-gradient(rgba(40,120,40,0.04) 0deg 90deg, transparent 90deg 180deg);
+background-size: 24px 24px;
+}
+.card-forest .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 16px rgba(60,200,80,0.5)); }
+.card-forest .card-footer { background:#050e04; border-top:1px solid rgba(60,180,60,0.2); }
+.card-forest .card-name { font-family:‘Permanent Marker’,cursive; font-size:1.1rem; color:#70e870; }
+.card-forest .card-meta { color:rgba(100,220,100,0.6); }
+
+/* ────────────────────────────────────────────────
+5. MOLTEN CROWN — volcanic, hot lava cracks
+──────────────────────────────────────────────── */
+.card-lava {
+box-shadow: 0 8px 40px rgba(220,80,0,0.4);
+}
+.card-lava:hover { box-shadow: 0 20px 60px rgba(255,120,0,0.55); }
+.card-lava .card-art {
+background: #0d0200;
+background-image: radial-gradient(ellipse at 50% 100%, #3d0e00 0%, #0d0200 70%);
+position: relative;
+}
+.card-lava .lava-crack {
+position:absolute; background:rgba(255,80,0,0.18);
+border-radius: 1px;
+}
+.card-lava .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 24px rgba(255,100,0,0.8)); }
+.card-lava .card-footer { background:#100300; border-top:1px solid rgba(255,80,0,0.25); }
+.card-lava .card-name { font-family:‘Cinzel’,serif; font-size:0.95rem; color:#ff6020; letter-spacing:0.06em; font-weight:900; }
+.card-lava .card-meta { color:rgba(255,120,60,0.6); }
+
+/* ────────────────────────────────────────────────
+6. SHADOWFALL — noir, social deduction
+──────────────────────────────────────────────── */
+.card-shadow {
+box-shadow: 0 8px 40px rgba(0,0,0,0.8);
+}
+.card-shadow:hover { box-shadow: 0 20px 60px rgba(60,60,60,0.6); }
+.card-shadow .card-art {
+background: #050505;
+background-image:
+repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.015) 20px, rgba(255,255,255,0.015) 21px),
+repeating-linear-gradient(-45deg, transparent, transparent 20px, rgba(255,255,255,0.01) 20px, rgba(255,255,255,0.01) 21px);
+}
+.card-shadow .card-art::after {
+content:’’; position:absolute;
+inset:0;
+background: radial-gradient(ellipse at 50% 40%, transparent 30%, rgba(0,0,0,0.8) 100%);
+}
+.card-shadow .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 12px rgba(200,200,200,0.3)); }
+.card-shadow .card-footer { background:#080808; border-top:1px solid rgba(180,180,180,0.1); }
+.card-shadow .card-name { font-family:‘Bebas Neue’,sans-serif; font-size:1.5rem; color:#c8c8c8; letter-spacing:0.15em; }
+.card-shadow .card-meta { color:rgba(160,160,160,0.5); }
+
+/* ────────────────────────────────────────────────
+7. ARCANE RIFT — magical, purple crystal
+──────────────────────────────────────────────── */
+.card-arcane {
+box-shadow: 0 8px 40px rgba(160,40,220,0.4);
+}
+.card-arcane:hover { box-shadow: 0 20px 60px rgba(200,60,255,0.55); }
+.card-arcane .card-art {
+background: radial-gradient(ellipse at 50% 50%, #1a0030 0%, #06000e 100%);
+}
+.card-arcane .card-art::before {
+content:’’; position:absolute; inset:0;
+background: repeating-conic-gradient(rgba(160,0,255,0.05) 0deg 60deg, transparent 60deg 120deg);
+background-size: 30px 30px;
+animation: spin 20s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.card-arcane .card-art::after {
+content:’’; position:absolute; inset:0;
+background: radial-gradient(ellipse at 50% 50%, rgba(180,0,255,0.15) 0%, transparent 70%);
+}
+.card-arcane .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 24px rgba(200,0,255,0.8)); }
+.card-arcane .card-footer { background:#0a0015; border-top:1px solid rgba(180,0,255,0.25); }
+.card-arcane .card-name { font-family:‘Cinzel’,serif; font-size:0.95rem; color:#d080ff; letter-spacing:0.06em; }
+.card-arcane .card-meta { color:rgba(180,100,255,0.6); }
+
+/* ────────────────────────────────────────────────
+8. VERDANT ISLE — fresh, botanical
+──────────────────────────────────────────────── */
+.card-mint {
+box-shadow: 0 8px 40px rgba(0,160,100,0.35);
+}
+.card-mint:hover { box-shadow: 0 20px 60px rgba(0,220,140,0.5); }
+.card-mint .card-art {
+background: radial-gradient(ellipse at 50% 80%, #001e10 0%, #000a06 100%);
+}
+.card-mint .card-art::before {
+content:’’; position:absolute; inset:0;
+background: repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent 28px, rgba(0,180,100,0.05) 28px, rgba(0,180,100,0.05) 30px);
+}
+.card-mint .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 18px rgba(0,220,140,0.7)); }
+.card-mint .card-footer { background:#000e07; border-top:1px solid rgba(0,180,120,0.2); }
+.card-mint .card-name { font-family:‘Permanent Marker’,cursive; font-size:1rem; color:#40f0a0; }
+.card-mint .card-meta { color:rgba(60,220,140,0.6); }
+
+/* ────────────────────────────────────────────────
+9. THE MASQUERADE — ornate, baroque rose
+──────────────────────────────────────────────── */
+.card-rose {
+box-shadow: 0 8px 40px rgba(180,20,80,0.4);
+}
+.card-rose:hover { box-shadow: 0 20px 60px rgba(240,60,120,0.5); }
+.card-rose .card-art {
+background: radial-gradient(ellipse at 50% 50%, #200010 0%, #08000a 100%);
+}
+.card-rose .card-art::before {
+content:’’; position:absolute; inset:0;
+background: repeating-linear-gradient(
+135deg, transparent, transparent 14px,
+rgba(220,40,100,0.04) 14px, rgba(220,40,100,0.04) 15px
+);
+}
+.card-rose .card-art::after {
+content:’’; position:absolute;
+width:180px; height:180px;
+border:1px solid rgba(220,40,100,0.1);
+border-radius:50%;
+top:50%; left:50%; transform:translate(-50%,-58%);
+}
+.card-rose .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 20px rgba(240,40,100,0.7)); }
+.card-rose .card-footer { background:#0e0008; border-top:1px solid rgba(220,40,100,0.2); }
+.card-rose .card-name { font-family:‘Cinzel’,serif; font-size:0.85rem; color:#f060a0; letter-spacing:0.08em; }
+.card-rose .card-meta { color:rgba(240,80,140,0.6); }
+
+/* ────────────────────────────────────────────────
+10. STAR WANDERER — cosmic, retro sci-fi
+──────────────────────────────────────────────── */
+.card-space {
+box-shadow: 0 8px 40px rgba(60,80,200,0.35);
+}
+.card-space:hover { box-shadow: 0 20px 60px rgba(80,120,255,0.5); }
+.card-space .card-art {
+background: #020408;
+}
+.card-space .card-art::before {
+content:’’; position:absolute; inset:0;
+background-image: radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6) 0%, transparent 100%),
+radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.4) 0%, transparent 100%),
+radial-gradient(1.5px 1.5px at 60% 70%, rgba(255,255,255,0.5) 0%, transparent 100%),
+radial-gradient(1px 1px at 30% 80%, rgba(255,255,255,0.3) 0%, transparent 100%),
+radial-gradient(1px 1px at 90% 60%, rgba(255,255,255,0.4) 0%, transparent 100%),
+radial-gradient(1px 1px at 10% 55%, rgba(255,255,255,0.3) 0%, transparent 100%),
+radial-gradient(1.5px 1.5px at 70% 40%, rgba(200,200,255,0.5) 0%, transparent 100%),
+radial-gradient(1px 1px at 45% 15%, rgba(255,220,200,0.4) 0%, transparent 100%),
+radial-gradient(ellipse at 50% 50%, rgba(30,40,120,0.3) 0%, transparent 70%);
+}
+.card-space .card-icon { font-size:4.5rem; z-index:1; filter:drop-shadow(0 0 24px rgba(100,140,255,0.8)); }
+.card-space .card-footer { background:#020408; border-top:1px solid rgba(80,120,255,0.2); }
+.card-space .card-name { font-family:‘Orbitron’,sans-serif; font-size:0.72rem; color:#80a8ff; letter-spacing:0.12em; }
+.card-space .card-meta { color:rgba(100,140,255,0.6); }
+
+/* player count badge */
+.players-badge {
+font-size:0.65rem;
+padding: 2px 7px;
+border-radius: 99px;
+}
+</style>
+
+</head>
+<body>
+
+<header>
+  <h1>Choose Your Game</h1>
+  <p>pick a world to step into</p>
+</header>
+
+<div class="grid">
+
+  <!-- Dragon's Keep -->
+
+  <div class="card card-dragon">
+    <div class="card-art">
+      <span class="card-icon">🐉</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Dragon's Keep</span>
+      <div class="card-meta">
+        <span>2–6 players</span>
+        <span class="card-tag">Strategy</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Treasure Run -->
+
+  <div class="card card-treasure">
+    <div class="card-art">
+      <span class="card-icon">💰</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Treasure Run</span>
+      <div class="card-meta">
+        <span>2–4 players</span>
+        <span class="card-tag">Racing</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Deep Current -->
+
+  <div class="card card-ocean">
+    <div class="card-art">
+      <div class="wave"></div>
+      <div class="wave"></div>
+      <span class="card-icon">🌊</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Deep Current</span>
+      <div class="card-meta">
+        <span>3–5 players</span>
+        <span class="card-tag">Exploration</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Thornwood -->
+
+  <div class="card card-forest">
+    <div class="card-art">
+      <span class="card-icon">🌲</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Thornwood</span>
+      <div class="card-meta">
+        <span>1–4 players</span>
+        <span class="card-tag">Co-op</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Molten Crown -->
+
+  <div class="card card-lava">
+    <div class="card-art">
+      <div class="lava-crack" style="width:2px;height:60px;top:20%;left:30%;transform:rotate(15deg)"></div>
+      <div class="lava-crack" style="width:2px;height:40px;top:40%;right:25%;transform:rotate(-20deg)"></div>
+      <div class="lava-crack" style="width:2px;height:80px;bottom:10%;left:50%;transform:rotate(5deg)"></div>
+      <span class="card-icon">🌋</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Molten Crown</span>
+      <div class="card-meta">
+        <span>2–5 players</span>
+        <span class="card-tag">Area Control</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shadowfall -->
+
+  <div class="card card-shadow">
+    <div class="card-art">
+      <span class="card-icon">🕵️</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Shadowfall</span>
+      <div class="card-meta">
+        <span>4–8 players</span>
+        <span class="card-tag">Social</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Arcane Rift -->
+
+  <div class="card card-arcane">
+    <div class="card-art">
+      <span class="card-icon">🔮</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Arcane Rift</span>
+      <div class="card-meta">
+        <span>2–6 players</span>
+        <span class="card-tag">Deck Build</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Verdant Isle -->
+
+  <div class="card card-mint">
+    <div class="card-art">
+      <span class="card-icon">🌿</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Verdant Isle</span>
+      <div class="card-meta">
+        <span>1–4 players</span>
+        <span class="card-tag">Engine Build</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- The Masquerade -->
+
+  <div class="card card-rose">
+    <div class="card-art">
+      <span class="card-icon">🌹</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">The Masquerade</span>
+      <div class="card-meta">
+        <span>4–10 players</span>
+        <span class="card-tag">Hidden Role</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Star Wanderer -->
+
+  <div class="card card-space">
+    <div class="card-art">
+      <span class="card-icon">⭐</span>
+    </div>
+    <div class="card-footer">
+      <span class="card-name">Star Wanderer</span>
+      <div class="card-meta">
+        <span>2–5 players</span>
+        <span class="card-tag">4X</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
