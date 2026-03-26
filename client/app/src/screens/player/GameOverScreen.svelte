@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
   export let room: Room;
   export let state: RoomState;
   export let me: PlayerState | undefined;
@@ -25,7 +26,7 @@
     <h1 class="text-3xl font-black text-yellow-400">You Win!</h1>
   {:else}
     <h1 class="text-3xl font-black text-gray-300">Game Over</h1>
-    <p class="text-gray-400">Winner: <strong class="text-white">{winner?.name ?? "?"}</strong></p>
+    <p class="text-gray-400 flex items-center gap-2 justify-center">Winner: {#if winner}<PlayerIcon player={winner} size={28} />{/if}<strong class="text-white">{winner?.name ?? "?"}</strong></p>
   {/if}
   <p class="text-2xl font-mono">{me?.score ?? 0} pts</p>
   {#if isHost}

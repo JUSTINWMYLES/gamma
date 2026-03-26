@@ -23,6 +23,7 @@
     | "waiting"
     | "bracket_overview"
     | "match_preview"
+    | "countdown"
     | "match_live"
     | "match_result"
     | "bracket_advance"
@@ -80,6 +81,11 @@
 
   let roundSkipped = false;
   let skipReason = "";
+
+  // ── Countdown ──────────────────────────────────────────────────
+
+  let countdownValue = 0;
+  let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Timer ───────────────────────────────────────────────────────
 
@@ -221,11 +227,27 @@
     skipReason = data.reason;
   }
 
+  function onCountdown(data: { seconds: number }) {
+    countdownValue = data.seconds;
+    subPhase = "countdown";
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownInterval = setInterval(() => {
+      countdownValue--;
+      if (countdownValue <= 0) {
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+      }
+    }, 1000);
+  }
+
   // ── Lifecycle ───────────────────────────────────────────────────
 
   onMount(() => {
     room.onMessage("tap_bracket_init", onBracketInit);
     room.onMessage("tap_match_start", onMatchStart);
+    room.onMessage("tap_countdown", onCountdown);
     room.onMessage("tap_match_timer_start", onMatchTimerStart);
     room.onMessage("tap_counts", onTapCounts);
     room.onMessage("tap_timer", onTapTimer);
@@ -238,6 +260,7 @@
 
   onDestroy(() => {
     clearTimer();
+    if (countdownInterval) clearInterval(countdownInterval);
   });
 
   // ── Derived ─────────────────────────────────────────────────────
@@ -302,6 +325,38 @@
 
         <div class="text-center">
           <p class="text-5xl font-black text-gray-500">VS</p>
+        </div>
+
+        <div class="text-center space-y-2">
+          <div class="w-24 h-24 rounded-full bg-orange-900 border-4 border-orange-500 flex items-center justify-center">
+            <span class="text-3xl font-black text-orange-300">
+              {player2Name.charAt(0).toUpperCase()}
+            </span>
+          </div>
+          <p class="text-xl font-bold text-white">{player2Name}</p>
+        </div>
+      </div>
+    </div>
+
+  {:else if subPhase === "countdown"}
+    <!-- Countdown before match -->
+    <div class="text-center space-y-8 w-full max-w-3xl">
+      <p class="text-sm text-gray-500 uppercase tracking-widest">
+        Round {currentBracketRound}
+      </p>
+
+      <div class="flex items-center justify-center gap-12">
+        <div class="text-center space-y-2">
+          <div class="w-24 h-24 rounded-full bg-cyan-900 border-4 border-cyan-500 flex items-center justify-center">
+            <span class="text-3xl font-black text-cyan-300">
+              {player1Name.charAt(0).toUpperCase()}
+            </span>
+          </div>
+          <p class="text-xl font-bold text-white">{player1Name}</p>
+        </div>
+
+        <div class="text-center">
+          <p class="text-9xl font-black {countdownValue > 0 ? 'text-cyan-400 animate-pulse' : 'text-green-400'}">{countdownValue > 0 ? countdownValue : 'GO!'}</p>
         </div>
 
         <div class="text-center space-y-2">

@@ -38,7 +38,7 @@
     // Classic
     | "listing" | "reveal" | "results"
     // Funny Messages
-    | "fm_browsing" | "fm_writing" | "fm_reveal" | "fm_voting" | "fm_results";
+    | "fm_browsing" | "fm_reveal" | "fm_voting" | "fm_results";
 
   let subPhase: SubPhase = "waiting";
 
@@ -53,6 +53,7 @@
 
   let item: ItemInfo | null = null;
   let askingPrice = 0;
+  let characteristics: { label: string; value: string }[] = [];
   let biddingTimeLeft = 0;
   let biddingEndTime = 0;
   let biddingTimer: ReturnType<typeof setInterval> | null = null;
@@ -80,6 +81,10 @@
   let resultScores: Record<string, number> = {};
   let resultReserve = 0;
   let resultItemName = "";
+  let resultItemDescription = "";
+  let resultItemCategory = "";
+  let resultItemAskingPrice = 0;
+  let resultItemImageHint = "";
 
   // ── Funny Messages state ────────────────────────────────────────
 
@@ -99,18 +104,29 @@
   let fmPicksIn = 0;
   let fmTotalPickers = 0;
 
-  // Write phase
-  let fmWriteTimeLeft = 0;
-  let fmWriteEndTime = 0;
-  let fmWriteTimer: ReturnType<typeof setInterval> | null = null;
+  // Write phase (combined with browse — same shared timer)
   let fmWrittenIn = 0;
   let fmTotalWriters = 0;
 
-  // Reveal phase
+  // Player status dashboard
+  interface FmPlayerStatus {
+    playerId: string;
+    playerName: string;
+    status: "browsing" | "writing" | "submitted";
+  }
+  let fmPlayerStatuses: Map<string, FmPlayerStatus> = new Map();
+
+  // Disco clap sound effect
+  let discoClap: HTMLAudioElement | null = null;
+
+  // Reveal phase — structured reveal with animation steps
   let fmRevealPlayerName = "";
   let fmRevealItem: FmItem | null = null;
   let fmRevealMessage = "";
   let fmRevealHistory: { playerName: string; item: FmItem; message: string }[] = [];
+  /** Animation step for current reveal: 0=intro, 1=listing, 2=message */
+  let fmRevealStep = 0;
+  let fmRevealStepTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Voting phase
   let fmVotingEntries: { playerId: string; playerName: string }[] = [];
@@ -124,7 +140,7 @@
   let fmResults: {
     winner: string | null;
     scores: Record<string, number>;
-    entries: { playerId: string; playerName: string; itemName: string; message: string; voteCount: number }[];
+    entries: { playerId: string; playerName: string; itemName: string; itemDescription?: string; itemCategory?: string; message: string; voteCount: number }[];
   } | null = null;
 
   // Round skipped
@@ -157,6 +173,33 @@
     "phone": "☎️", "sundial": "☀️", "unicycle": "🎪", "wind": "🌬️",
     "fryer": "🍳", "level": "📏", "binoculars": "🔭", "puzzle": "🧩",
     "toilet": "🚽",
+    // Batch 2
+    "roomba2": "🤖", "waffle": "🧇", "compass2": "🧭", "trampoline2": "🤸",
+    "pool": "🏊", "projector": "📽️", "flip-phone": "📱", "sword": "🗡️",
+    "skateboard": "🛹", "globe": "🌍", "hammock": "🏖️", "purifier": "💨",
+    "spice-rack": "🧂", "karaoke": "🎤", "mannequin": "👤", "bread": "🍞",
+    "vhs": "📼", "beanbag": "🛋️", "lava-lamp": "🫧", "megaphone": "📢",
+    "generator": "⚡", "tandem": "🚲", "water-bottle": "💧", "rubber-duck": "🦆",
+    "alarm": "⏰", "skillet": "🍳", "desk": "🖥️", "hamster-wheel": "🐹",
+    "speaker": "🔊", "churn": "🧈", "hose": "🚿", "espresso": "☕",
+    "disco": "🪩", "detector": "🔍", "treadmill-desk": "🏃", "lunchbox": "🥪",
+    "printer": "🖨️", "pogo": "🦘", "crystal": "🔮", "instant-pot": "🍲",
+    "sewing": "🧵", "scooter": "🛴", "spinner": "🌀", "snowglobe": "🏔️",
+    "monitor": "👶", "pool-table": "🎱", "solar": "☀️", "fish": "🐟",
+    "painting": "🎨", "foghorn": "📯", "ac-unit": "❄️", "turntable": "🎵",
+    "e-blanket": "🔥", "ramp": "📐", "pigeon": "🐦", "vacuum": "🧹",
+    "neon": "💡", "punching-bag": "🥊", "watering-can": "🚿", "bidet": "💦",
+    "cornhole": "🫘", "toaster-oven": "🍞", "walkie": "📻", "fireplace": "🔥",
+    "selfie-stick": "🤳", "dino": "🦖", "saddle": "🐴", "leaf-blower": "🍃",
+    "grow-light": "🌱", "meter": "🅿️", "keyboard": "⌨️", "mower": "🌿",
+    "goggles": "🥽", "rocking-chair": "🪑", "scale": "⚖️", "disco-toilet": "🪩",
+    "trimmer": "✂️", "pizza-oven": "🍕", "e-guitar": "🎸", "massage-chair": "💆",
+    "doorbell": "🔔", "rc-car": "🏎️", "ice-cream": "🍦", "bonsai": "🌳",
+    "chess": "♟️", "smart-fridge": "🧊", "fire-pit": "🔥", "helmet": "⛑️",
+    "popcorn": "🍿", "kettle": "🫖", "mini-fridge": "🧊", "ping-pong": "🏓",
+    "hula": "💃", "foot-massager": "🦶", "wifi": "📶", "pay-phone": "☎️",
+    "tiki": "🗿", "submarine": "🚢", "bull": "🐂", "barrel": "🛢️",
+    "sharpener": "✏️", "gears": "⚙️", "camp-stove": "🏕️", "exercise-ball": "⚽",
   };
 
   function emojiFor(hint: string): string {
@@ -169,8 +212,8 @@
     if (biddingTimer) { clearInterval(biddingTimer); biddingTimer = null; }
     if (revealInterval) { clearInterval(revealInterval); revealInterval = null; }
     if (fmBrowseTimer) { clearInterval(fmBrowseTimer); fmBrowseTimer = null; }
-    if (fmWriteTimer) { clearInterval(fmWriteTimer); fmWriteTimer = null; }
     if (fmVotingTimer) { clearInterval(fmVotingTimer); fmVotingTimer = null; }
+    if (fmRevealStepTimer) { clearTimeout(fmRevealStepTimer); fmRevealStepTimer = null; }
   }
 
   function formatPrice(n: number): string {
@@ -182,12 +225,14 @@
   function onItemListing(data: {
     item: ItemInfo;
     askingPrice: number;
+    characteristics?: { label: string; value: string }[];
     durationMs: number;
     serverTimestamp: number;
   }) {
     subPhase = "listing";
     item = data.item;
     askingPrice = data.askingPrice;
+    characteristics = data.characteristics ?? [];
     bidsIn = 0;
     totalBidders = 0;
 
@@ -236,7 +281,7 @@
   }
 
   function onRoundResult(data: {
-    item: { name: string; category: string };
+    item: { name: string; category: string; description?: string; askingPrice?: number; imageHint?: string };
     reserve: number;
     rankings: typeof rankings;
     scores: Record<string, number>;
@@ -247,6 +292,10 @@
     resultScores = data.scores;
     resultReserve = data.reserve;
     resultItemName = data.item.name;
+    resultItemDescription = data.item.description ?? "";
+    resultItemCategory = data.item.category;
+    resultItemAskingPrice = data.item.askingPrice ?? 0;
+    resultItemImageHint = data.item.imageHint ?? "";
   }
 
   // ── Funny Messages message handlers ──────────────────────────────
@@ -260,7 +309,22 @@
     fmItems = data.items;
     fmPicksIn = 0;
     fmTotalPickers = 0;
+    fmWrittenIn = 0;
+    fmTotalWriters = 0;
     fmRevealHistory = [];
+
+    // Initialize all players as "browsing"
+    fmPlayerStatuses = new Map();
+    for (const p of state.players.values()) {
+      if (p.isConnected && !p.isEliminated) {
+        fmPlayerStatuses.set(p.id, {
+          playerId: p.id,
+          playerName: p.name,
+          status: "browsing",
+        });
+      }
+    }
+    fmPlayerStatuses = fmPlayerStatuses; // trigger reactivity
 
     fmBrowseEndTime = data.serverTimestamp + data.durationMs;
     fmBrowseTimeLeft = Math.max(0, (fmBrowseEndTime - Date.now()) / 1000);
@@ -276,21 +340,24 @@
     fmTotalPickers = data.totalPickers;
   }
 
-  function onFmWritePhase(data: {
-    durationMs: number;
-    serverTimestamp: number;
-  }) {
-    subPhase = "fm_writing";
-    fmWrittenIn = 0;
-    fmTotalWriters = 0;
+  function onFmPlayerStatus(data: { playerId: string; playerName: string; status: string }) {
+    const existing = fmPlayerStatuses.get(data.playerId);
+    if (existing) {
+      existing.status = data.status as FmPlayerStatus["status"];
+    } else {
+      fmPlayerStatuses.set(data.playerId, {
+        playerId: data.playerId,
+        playerName: data.playerName,
+        status: data.status as FmPlayerStatus["status"],
+      });
+    }
+    fmPlayerStatuses = fmPlayerStatuses; // trigger reactivity
 
-    fmWriteEndTime = data.serverTimestamp + data.durationMs;
-    fmWriteTimeLeft = Math.max(0, (fmWriteEndTime - Date.now()) / 1000);
-
-    clearAllTimers();
-    fmWriteTimer = setInterval(() => {
-      fmWriteTimeLeft = Math.max(0, (fmWriteEndTime - Date.now()) / 1000);
-    }, 100);
+    // Play disco_clap when a player submits
+    if (data.status === "submitted" && discoClap) {
+      discoClap.currentTime = 0;
+      discoClap.play().catch(() => {});
+    }
   }
 
   function onFmWriteUpdate(data: { writtenIn: number; totalWriters: number }) {
@@ -305,7 +372,9 @@
     message: string;
   }) {
     subPhase = "fm_reveal";
-    clearAllTimers();
+    if (fmBrowseTimer) { clearInterval(fmBrowseTimer); fmBrowseTimer = null; }
+    if (fmRevealStepTimer) { clearTimeout(fmRevealStepTimer); fmRevealStepTimer = null; }
+
     fmRevealPlayerName = data.playerName;
     fmRevealItem = data.item;
     fmRevealMessage = data.message;
@@ -314,6 +383,21 @@
       item: data.item,
       message: data.message,
     }];
+
+    // Structured reveal animation:
+    // Step 0: "Player X commented on..." intro text
+    fmRevealStep = 0;
+
+    // Step 1: Show the full listing card after 1.2s
+    fmRevealStepTimer = setTimeout(() => {
+      fmRevealStep = 1;
+
+      // Step 2: Pop up the message below after another 1.5s
+      fmRevealStepTimer = setTimeout(() => {
+        fmRevealStep = 2;
+        fmRevealStepTimer = null;
+      }, 1500);
+    }, 1200);
   }
 
   function onFmRevealDone() {
@@ -358,6 +442,10 @@
   // ── Lifecycle ────────────────────────────────────────────────────
 
   onMount(() => {
+    // Initialize disco clap sound effect
+    discoClap = new Audio("/audio/disco_clap.wav");
+    discoClap.volume = 0.6;
+
     // Classic listeners
     room.onMessage("item_listing", onItemListing);
     room.onMessage("bid_count_update", onBidCountUpdate);
@@ -366,7 +454,7 @@
     // Funny Messages listeners
     room.onMessage("fm_browse_start", onFmBrowseStart);
     room.onMessage("fm_pick_update", onFmPickUpdate);
-    room.onMessage("fm_write_phase", onFmWritePhase);
+    room.onMessage("fm_player_status", onFmPlayerStatus);
     room.onMessage("fm_write_update", onFmWriteUpdate);
     room.onMessage("fm_reveal_entry", onFmRevealEntry);
     room.onMessage("fm_reveal_done", onFmRevealDone);
@@ -393,6 +481,7 @@
   $: fmWinnerEntry = fmResults
     ? fmResults.entries.find((e) => e.playerId === fmResults?.winner)
     : null;
+  $: fmStatusList = [...fmPlayerStatuses.values()];
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="lowball-marketplace-tv">
@@ -442,6 +531,16 @@
               <p class="text-xs text-emerald-400 uppercase tracking-widest">{item.category}</p>
               <h2 class="text-3xl font-black text-white">{item.name}</h2>
               <p class="text-lg text-gray-400">{item.description}</p>
+              {#if characteristics.length > 0}
+                <div class="flex flex-wrap gap-2 mt-1">
+                  {#each characteristics as c}
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-gray-700/80 border border-gray-600 rounded-full text-sm">
+                      <span class="text-gray-400">{c.label}:</span>
+                      <span class="font-semibold text-white">{c.value}</span>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
             {/if}
           </div>
 
@@ -463,8 +562,14 @@
             <p class="text-xs text-gray-500">Member since yesterday &bull; 0 reviews</p>
           </div>
           <div class="ml-auto text-right">
-            <p class="text-xs text-gray-500">Condition: <span class="text-yellow-400">It exists</span></p>
-            <p class="text-xs text-gray-500">Shipping: <span class="text-gray-400">Your problem</span></p>
+            {#if characteristics.length > 0}
+              {#each characteristics.slice(0, 2) as c}
+                <p class="text-xs text-gray-500">{c.label}: <span class="text-yellow-400">{c.value}</span></p>
+              {/each}
+            {:else}
+              <p class="text-xs text-gray-500">Condition: <span class="text-yellow-400">It exists</span></p>
+              <p class="text-xs text-gray-500">Shipping: <span class="text-gray-400">Your problem</span></p>
+            {/if}
           </div>
         </div>
       </div>
@@ -565,6 +670,26 @@
     <div class="w-full max-w-2xl space-y-6">
       <h1 class="text-3xl font-bold text-center text-emerald-400">Round Results</h1>
 
+      <!-- Item details card -->
+      {#if resultItemName}
+        <div class="bg-gray-800/60 border border-gray-700 rounded-xl p-4 flex items-center gap-4">
+          <div class="w-16 h-16 bg-gray-700 border border-gray-600 rounded-lg flex items-center justify-center shrink-0">
+            <span class="text-4xl">{emojiFor(resultItemImageHint)}</span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-lg font-black text-white">{resultItemName}</p>
+            {#if resultItemDescription}
+              <p class="text-sm text-gray-300 line-clamp-2">{resultItemDescription}</p>
+            {/if}
+            <div class="flex items-center gap-4 mt-1 text-xs text-gray-400">
+              {#if resultItemCategory}<span class="text-emerald-400">{resultItemCategory}</span>{/if}
+              {#if resultItemAskingPrice}<span>Asking: <span class="text-white font-bold">{formatPrice(resultItemAskingPrice)}</span></span>{/if}
+              <span>Reserve: <span class="text-yellow-400 font-bold">{formatPrice(resultReserve)}</span></span>
+            </div>
+          </div>
+        </div>
+      {/if}
+
       <!-- Winner -->
       {#if acceptedRankings.length > 0}
         {@const winner = acceptedRankings[0]}
@@ -647,129 +772,131 @@
   <!-- ═══════════════════════════════════════════════════════════════ -->
 
   {:else if subPhase === "fm_browsing"}
-    <!-- Browse grid — items available for players to pick -->
+    <!-- Combined Browse & Write phase — dashboard + item grid -->
     <div class="w-full max-w-5xl space-y-4">
       <div class="text-center">
-        <h1 class="text-3xl font-black text-emerald-400">Pick a Listing!</h1>
-        <p class="text-lg text-gray-400 mt-2">Players are choosing items on their phones</p>
+        <h1 class="text-3xl font-black text-emerald-400">Pick a Listing & Write a Message!</h1>
+        <p class="text-lg text-gray-400 mt-2">Browse, pick an item, and send a funny message to the seller</p>
       </div>
 
-      <!-- Scrollable item grid -->
-      <div class="max-h-[55vh] overflow-y-auto rounded-xl pr-1">
-        <div class="grid grid-cols-4 gap-3">
-          {#each fmItems as fmItem}
-            <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-1">
-              <div class="flex items-center gap-2">
-                <span class="text-2xl">{emojiFor(fmItem.imageHint)}</span>
-                <div class="flex-1 min-w-0">
-                  <p class="font-bold text-white text-sm truncate">{fmItem.name}</p>
-                  <p class="text-xs text-emerald-400 font-bold">{formatPrice(fmItem.askingPrice)}</p>
+      <div class="flex gap-6">
+        <!-- Item grid (left / main area) -->
+        <div class="flex-1 max-h-[50vh] overflow-y-auto rounded-xl pr-1">
+          <div class="grid grid-cols-4 gap-3">
+            {#each fmItems as fmItem}
+              <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl">{emojiFor(fmItem.imageHint)}</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="font-bold text-white text-sm truncate">{fmItem.name}</p>
+                    <p class="text-xs text-emerald-400 font-bold">{formatPrice(fmItem.askingPrice)}</p>
+                  </div>
                 </div>
+                <p class="text-xs text-gray-500 line-clamp-1">{fmItem.description}</p>
+                <p class="text-xs text-gray-600">{fmItem.category}</p>
               </div>
-              <p class="text-xs text-gray-500 line-clamp-1">{fmItem.description}</p>
-              <p class="text-xs text-gray-600">{fmItem.category}</p>
-            </div>
-          {/each}
-        </div>
-      </div>
-
-      <!-- Timer + pick progress -->
-      <div class="text-center space-y-3">
-        <p class="text-5xl font-mono font-black {fmBrowseTimeLeft < 5 ? 'text-red-400 animate-pulse' : 'text-white'}">
-          {Math.ceil(fmBrowseTimeLeft)}
-        </p>
-        {#if fmTotalPickers > 0}
-          <div class="w-64 mx-auto">
-            <div class="flex justify-between text-sm text-gray-400 mb-1">
-              <span>Items picked</span>
-              <span>{fmPicksIn} / {fmTotalPickers}</span>
-            </div>
-            <div class="h-3 bg-gray-700 rounded-full overflow-hidden">
-              <div
-                class="h-full bg-emerald-500 rounded-full transition-all"
-                style="width:{(fmPicksIn / fmTotalPickers) * 100}%"
-              ></div>
-            </div>
+            {/each}
           </div>
-        {/if}
-      </div>
-    </div>
+        </div>
 
-  {:else if subPhase === "fm_writing"}
-    <!-- Writing phase — players composing messages -->
-    <div class="w-full max-w-2xl space-y-8 text-center">
-      <div>
-        <h1 class="text-3xl font-black text-emerald-400">Write Your Message!</h1>
-        <p class="text-lg text-gray-400 mt-2">Players are crafting their funniest messages to sellers</p>
-      </div>
+        <!-- Player dashboard (right sidebar) -->
+        <div class="w-64 flex-shrink-0 space-y-3">
+          <p class="text-xs text-gray-400 uppercase tracking-widest text-center">Player Status</p>
+          <div class="space-y-2">
+            {#each fmStatusList as ps}
+              <div class="bg-gray-800 border rounded-lg px-3 py-2 flex items-center gap-2
+                {ps.status === 'submitted'
+                  ? 'border-emerald-600'
+                  : ps.status === 'writing'
+                    ? 'border-yellow-600'
+                    : 'border-gray-700'}">
+                <div class="w-2 h-2 rounded-full flex-shrink-0
+                  {ps.status === 'submitted'
+                    ? 'bg-emerald-400'
+                    : ps.status === 'writing'
+                      ? 'bg-yellow-400 animate-pulse'
+                      : 'bg-gray-500'}"></div>
+                <span class="flex-1 text-sm font-semibold text-white truncate">{ps.playerName}</span>
+                <span class="text-xs flex-shrink-0
+                  {ps.status === 'submitted'
+                    ? 'text-emerald-400'
+                    : ps.status === 'writing'
+                      ? 'text-yellow-400'
+                      : 'text-gray-500'}">
+                  {ps.status === 'submitted' ? 'Done' : ps.status === 'writing' ? 'Writing...' : 'Browsing'}
+                </span>
+              </div>
+            {/each}
+          </div>
 
-      <!-- Animated quill / pen -->
-      <div class="flex justify-center">
-        <div class="w-32 h-32 bg-gray-800 border-2 border-emerald-700 rounded-2xl flex items-center justify-center">
-          <span class="text-6xl animate-bounce" style="animation-duration:2s">✍️</span>
+          {#if fmTotalWriters > 0}
+            <div class="pt-2">
+              <div class="flex justify-between text-xs text-gray-400 mb-1">
+                <span>Submitted</span>
+                <span>{fmWrittenIn} / {fmTotalWriters}</span>
+              </div>
+              <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  class="h-full bg-emerald-500 rounded-full transition-all"
+                  style="width:{(fmWrittenIn / fmTotalWriters) * 100}%"
+                ></div>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
 
       <!-- Timer -->
-      <p class="text-5xl font-mono font-black {fmWriteTimeLeft < 10 ? 'text-red-400 animate-pulse' : 'text-white'}">
-        {Math.ceil(fmWriteTimeLeft)}
-      </p>
-
-      <!-- Write progress -->
-      {#if fmTotalWriters > 0}
-        <div class="w-64 mx-auto">
-          <div class="flex justify-between text-sm text-gray-400 mb-1">
-            <span>Messages submitted</span>
-            <span>{fmWrittenIn} / {fmTotalWriters}</span>
-          </div>
-          <div class="h-3 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              class="h-full bg-emerald-500 rounded-full transition-all"
-              style="width:{(fmWrittenIn / fmTotalWriters) * 100}%"
-            ></div>
-          </div>
-        </div>
-      {/if}
+      <div class="text-center">
+        <p class="text-5xl font-mono font-black {fmBrowseTimeLeft < 5 ? 'text-red-400 animate-pulse' : 'text-white'}">
+          {Math.ceil(fmBrowseTimeLeft)}
+        </p>
+      </div>
     </div>
 
   {:else if subPhase === "fm_reveal"}
-    <!-- Reveal — showing each message dramatically -->
+    <!-- Structured Reveal — animated step-by-step -->
     <div class="w-full max-w-3xl space-y-6">
       <div class="text-center">
-        <h1 class="text-3xl font-black text-emerald-400">Message Reveal!</h1>
+        <p class="text-sm text-gray-500 uppercase tracking-widest">Message {fmRevealHistory.length}</p>
       </div>
 
-      {#if fmRevealItem}
-        <!-- Current reveal card -->
-        <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl p-8 space-y-6 max-w-2xl mx-auto">
-          <!-- Player name -->
-          <div class="text-center">
-            <p class="text-xs text-gray-400 uppercase tracking-widest">A message from</p>
-            <p class="text-3xl font-black text-white mt-1">{fmRevealPlayerName}</p>
-          </div>
+      <!-- Step 0: "Player X commented on..." intro -->
+      {#if fmRevealStep >= 0}
+        <div class="text-center animate-fade-in">
+          <p class="text-2xl text-gray-300">
+            <span class="font-black text-white text-3xl">{fmRevealPlayerName}</span>
+            <span class="text-gray-400 ml-2">commented on...</span>
+          </p>
+        </div>
+      {/if}
 
-          <!-- Item the message is about -->
-          <div class="bg-gray-700/50 border border-gray-600 rounded-xl p-4 flex items-center gap-4">
-            <span class="text-4xl">{emojiFor(fmRevealItem.imageHint)}</span>
-            <div class="flex-1">
-              <p class="text-xs text-emerald-400 uppercase tracking-widest">{fmRevealItem.category}</p>
-              <p class="text-xl font-bold text-white">{fmRevealItem.name}</p>
-              <p class="text-sm text-gray-400">{formatPrice(fmRevealItem.askingPrice)}</p>
+      {#if fmRevealItem && fmRevealStep >= 1}
+        <!-- Step 1: Full listing card slides in -->
+        <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl overflow-hidden animate-slide-up max-w-2xl mx-auto">
+          <!-- Item hero -->
+          <div class="flex gap-6 p-6 items-center">
+            <div class="w-28 h-28 bg-gray-700 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-600">
+              <span class="text-6xl">{emojiFor(fmRevealItem.imageHint)}</span>
             </div>
-          </div>
-
-          <!-- The message -->
-          <div class="bg-gray-900 border border-gray-600 rounded-xl p-6">
-            <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Message to Seller:</p>
-            <p class="text-2xl text-white leading-relaxed italic">"{fmRevealMessage}"</p>
+            <div class="flex-1 space-y-1">
+              <p class="text-xs text-emerald-400 uppercase tracking-widest">{fmRevealItem.category}</p>
+              <p class="text-2xl font-black text-white">{fmRevealItem.name}</p>
+              <p class="text-sm text-gray-400">{fmRevealItem.description}</p>
+              <p class="text-xl font-black text-emerald-400 mt-1">{formatPrice(fmRevealItem.askingPrice)}</p>
+            </div>
           </div>
         </div>
       {/if}
 
-      <!-- Reveal counter -->
-      <p class="text-center text-sm text-gray-500">
-        Message {fmRevealHistory.length} of ?
-      </p>
+      {#if fmRevealStep >= 2}
+        <!-- Step 2: Message pops up below -->
+        <div class="bg-gray-900 border-2 border-yellow-500/60 rounded-2xl p-6 max-w-2xl mx-auto animate-pop-in">
+          <p class="text-xs text-yellow-400 uppercase tracking-widest mb-3">Message to Seller</p>
+          <p class="text-2xl text-white leading-relaxed italic">"{fmRevealMessage}"</p>
+          <p class="text-right text-sm text-gray-500 mt-3">-- {fmRevealPlayerName}</p>
+        </div>
+      {/if}
     </div>
 
   {:else if subPhase === "fm_voting"}
@@ -886,3 +1013,28 @@
     </div>
   {/if}
 </div>
+
+<style>
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pop-in {
+    0% { opacity: 0; transform: scale(0.8) translateY(20px); }
+    60% { opacity: 1; transform: scale(1.03) translateY(-2px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  :global(.animate-fade-in) {
+    animation: fade-in 0.5s ease-out both;
+  }
+  :global(.animate-slide-up) {
+    animation: slide-up 0.6s ease-out both;
+  }
+  :global(.animate-pop-in) {
+    animation: pop-in 0.5s ease-out both;
+  }
+</style>

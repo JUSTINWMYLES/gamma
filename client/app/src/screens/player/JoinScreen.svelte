@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import GammaLogo from "../../components/GammaLogo.svelte";
   export let error: string = "";
   const dispatch = createEventDispatcher<{ join: { roomCode: string; name: string } }>();
 
@@ -19,7 +20,10 @@
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="join-screen">
-  <h1 class="text-4xl font-black text-indigo-400">gamma</h1>
+  <div class="flex flex-col items-center gap-2">
+    <GammaLogo size="64px" />
+    <h1 class="text-3xl font-black tracking-tight text-indigo-400">GAMMA</h1>
+  </div>
   <div class="w-full max-w-xs space-y-4">
     <input type="text" placeholder="Room Code" maxlength="4" autocomplete="off" autocapitalize="characters" bind:value={roomCode} class="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-center text-2xl font-mono tracking-widest uppercase focus:outline-none focus:border-indigo-500" data-testid="room-code-input" />
     <input type="text" placeholder="Your Name" maxlength="20" autocomplete="off" bind:value={name} class="w-full bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-lg focus:outline-none focus:border-indigo-500" data-testid="name-input" />

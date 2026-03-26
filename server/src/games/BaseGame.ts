@@ -150,6 +150,20 @@ export abstract class BaseGame {
     this._timers = [];
   }
 
+  /**
+   * Called when a player reconnects with a new sessionId (e.g. page refresh).
+   * Override in game plugins that maintain internal maps keyed by sessionId
+   * (e.g. bracket matchups, per-player timers, input buffers).
+   *
+   * The GammaRoom has already migrated the PlayerState in the players map
+   * and updated currentMatchOpponentId references before this is called.
+   *
+   * @param oldId  The previous sessionId (now deleted from players map)
+   * @param newId  The new sessionId (now the key in players map)
+   * @param client The new Colyseus Client instance
+   */
+  onPlayerReconnected?(oldId: string, newId: string, client: Client): void;
+
   // ── Round loop ────────────────────────────────────────────────────────────
 
   protected async runRounds(): Promise<void> {

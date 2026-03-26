@@ -160,6 +160,49 @@
     room.send("game_input", { action: "move", direction });
   }
 
+  /**
+   * Determine direction from a tap/click position relative to an element.
+   * Divides the element into 4 triangular zones using the diagonals.
+   */
+  function directionFromPoint(el: HTMLElement, clientX: number, clientY: number): string {
+    const rect = el.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    // Normalize so the aspect ratio doesn't bias toward left/right on wide screens.
+    const ndx = dx / (rect.width / 2);
+    const ndy = dy / (rect.height / 2);
+    if (Math.abs(ndx) > Math.abs(ndy)) {
+      return ndx > 0 ? "right" : "left";
+    }
+    return ndy > 0 ? "down" : "up";
+  }
+
+  function handleTapZone(e: TouchEvent) {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const dir = directionFromPoint(e.currentTarget as HTMLElement, touch.clientX, touch.clientY);
+    sendMove(dir);
+  }
+
+  function handleClickZone(e: MouseEvent) {
+    const dir = directionFromPoint(e.currentTarget as HTMLElement, e.clientX, e.clientY);
+    sendMove(dir);
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    const keyMap: Record<string, string> = {
+      ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right",
+      w: "up", s: "down", a: "left", d: "right",
+    };
+    const dir = keyMap[e.key];
+    if (dir) {
+      e.preventDefault();
+      sendMove(dir);
+    }
+  }
+
   // ── Shake detection (team mode) ─────────────────────────────────
 
   function startShakeDetection() {
@@ -244,10 +287,6 @@
     <!-- Top HUD -->
     <div class="px-4 py-3 bg-gray-900/80 flex items-center gap-3">
       <div class="flex-1">
-        <p class="text-xs text-gray-400">Position</p>
-        <p class="text-sm font-mono text-white">{myX},{myY}</p>
-      </div>
-      <div class="text-center">
         <p class="text-xs text-gray-400">Escaped</p>
         <p class="text-sm font-bold text-green-400">{finishCount}</p>
       </div>
@@ -262,37 +301,26 @@
       </div>
     {/if}
 
-    <!-- D-pad -->
-    <div class="flex-1 flex items-center justify-center">
-      <div class="relative" style="width:200px;height:200px">
-        <!-- Up -->
-        <button
-          class="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
-          on:click={() => sendMove("up")}
-        >&#x25B2;</button>
+    <!-- Full-screen tap zones (tap side of screen to move in that direction) -->
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <div
+      class="flex-1 relative"
+      style="touch-action:manipulation"
+      role="button"
+      tabindex="0"
+      on:touchstart|preventDefault={handleTapZone}
+      on:click={handleClickZone}
+      on:keydown={handleKeydown}
+    >
+      <!-- Visual direction hints (subtle arrows at edges) -->
+      <div class="absolute top-3 left-1/2 -translate-x-1/2 text-gray-600 text-xl pointer-events-none select-none">&#x25B2;</div>
+      <div class="absolute bottom-3 left-1/2 -translate-x-1/2 text-gray-600 text-xl pointer-events-none select-none">&#x25BC;</div>
+      <div class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-xl pointer-events-none select-none">&#x25C0;</div>
+      <div class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 text-xl pointer-events-none select-none">&#x25B6;</div>
 
-        <!-- Down -->
-        <button
-          class="absolute bottom-0 left-1/2 -translate-x-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
-          on:click={() => sendMove("down")}
-        >&#x25BC;</button>
-
-        <!-- Left -->
-        <button
-          class="absolute left-0 top-1/2 -translate-y-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
-          on:click={() => sendMove("left")}
-        >&#x25C0;</button>
-
-        <!-- Right -->
-        <button
-          class="absolute right-0 top-1/2 -translate-y-1/2 w-16 h-16 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg active:scale-90 transition-transform"
-          on:click={() => sendMove("right")}
-        >&#x25B6;</button>
-
-        <!-- Center indicator -->
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-gray-700 border-2 border-gray-600 flex items-center justify-center">
-          <span class="text-xs text-gray-400 font-mono">{myX},{myY}</span>
-        </div>
+      <!-- Center tap indicator -->
+      <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-gray-800/60 border border-gray-700 flex items-center justify-center pointer-events-none">
+        <span class="text-xs text-gray-500">+</span>
       </div>
     </div>
   </div>
@@ -304,7 +332,6 @@
     <div class="px-4 py-3 bg-gray-900/80 flex items-center gap-3">
       <div class="flex-1">
         <p class="text-xs text-gray-400">Team {teamId + 1}</p>
-        <p class="text-sm font-mono text-white">Pos: {myX},{myY}</p>
       </div>
       <div class="text-right">
         <p class="text-2xl font-mono font-black {timeLeftSecs < 10 ? 'text-red-400' : 'text-white'}">{timeLeftSecs}</p>
@@ -332,6 +359,8 @@
       <!-- Manual shake button (fallback / desktop) -->
       <button
         class="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-2xl text-white font-bold text-lg shadow-lg active:scale-95 transition-transform"
+        style="touch-action:manipulation"
+        on:touchstart|preventDefault={() => room.send("game_input", { action: "shake" })}
         on:click={() => room.send("game_input", { action: "shake" })}
       >
         SHAKE ({directionLabel})

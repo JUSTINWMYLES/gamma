@@ -12,7 +12,7 @@
   import type { RoomState, PlayerState } from "../../../../shared/types";
   import ShaveYak from "../../games/player/ShaveYak.svelte";
   import OddOneOut from "../../games/player/OddOneOut.svelte";
-  import EvilLaugh from "../../games/player/EvilLaugh.svelte";
+  import AudioOverlay from "../../games/player/AudioOverlay.svelte";
   import LowballMarketplace from "../../games/player/LowballMarketplace.svelte";
   import FireMatchBlowShake from "../../games/player/FireMatchBlowShake.svelte";
   import HotPotato from "../../games/player/HotPotato.svelte";
@@ -28,7 +28,7 @@
   // ── Game routing ──────────────────────────────────────────────────
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
-  $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
+  $: isAudioOverlay = state.selectedGame === "registry-26-audio-overlay";
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
   $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
   $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
@@ -198,7 +198,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isEvilLaugh || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -275,9 +275,9 @@
 {:else if isOddOneOut}
   <!-- ── Registry-20: Odd One Out ──────────────────────────────────── -->
   <OddOneOut {room} {state} {me} />
-{:else if isEvilLaugh}
-  <!-- ── Registry-26: Evil Laugh Overlay ──────────────────────────── -->
-  <EvilLaugh {room} {state} {me} />
+{:else if isAudioOverlay}
+  <!-- ── Registry-26: Audio Overlay ──────────────────────────────── -->
+  <AudioOverlay {room} {state} {me} />
 {:else if isLowball}
   <!-- ── Registry-25: Lowball Marketplace ─────────────────────────── -->
   <LowballMarketplace {room} {state} {me} />

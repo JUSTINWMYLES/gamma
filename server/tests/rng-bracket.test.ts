@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { seededRng, seededShuffle, generateRoomCode } from "../src/utils/rng";
-import { buildBracket, advanceBracket } from "../src/utils/bracket";
+import { buildBracket, advanceBracket, getMatchPlayers, resolveHeat1v1 } from "../src/utils/bracket";
 
 describe("seededRng", () => {
   it("produces values in [0, 1)", () => {
@@ -80,51 +80,54 @@ describe("bracket builder", () => {
   it("builds bracket with even player count", () => {
     const state = buildBracket(["p1", "p2", "p3", "p4"], 42);
     expect(state.rounds.length).toBe(1);
-    expect(state.rounds[0].matches.length).toBe(2);
-    // All matches have two real players
-    for (const m of state.rounds[0].matches) {
-      expect(m.player1Id).not.toBe("");
-      expect(m.player2Id).not.toBe("BYE");
+    expect(state.rounds[0]!.heats.length).toBe(2);
+    // All heats have two real players
+    for (const h of state.rounds[0]!.heats) {
+      const [p1, p2] = getMatchPlayers(h);
+      expect(p1).not.toBe("");
+      expect(p2).not.toBe("");
     }
   });
 
   it("handles odd player count with a bye", () => {
     const state = buildBracket(["p1", "p2", "p3"], 1);
-    const matches = state.rounds[0].matches;
-    // 1 real match + 1 bye match = 2 entries
-    expect(matches.length).toBe(2);
-    const byeMatch = matches.find((m) => m.player2Id === "BYE");
-    expect(byeMatch).toBeDefined();
-    expect(byeMatch!.winnerId).toBe(byeMatch!.player1Id);
-    expect(byeMatch!.status).toBe("complete");
+    const heats = state.rounds[0]!.heats;
+    // 1 real heat + 1 bye heat = 2 entries
+    expect(heats.length).toBe(2);
+    const byeHeat = [...heats].find((h: any) => h.playerIds.length === 1);
+    expect(byeHeat).toBeDefined();
+    expect(byeHeat!.advancingIds[0]).toBe(byeHeat!.playerIds[0]);
+    expect(byeHeat!.status).toBe("complete");
   });
 
   it("is deterministic with same seed", () => {
     const a = buildBracket(["p1", "p2", "p3", "p4"], 42);
     const b = buildBracket(["p1", "p2", "p3", "p4"], 42);
-    expect(a.rounds[0].matches[0].player1Id).toBe(b.rounds[0].matches[0].player1Id);
+    const [aP1] = getMatchPlayers(a.rounds[0]!.heats[0]!);
+    const [bP1] = getMatchPlayers(b.rounds[0]!.heats[0]!);
+    expect(aP1).toBe(bP1);
   });
 
   it("advances bracket after round completion", () => {
     const state = buildBracket(["p1", "p2", "p3", "p4"], 1);
-    // Manually set winners
-    state.rounds[0].matches[0].winnerId = "p1";
-    state.rounds[0].matches[0].status = "complete";
-    state.rounds[0].matches[1].winnerId = "p3";
-    state.rounds[0].matches[1].status = "complete";
+    // Manually resolve heats
+    const heat0 = state.rounds[0]!.heats[0]!;
+    const heat1 = state.rounds[0]!.heats[1]!;
+    resolveHeat1v1(heat0, "p1");
+    resolveHeat1v1(heat1, "p3");
 
     advanceBracket(state, 10);
 
     expect(state.rounds.length).toBe(2);
-    const finalMatch = state.rounds[1].matches[0];
-    expect([finalMatch.player1Id, finalMatch.player2Id]).toContain("p1");
-    expect([finalMatch.player1Id, finalMatch.player2Id]).toContain("p3");
+    const finalHeat = state.rounds[1]!.heats[0]!;
+    const [fp1, fp2] = getMatchPlayers(finalHeat);
+    expect([fp1, fp2]).toContain("p1");
+    expect([fp1, fp2]).toContain("p3");
   });
 
   it("does not advance when only 1 winner remains", () => {
     const state = buildBracket(["p1", "p2"], 1);
-    state.rounds[0].matches[0].winnerId = "p1";
-    state.rounds[0].matches[0].status = "complete";
+    resolveHeat1v1(state.rounds[0]!.heats[0]!, "p1");
     advanceBracket(state, 10);
     // Should still be just 1 round — tournament over
     expect(state.rounds.length).toBe(1);

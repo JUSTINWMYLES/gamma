@@ -1,14 +1,14 @@
 ## Title
 
-Evil Laugh Overlay
+Audio Overlay
 
 ## ID
 
-registry-22-evil-laugh-overlay
+registry-22-audio-overlay
 
 ## One-line Summary
 
-Record an evil laugh and overlay it on a looping GIF; players may plug ears for a silly effect.
+Record audio and overlay it on a looping GIF; vote for the best combination.
 
 ## Long Description
 

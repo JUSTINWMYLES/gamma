@@ -57,7 +57,7 @@
       icon: "\uD83D\uDCB0", c1: "#1a1000", c2: "#3d2800", c3: "#eab308", tc: "#fff0a0",
       width: 58, height: 172,
     },
-    "registry-26-evil-laugh-overlay": {
+    "registry-26-audio-overlay": {
       icon: "\uD83D\uDE08", c1: "#001a2e", c2: "#003d5c", c3: "#22d3ee", tc: "#b0f0ff",
       width: 44, height: 195,
     },
@@ -148,6 +148,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    padding-top: 16px;
+    /* Prevent any right-side spillover from spine shadows */
+    padding-right: 4px;
   }
 
   .shelf-row {
@@ -160,16 +163,16 @@
     align-items: flex-end;
     flex-wrap: wrap;
     gap: 6px;
-    padding: 0 18px 0 24px;
+    padding: 0 20px;
     min-height: 170px;
   }
 
   .shelf-plank {
     position: relative;
     height: 24px;
-    background: linear-gradient(180deg, #8b5a28 0%, #6b3f18 35%, #4e2d0f 70%, #3a2008 100%);
+    background: linear-gradient(180deg, #3b3f4a 0%, #2a2d36 35%, #1f2128 70%, #16181e 100%);
     border-radius: 2px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.7), 0 2px 0px #b07030 inset, 0 -1px 0px #2a1505 inset;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 2px 0px #4a4e5a inset, 0 -1px 0px #0e0f12 inset;
     margin-top: 4px;
   }
 
@@ -188,6 +191,12 @@
 
   .game-box:not(.unavailable):not(.readonly):hover {
     transform: translateY(-14px) scale(1.04);
+    z-index: 10;
+  }
+
+  /* Top-row books: reduce upward movement to prevent going off screen */
+  .game-box.tooltip-below:not(.unavailable):not(.readonly):hover {
+    transform: translateY(-4px) scale(1.04);
     z-index: 10;
   }
 
@@ -329,5 +338,49 @@
     margin-top: 6px;
     font-size: 0.6rem;
     color: rgba(255,100,100,0.7);
+  }
+
+  /* ── Light mode overrides ──────────────────────────────────────── */
+
+  /* Shelf plank: neutral light gray */
+  :global(.light) .shelf-plank {
+    background: linear-gradient(180deg, #e5e7eb 0%, #d1d5db 35%, #c8cbd0 70%, #bcc0c6 100%);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1), 0 2px 0px #f3f4f6 inset, 0 -1px 0px #9ca3af inset;
+  }
+
+  /* Spines: brighten background, soften shadows */
+  :global(.light) .spine {
+    filter: brightness(1.6) saturate(0.8);
+    box-shadow: 2px 0 6px rgba(0,0,0,0.12), inset -2px 0 6px rgba(0,0,0,0.08), inset 2px 0 4px rgba(255,255,255,0.2);
+  }
+
+  /* Selected spine in light mode */
+  :global(.light) .game-box.selected .spine {
+    box-shadow: 0 0 0 2px #6366f1, 2px 0 6px rgba(0,0,0,0.12), inset -2px 0 6px rgba(0,0,0,0.08);
+  }
+
+  /* Tooltip: light background, dark text */
+  :global(.light) .box-tooltip {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  }
+
+  :global(.light) .box-tooltip h3 {
+    color: #111827;
+  }
+
+  :global(.light) .box-tooltip p {
+    color: #6b7280;
+  }
+
+  :global(.light) .box-tooltip .tag {
+    background: rgba(99,102,241,0.08);
+    color: #4f46e5;
+    border: 1px solid rgba(99,102,241,0.15);
+  }
+
+  :global(.light) .unavailable-note {
+    color: rgba(220,38,38,0.7);
   }
 </style>

@@ -70,7 +70,7 @@ const BIDDING_DURATION_MS = 20_000;
 /** Time to show the reveal animation (ms). */
 const REVEAL_DURATION_MS = 8_000;
 /** Time to show results (ms). */
-const RESULTS_DISPLAY_MS = 6_000;
+const RESULTS_DISPLAY_MS = 15_000;
 
 /** Points for submitting an accepted bid. */
 const PARTICIPATION_POINTS = 25;
@@ -85,16 +85,18 @@ const CLOSE_SHAVE_BONUS = 25;
 
 // ── Funny Messages constants ──────────────────────────────────────────────────
 
-/** Time to browse items and pick one (ms). */
-const FM_BROWSE_DURATION_MS = 25_000;
-/** Time to write a message to the seller (ms). */
-const FM_WRITE_DURATION_MS = 45_000;
+/**
+ * Combined browse + write time (ms).
+ * Players share one timer for both browsing and writing.
+ * Once a player picks, they immediately proceed to writing.
+ */
+const FM_BROWSE_WRITE_DURATION_MS = 60_000;
 /** Duration each message is shown on TV (ms). */
 const FM_REVEAL_ENTRY_MS = 6_000;
 /** Voting duration (ms). */
 const FM_VOTING_DURATION_MS = 20_000;
 /** Results display (ms). */
-const FM_RESULTS_DISPLAY_MS = 8_000;
+const FM_RESULTS_DISPLAY_MS = 15_000;
 /** Number of items shown per round for selection. */
 const FM_ITEMS_PER_ROUND = 16;
 
@@ -107,14 +109,160 @@ const FM_PARTICIPATION_POINTS = 25;
 
 // ── Item catalogue ────────────────────────────────────────────────────────────
 
+interface ItemCharacteristic {
+  /** Display label, e.g. "Condition", "Brand", "Rarity". */
+  label: string;
+  /** Display value, e.g. "Mint", "Generic", "Common". */
+  value: string;
+  /** Multiplier applied to base price (e.g. 0.6 = 40% discount, 1.3 = 30% premium). */
+  priceMultiplier: number;
+}
+
 interface MarketItem {
   name: string;
   description: string;
   category: string;
   askingPrice: number;
-  /** Reserve is a fraction of asking price (0.3–0.7). */
+  /** @deprecated Use characteristics instead. Kept for backward compat with old items. */
   reserveFraction: number;
+  /** Characteristics that influence the reserve price. Players see these to reason about value. */
+  characteristics?: ItemCharacteristic[];
   imageHint: string; // CSS class hint for client rendering
+}
+
+// ── Characteristic pools for dynamic generation ──────────────────────────────
+
+const CONDITION_VALUES: { value: string; multiplier: number }[] = [
+  { value: "Mint / Sealed", multiplier: 1.4 },
+  { value: "Excellent", multiplier: 1.2 },
+  { value: "Good", multiplier: 1.0 },
+  { value: "Fair — Some Wear", multiplier: 0.75 },
+  { value: "Rough — Cosmetic Damage", multiplier: 0.55 },
+  { value: "For Parts Only", multiplier: 0.3 },
+];
+
+const BRAND_VALUES: { value: string; multiplier: number }[] = [
+  { value: "Premium Brand", multiplier: 1.35 },
+  { value: "Name Brand", multiplier: 1.1 },
+  { value: "Generic / Off-Brand", multiplier: 0.8 },
+  { value: "Unbranded / Homemade", multiplier: 0.6 },
+  { value: "Knockoff", multiplier: 0.45 },
+];
+
+const DEMAND_VALUES: { value: string; multiplier: number }[] = [
+  { value: "Trending — High Demand", multiplier: 1.3 },
+  { value: "Steady Demand", multiplier: 1.0 },
+  { value: "Niche Interest", multiplier: 0.8 },
+  { value: "Nobody Wants This", multiplier: 0.55 },
+];
+
+const AGE_VALUES: { value: string; multiplier: number }[] = [
+  { value: "Brand New", multiplier: 1.25 },
+  { value: "Like New (< 1 year)", multiplier: 1.1 },
+  { value: "1-3 Years Old", multiplier: 0.9 },
+  { value: "Vintage (5-20 years)", multiplier: 0.85 },
+  { value: "Antique (20+ years)", multiplier: 1.15 },
+];
+
+const EXTRAS_VALUES: { value: string; multiplier: number }[] = [
+  { value: "Comes With Accessories", multiplier: 1.15 },
+  { value: "Original Box & Manual", multiplier: 1.1 },
+  { value: "No Extras", multiplier: 0.95 },
+  { value: "Missing Parts", multiplier: 0.7 },
+];
+
+const ALL_POOLS = [
+  { label: "Condition", values: CONDITION_VALUES },
+  { label: "Brand", values: BRAND_VALUES },
+  { label: "Demand", values: DEMAND_VALUES },
+  { label: "Age", values: AGE_VALUES },
+  { label: "Extras", values: EXTRAS_VALUES },
+];
+
+/**
+ * Generate plausible characteristics from a target reserve fraction.
+ * Picks 2-3 characteristics whose combined multiplier product approximates
+ * the target reserveFraction. Uses seeded randomization based on item name.
+ */
+function generateCharacteristics(item: MarketItem): ItemCharacteristic[] {
+  // Simple hash of item name for deterministic but varied selection
+  let hash = 0;
+  for (let i = 0; i < item.name.length; i++) {
+    hash = ((hash << 5) - hash + item.name.charCodeAt(i)) | 0;
+  }
+  const seeded = (n: number) => Math.abs((hash * (n + 1) * 2654435761) >>> 0) / 4294967296;
+
+  const targetFraction = item.reserveFraction;
+  const numTraits = targetFraction < 0.35 || targetFraction > 0.6 ? 3 : 2;
+
+  // Shuffle pools deterministically and pick first N
+  const poolOrder = ALL_POOLS.map((p, i) => ({ pool: p, sortKey: seeded(i) }))
+    .sort((a, b) => a.sortKey - b.sortKey);
+  const selectedPools = poolOrder.slice(0, numTraits);
+
+  // For each selected pool, find the value whose multiplier, combined with others,
+  // gets closest to the target fraction
+  const characteristics: ItemCharacteristic[] = [];
+  let remainingTarget = targetFraction;
+
+  for (let p = 0; p < selectedPools.length; p++) {
+    const pool = selectedPools[p].pool;
+    const isLast = p === selectedPools.length - 1;
+
+    if (isLast) {
+      // Find the value closest to remaining target
+      let best = pool.values[0];
+      let bestDist = Math.abs(best.multiplier - remainingTarget);
+      for (const v of pool.values) {
+        const dist = Math.abs(v.multiplier - remainingTarget);
+        if (dist < bestDist) {
+          best = v;
+          bestDist = dist;
+        }
+      }
+      characteristics.push({ label: pool.label, value: best.value, priceMultiplier: best.multiplier });
+    } else {
+      // Pick a value that doesn't push too far from target
+      // Target for this trait: nth root of remaining target
+      const nthRoot = Math.pow(remainingTarget, 1 / (selectedPools.length - p));
+      let best = pool.values[0];
+      let bestDist = Math.abs(best.multiplier - nthRoot);
+      for (const v of pool.values) {
+        const dist = Math.abs(v.multiplier - nthRoot);
+        if (dist < bestDist) {
+          best = v;
+          bestDist = dist;
+        }
+      }
+      characteristics.push({ label: pool.label, value: best.value, priceMultiplier: best.multiplier });
+      remainingTarget = remainingTarget / best.multiplier;
+    }
+  }
+
+  return characteristics;
+}
+
+/**
+ * Compute the reserve price for an item.
+ * If the item has explicit characteristics, the reserve = askingPrice * product(multipliers).
+ * Otherwise, falls back to askingPrice * reserveFraction.
+ */
+function computeReserve(item: MarketItem): number {
+  if (item.characteristics && item.characteristics.length > 0) {
+    const multiplier = item.characteristics.reduce((acc, c) => acc * c.priceMultiplier, 1);
+    return Math.round(item.askingPrice * multiplier);
+  }
+  return Math.round(item.askingPrice * item.reserveFraction);
+}
+
+/**
+ * Get the characteristics for an item (explicit or generated).
+ */
+function getCharacteristics(item: MarketItem): ItemCharacteristic[] {
+  if (item.characteristics && item.characteristics.length > 0) {
+    return item.characteristics;
+  }
+  return generateCharacteristics(item);
 }
 
 /**
@@ -786,6 +934,841 @@ const ITEM_CATALOGUE: MarketItem[] = [
     reserveFraction: 0.3,
     imageHint: "toilet",
   },
+
+  // ── Batch 2: 100 additional items ────────────────────────────────
+
+  {
+    name: "Roomba With Attitude",
+    description: "Cleans when it feels like it. Judges your floor plan.",
+    category: "Appliances",
+    askingPrice: 680,
+    reserveFraction: 0.45,
+    imageHint: "roomba2",
+  },
+  {
+    name: "Cursed Waffle Iron",
+    description: "All waffles come out shaped like Abraham Lincoln. Every. Single. One.",
+    category: "Appliances",
+    askingPrice: 195,
+    reserveFraction: 0.5,
+    imageHint: "waffle",
+  },
+  {
+    name: "Broken Compass (Points to Taco Bell)",
+    description: "Not north. Not south. Just Taco Bell. Every time.",
+    category: "Outdoor",
+    askingPrice: 40,
+    reserveFraction: 0.65,
+    imageHint: "compass2",
+  },
+  {
+    name: "Trampoline (Assembly Required, Instructions Lost)",
+    description: "750 bolts, 40 springs, zero guidance. Godspeed.",
+    category: "Sporting Goods",
+    askingPrice: 380,
+    reserveFraction: 0.35,
+    imageHint: "trampoline2",
+  },
+  {
+    name: "Inflatable Hot Tub (Deflatable Trust Issues)",
+    description: "Holds water for approximately 45 minutes. Then surprise.",
+    category: "Home & Garden",
+    askingPrice: 1500,
+    reserveFraction: 0.3,
+    imageHint: "pool",
+  },
+  {
+    name: "Projector (720p, 72 Lumens)",
+    description: "Best viewed in a cave. With your eyes closed. Actually just imagine a movie.",
+    category: "Electronics",
+    askingPrice: 550,
+    reserveFraction: 0.35,
+    imageHint: "projector",
+  },
+  {
+    name: "Vintage Flip Phone (T9 Legend)",
+    description: "Texts take 4 minutes each. Builds character and finger strength.",
+    category: "Electronics",
+    askingPrice: 75,
+    reserveFraction: 0.6,
+    imageHint: "flip-phone",
+  },
+  {
+    name: "Decorative Sword (Butter Knife Sharp)",
+    description: "Mall ninja starter kit. Terrifies nobody.",
+    category: "Collectibles",
+    askingPrice: 320,
+    reserveFraction: 0.4,
+    imageHint: "sword",
+  },
+  {
+    name: "Skateboard (One Wheel Missing)",
+    description: "Three wheels. Infinite style. Hospital not included.",
+    category: "Sporting Goods",
+    askingPrice: 95,
+    reserveFraction: 0.45,
+    imageHint: "skateboard",
+  },
+  {
+    name: "Desktop Globe (Flat Earth Edition)",
+    description: "It's a disc. On a stand. For the discerning geography denier.",
+    category: "Collectibles",
+    askingPrice: 420,
+    reserveFraction: 0.4,
+    imageHint: "globe",
+  },
+  {
+    name: "Camping Hammock (Weight Limit: 80 lbs)",
+    description: "Perfect for children, cats, or your delusions about your weight.",
+    category: "Outdoor",
+    askingPrice: 55,
+    reserveFraction: 0.55,
+    imageHint: "hammock",
+  },
+  {
+    name: "Air Purifier (Adds Personality to Air)",
+    description: "Doesn't purify. Just makes your air smell like cedar and ambition.",
+    category: "Appliances",
+    askingPrice: 300,
+    reserveFraction: 0.5,
+    imageHint: "purifier",
+  },
+  {
+    name: "Magnetic Spice Rack (Spices Launch at 3 AM)",
+    description: "Magnets weaken over time. Cumin becomes a projectile. You've been warned.",
+    category: "Home & Garden",
+    askingPrice: 65,
+    reserveFraction: 0.6,
+    imageHint: "spice-rack",
+  },
+  {
+    name: "Karaoke Machine (One Song Only)",
+    description: "It only plays 'My Heart Will Go On.' Permanently. No off switch.",
+    category: "Electronics",
+    askingPrice: 250,
+    reserveFraction: 0.4,
+    imageHint: "karaoke",
+  },
+  {
+    name: "Mannequin Head (Uncomfortably Realistic)",
+    description: "Excellent for wig display or traumatizing houseguests.",
+    category: "Collectibles",
+    askingPrice: 110,
+    reserveFraction: 0.5,
+    imageHint: "mannequin",
+  },
+  {
+    name: "Bread Maker (Makes Everything Except Bread)",
+    description: "Hockey pucks, doorstops, regret. Never bread.",
+    category: "Appliances",
+    askingPrice: 175,
+    reserveFraction: 0.45,
+    imageHint: "bread",
+  },
+  {
+    name: "VHS Rewinder (Dolphin-Shaped)",
+    description: "Be kind, rewind. With style. And a cetacean.",
+    category: "Electronics",
+    askingPrice: 45,
+    reserveFraction: 0.7,
+    imageHint: "vhs",
+  },
+  {
+    name: "Giant Beanbag Chair (Impossible to Exit)",
+    description: "You will sit down once. You will never get up. This is your life now.",
+    category: "Furniture",
+    askingPrice: 400,
+    reserveFraction: 0.4,
+    imageHint: "beanbag",
+  },
+  {
+    name: "Lava Lamp (Lava Not Included)",
+    description: "It's just a lamp. The lava is aspirational.",
+    category: "Home & Garden",
+    askingPrice: 55,
+    reserveFraction: 0.6,
+    imageHint: "lava-lamp",
+  },
+  {
+    name: "Megaphone (Permanently Set to Max)",
+    description: "NO VOLUME CONTROL. GREAT FOR LIBRARIES.",
+    category: "Electronics",
+    askingPrice: 130,
+    reserveFraction: 0.45,
+    imageHint: "megaphone",
+  },
+  {
+    name: "Portable Generator (Louder Than a Jet Engine)",
+    description: "Powers one lightbulb. Wakes entire neighborhood.",
+    category: "Tools",
+    askingPrice: 2200,
+    reserveFraction: 0.35,
+    imageHint: "generator",
+  },
+  {
+    name: "Tandem Bicycle (Seats Face Opposite Ways)",
+    description: "Requires cooperation, trust, and accepting you'll go nowhere.",
+    category: "Sporting Goods",
+    askingPrice: 850,
+    reserveFraction: 0.4,
+    imageHint: "tandem",
+  },
+  {
+    name: "Dehydrated Water (Just Add Water)",
+    description: "Revolutionary. Empty jar included.",
+    category: "Food & Dining",
+    askingPrice: 15,
+    reserveFraction: 0.7,
+    imageHint: "water-bottle",
+  },
+  {
+    name: "Rubber Duck Army (500 Count)",
+    description: "They watch. They wait. Perfect for bathtubs or psychological warfare.",
+    category: "Toys & Games",
+    askingPrice: 200,
+    reserveFraction: 0.55,
+    imageHint: "rubber-duck",
+  },
+  {
+    name: "Alarm Clock That Runs Away",
+    description: "You have to chase it to turn it off. Cardio AND punctuality.",
+    category: "Electronics",
+    askingPrice: 90,
+    reserveFraction: 0.5,
+    imageHint: "alarm",
+  },
+  {
+    name: "Cast Iron Skillet (Seasoned With Secrets)",
+    description: "Grandma's recipe is literally baked in. We think it's beef stew.",
+    category: "Home & Garden",
+    askingPrice: 225,
+    reserveFraction: 0.55,
+    imageHint: "skillet",
+  },
+  {
+    name: "Standing Desk (Can't Sit Back Down)",
+    description: "Motorized lift broke. Welcome to standing. Forever.",
+    category: "Furniture",
+    askingPrice: 950,
+    reserveFraction: 0.3,
+    imageHint: "desk",
+  },
+  {
+    name: "Pet Hamster Wheel (Human-Sized)",
+    description: "5 ft diameter. For when the gym is too mainstream.",
+    category: "Fitness",
+    askingPrice: 1800,
+    reserveFraction: 0.35,
+    imageHint: "hamster-wheel",
+  },
+  {
+    name: "Bluetooth Speaker (Stuck on Maximum Bass)",
+    description: "Every song sounds like an earthquake at a nightclub.",
+    category: "Electronics",
+    askingPrice: 180,
+    reserveFraction: 0.45,
+    imageHint: "speaker",
+  },
+  {
+    name: "Antique Butter Churn",
+    description: "Makes butter in only 4 hours. Or buy it for $3. Your call.",
+    category: "Collectibles",
+    askingPrice: 475,
+    reserveFraction: 0.45,
+    imageHint: "churn",
+  },
+  {
+    name: "Garden Hose (50% Kink)",
+    description: "Water goes everywhere except where you point it.",
+    category: "Home & Garden",
+    askingPrice: 35,
+    reserveFraction: 0.6,
+    imageHint: "hose",
+  },
+  {
+    name: "Espresso Machine (Makes Anxiety)",
+    description: "12 bars of pressure. 12 bars of existential dread.",
+    category: "Appliances",
+    askingPrice: 1400,
+    reserveFraction: 0.4,
+    imageHint: "espresso",
+  },
+  {
+    name: "Disco Ball (Doesn't Stop Spinning)",
+    description: "Plugged it in 2019. Still going. Send help or a DJ.",
+    category: "Home & Garden",
+    askingPrice: 125,
+    reserveFraction: 0.55,
+    imageHint: "disco",
+  },
+  {
+    name: "Metal Detector (Only Finds Disappointment)",
+    description: "Beeps for bottle caps exclusively. 47 so far.",
+    category: "Outdoor",
+    askingPrice: 600,
+    reserveFraction: 0.35,
+    imageHint: "detector",
+  },
+  {
+    name: "Treadmill Desk (Now With Bruises)",
+    description: "Work and walk. Fall and email your boss from the floor.",
+    category: "Fitness",
+    askingPrice: 1100,
+    reserveFraction: 0.35,
+    imageHint: "treadmill-desk",
+  },
+  {
+    name: "Vintage Lunchbox (Still Smells Like 1994)",
+    description: "Power Rangers thermos included. Mayo stain is permanent.",
+    category: "Collectibles",
+    askingPrice: 85,
+    reserveFraction: 0.55,
+    imageHint: "lunchbox",
+  },
+  {
+    name: "3D Printer (Only Prints Cubes)",
+    description: "We've tried everything. It only makes cubes. Lovely cubes though.",
+    category: "Electronics",
+    askingPrice: 900,
+    reserveFraction: 0.35,
+    imageHint: "printer",
+  },
+  {
+    name: "Pogo Stick (Spring-Loaded to the Moon)",
+    description: "First bounce goes 8 feet. No one has attempted a second.",
+    category: "Sporting Goods",
+    askingPrice: 150,
+    reserveFraction: 0.45,
+    imageHint: "pogo",
+  },
+  {
+    name: "Crystal Ball (Shows Only Traffic Reports)",
+    description: "Foresaw 12 fender benders. Zero lottery numbers.",
+    category: "Collectibles",
+    askingPrice: 750,
+    reserveFraction: 0.4,
+    imageHint: "crystal",
+  },
+  {
+    name: "Instant Pot (Judges Your Recipes)",
+    description: "Display reads 'Really?' every time you add cheese.",
+    category: "Appliances",
+    askingPrice: 160,
+    reserveFraction: 0.55,
+    imageHint: "instant-pot",
+  },
+  {
+    name: "Antique Sewing Machine (Possessed by a Seamstress)",
+    description: "Sews by itself at midnight. Only makes doilies.",
+    category: "Collectibles",
+    askingPrice: 1200,
+    reserveFraction: 0.4,
+    imageHint: "sewing",
+  },
+  {
+    name: "Electric Scooter (Top Speed: Walking)",
+    description: "Slower than your legs but 10x louder.",
+    category: "Vehicles",
+    askingPrice: 450,
+    reserveFraction: 0.35,
+    imageHint: "scooter",
+  },
+  {
+    name: "Fidget Spinner Collection (2017 Peak Investment)",
+    description: "437 spinners. Worth millions someday. Probably. Maybe.",
+    category: "Collectibles",
+    askingPrice: 2000,
+    reserveFraction: 0.3,
+    imageHint: "spinner",
+  },
+  {
+    name: "Snow Globe (Wrong City Inside)",
+    description: "Says Paris. That's clearly a Walmart. Still shakes nicely.",
+    category: "Collectibles",
+    askingPrice: 30,
+    reserveFraction: 0.65,
+    imageHint: "snowglobe",
+  },
+  {
+    name: "Baby Monitor (Picks Up Radio Stations)",
+    description: "Great for monitoring babies. Also plays classic rock at 2 AM.",
+    category: "Electronics",
+    askingPrice: 120,
+    reserveFraction: 0.45,
+    imageHint: "monitor",
+  },
+  {
+    name: "Pool Table (Slightly Downhill)",
+    description: "All balls roll to one corner. Speed round every game.",
+    category: "Games & Toys",
+    askingPrice: 3500,
+    reserveFraction: 0.35,
+    imageHint: "pool-table",
+  },
+  {
+    name: "Solar Panel (Works at Night*)",
+    description: "*It doesn't. Marketing was aspirational. Day use only.",
+    category: "Electronics",
+    askingPrice: 800,
+    reserveFraction: 0.4,
+    imageHint: "solar",
+  },
+  {
+    name: "Singing Fish (Won't Stop)",
+    description: "Take My Breath Away, 24/7. Batteries are welded in.",
+    category: "Home & Garden",
+    askingPrice: 45,
+    reserveFraction: 0.6,
+    imageHint: "fish",
+  },
+  {
+    name: "Velvet Painting (Dogs Playing Poker)",
+    description: "The bulldog is bluffing. I've watched for years.",
+    category: "Art",
+    askingPrice: 350,
+    reserveFraction: 0.5,
+    imageHint: "painting",
+  },
+  {
+    name: "Fog Horn (For Indoor Use)",
+    description: "Clear a room in 0.3 seconds. Thanksgiving tested.",
+    category: "Outdoor",
+    askingPrice: 95,
+    reserveFraction: 0.55,
+    imageHint: "foghorn",
+  },
+  {
+    name: "Portable Air Conditioner (Heats Room Instead)",
+    description: "The exhaust hose is a suggestion. Your room is now a sauna.",
+    category: "Appliances",
+    askingPrice: 550,
+    reserveFraction: 0.35,
+    imageHint: "ac-unit",
+  },
+  {
+    name: "Turntable (Plays Everything Backwards)",
+    description: "Vinyl purists hate this one trick. Satanic messages may vary.",
+    category: "Electronics",
+    askingPrice: 425,
+    reserveFraction: 0.4,
+    imageHint: "turntable",
+  },
+  {
+    name: "Electric Blanket (One Temperature: Inferno)",
+    description: "Setting 1 is broil. There is no setting 2.",
+    category: "Home & Garden",
+    askingPrice: 80,
+    reserveFraction: 0.55,
+    imageHint: "e-blanket",
+  },
+  {
+    name: "Skateboard Ramp (Ambition-Sized)",
+    description: "12 feet tall. You are 5'8\". This will end well.",
+    category: "Sporting Goods",
+    askingPrice: 600,
+    reserveFraction: 0.4,
+    imageHint: "ramp",
+  },
+  {
+    name: "Taxidermied Pigeon",
+    description: "Majestic. Unsettling. Conversation-starting. All three at once.",
+    category: "Collectibles",
+    askingPrice: 275,
+    reserveFraction: 0.45,
+    imageHint: "pigeon",
+  },
+  {
+    name: "Robot Vacuum (Goes Rogue)",
+    description: "Escaped twice. Found at neighbor's house both times.",
+    category: "Appliances",
+    askingPrice: 500,
+    reserveFraction: 0.4,
+    imageHint: "vacuum",
+  },
+  {
+    name: "Neon Sign (Says 'OPEN' — For Your Bedroom)",
+    description: "Business is booming. Or your spouse is confused.",
+    category: "Home & Garden",
+    askingPrice: 150,
+    reserveFraction: 0.55,
+    imageHint: "neon",
+  },
+  {
+    name: "Punching Bag (Punches Back)",
+    description: "Spring-loaded counterweight. Not a defect. A feature.",
+    category: "Fitness",
+    askingPrice: 280,
+    reserveFraction: 0.45,
+    imageHint: "punching-bag",
+  },
+  {
+    name: "Watering Can (Leaks From Every Surface)",
+    description: "Innovative 360-degree watering technology. Patent pending.",
+    category: "Home & Garden",
+    askingPrice: 20,
+    reserveFraction: 0.7,
+    imageHint: "watering-can",
+  },
+  {
+    name: "Bidet Attachment (Pressure Washer Mode)",
+    description: "One setting. That setting is 'orbital launch.'",
+    category: "Home & Garden",
+    askingPrice: 340,
+    reserveFraction: 0.4,
+    imageHint: "bidet",
+  },
+  {
+    name: "Bean Bag Toss Set (Bags Filled With Actual Beans)",
+    description: "Sprouting has begun. This is now a garden game. Literally.",
+    category: "Games & Toys",
+    askingPrice: 65,
+    reserveFraction: 0.55,
+    imageHint: "cornhole",
+  },
+  {
+    name: "Vintage Toaster Oven (Cooks Unevenly on Purpose)",
+    description: "One side golden, one side frozen. Chaos in every bite.",
+    category: "Appliances",
+    askingPrice: 110,
+    reserveFraction: 0.5,
+    imageHint: "toaster-oven",
+  },
+  {
+    name: "Walkie-Talkies (Same Channel as Airport)",
+    description: "Accidentally guided two planes last Tuesday.",
+    category: "Electronics",
+    askingPrice: 55,
+    reserveFraction: 0.55,
+    imageHint: "walkie",
+  },
+  {
+    name: "Electric Fireplace (Alarmingly Realistic)",
+    description: "Neighbors called 911 twice. Firefighters gave it 5 stars.",
+    category: "Home & Garden",
+    askingPrice: 700,
+    reserveFraction: 0.45,
+    imageHint: "fireplace",
+  },
+  {
+    name: "Selfie Stick (10 Feet Long)",
+    description: "For when you need to be in the photo from across the street.",
+    category: "Electronics",
+    askingPrice: 40,
+    reserveFraction: 0.6,
+    imageHint: "selfie-stick",
+  },
+  {
+    name: "Inflatable Dinosaur Costume",
+    description: "Perfect for job interviews, grocery runs, and first dates.",
+    category: "Clothing & Accessories",
+    askingPrice: 75,
+    reserveFraction: 0.6,
+    imageHint: "dino",
+  },
+  {
+    name: "Miniature Horse Saddle (No Miniature Horse)",
+    description: "Fits large dogs. They won't cooperate, but it fits.",
+    category: "Pet Supplies",
+    askingPrice: 190,
+    reserveFraction: 0.45,
+    imageHint: "saddle",
+  },
+  {
+    name: "Leaf Blower (Hurricane Setting)",
+    description: "Moved leaves, lawn chairs, and a small child.",
+    category: "Outdoor Power",
+    askingPrice: 350,
+    reserveFraction: 0.45,
+    imageHint: "leaf-blower",
+  },
+  {
+    name: "Grow Light (Neighbors Are Suspicious)",
+    description: "For tomatoes. JUST tomatoes. Stop asking.",
+    category: "Home & Garden",
+    askingPrice: 275,
+    reserveFraction: 0.5,
+    imageHint: "grow-light",
+  },
+  {
+    name: "Parking Meter (Functional, Stolen? No.)",
+    description: "Found it. In a field. Accepts quarters. Ask no questions.",
+    category: "Collectibles",
+    askingPrice: 500,
+    reserveFraction: 0.35,
+    imageHint: "meter",
+  },
+  {
+    name: "Typewriter Keyboard for Computer",
+    description: "Clack clack clack. Coworkers will love you. Or not.",
+    category: "Electronics",
+    askingPrice: 220,
+    reserveFraction: 0.5,
+    imageHint: "keyboard",
+  },
+  {
+    name: "Lawn Mower (Self-Propelled Into the Hedge)",
+    description: "Goes forward aggressively. Steering is optional.",
+    category: "Outdoor Power",
+    askingPrice: 450,
+    reserveFraction: 0.4,
+    imageHint: "mower",
+  },
+  {
+    name: "Night Vision Goggles (Everything Is Green)",
+    description: "See in the dark! But only in one color. And it's green.",
+    category: "Electronics",
+    askingPrice: 1200,
+    reserveFraction: 0.35,
+    imageHint: "goggles",
+  },
+  {
+    name: "Rocking Chair (Rocks Aggressively)",
+    description: "Goes 0 to 60 in one lean. Seatbelt recommended.",
+    category: "Furniture",
+    askingPrice: 450,
+    reserveFraction: 0.4,
+    imageHint: "rocking-chair",
+  },
+  {
+    name: "Talking Bathroom Scale",
+    description: "Announces your weight. Out loud. In kilograms. Judgmentally.",
+    category: "Health & Beauty",
+    askingPrice: 65,
+    reserveFraction: 0.55,
+    imageHint: "scale",
+  },
+  {
+    name: "Ceiling-Mounted Disco Toilet",
+    description: "For the person who has everything. And questionable taste.",
+    category: "Home & Garden",
+    askingPrice: 4500,
+    reserveFraction: 0.3,
+    imageHint: "disco-toilet",
+  },
+  {
+    name: "Hedge Trimmer (Artistic Mode)",
+    description: "Can't do straight lines. Excels at abstract topiary.",
+    category: "Outdoor Power",
+    askingPrice: 200,
+    reserveFraction: 0.45,
+    imageHint: "trimmer",
+  },
+  {
+    name: "Portable Pizza Oven (Melts Everything Nearby)",
+    description: "900 degrees. Pizza in 60 seconds. Countertop in 90.",
+    category: "Outdoor Cooking",
+    askingPrice: 600,
+    reserveFraction: 0.45,
+    imageHint: "pizza-oven",
+  },
+  {
+    name: "Electric Guitar (No Amp, No Strings)",
+    description: "Air guitar with extra steps. Imagine the solos.",
+    category: "Musical Instruments",
+    askingPrice: 350,
+    reserveFraction: 0.35,
+    imageHint: "e-guitar",
+  },
+  {
+    name: "Massage Chair (Aggressive Setting Only)",
+    description: "Relaxation through violence. Your chiropractor will hear about this.",
+    category: "Furniture",
+    askingPrice: 2800,
+    reserveFraction: 0.3,
+    imageHint: "massage-chair",
+  },
+  {
+    name: "Wireless Doorbell (Random Schedule)",
+    description: "Rings when nobody is there. Ghosts? Or bad wiring? Yes.",
+    category: "Home & Garden",
+    askingPrice: 45,
+    reserveFraction: 0.6,
+    imageHint: "doorbell",
+  },
+  {
+    name: "RC Car (Faster Than Your Actual Car)",
+    description: "Clocked at 87 mph. The cat is still processing.",
+    category: "Toys & Games",
+    askingPrice: 380,
+    reserveFraction: 0.45,
+    imageHint: "rc-car",
+  },
+  {
+    name: "Ice Cream Maker (Makes Soup)",
+    description: "Temperature control is a journey, not a destination.",
+    category: "Appliances",
+    askingPrice: 130,
+    reserveFraction: 0.45,
+    imageHint: "ice-cream",
+  },
+  {
+    name: "Bonsai Tree (Overgrown, Now Regular Tree)",
+    description: "Neglected for 3 years. It adapted. Bring a truck.",
+    category: "Plants & Garden",
+    askingPrice: 90,
+    reserveFraction: 0.55,
+    imageHint: "bonsai",
+  },
+  {
+    name: "Life-Size Chess Set (Missing the Queen)",
+    description: "Drama at the chess club. Don't ask about the queen.",
+    category: "Games & Toys",
+    askingPrice: 5000,
+    reserveFraction: 0.3,
+    imageHint: "chess",
+  },
+  {
+    name: "Smart Fridge (Orders Food Without Permission)",
+    description: "Bought 47 yogurts last Tuesday. Credit card is crying.",
+    category: "Appliances",
+    askingPrice: 3200,
+    reserveFraction: 0.35,
+    imageHint: "smart-fridge",
+  },
+  {
+    name: "Fire Pit (Previously a Washing Machine)",
+    description: "Upcycled. Industrial chic. Smells faintly of detergent.",
+    category: "Outdoor",
+    askingPrice: 200,
+    reserveFraction: 0.5,
+    imageHint: "fire-pit",
+  },
+  {
+    name: "Skateboard Helmet (Sticker Collection Included)",
+    description: "87 stickers. Zero crashes. The stickers did their job.",
+    category: "Sporting Goods",
+    askingPrice: 55,
+    reserveFraction: 0.55,
+    imageHint: "helmet",
+  },
+  {
+    name: "Vintage Popcorn Machine",
+    description: "Movie theater smell. Movie theater butter stains. Movie theater regret.",
+    category: "Appliances",
+    askingPrice: 425,
+    reserveFraction: 0.45,
+    imageHint: "popcorn",
+  },
+  {
+    name: "Electric Kettle (Screams Instead of Whistles)",
+    description: "You'll know when it's ready. So will the whole block.",
+    category: "Appliances",
+    askingPrice: 40,
+    reserveFraction: 0.6,
+    imageHint: "kettle",
+  },
+  {
+    name: "Mini Fridge (Louder Than a Motorcycle)",
+    description: "Keeps drinks cold and roommates awake.",
+    category: "Appliances",
+    askingPrice: 175,
+    reserveFraction: 0.45,
+    imageHint: "mini-fridge",
+  },
+  {
+    name: "Ping Pong Table (Warped Like a Half-Pipe)",
+    description: "Advanced difficulty mode. Balls do tricks by themselves.",
+    category: "Sporting Goods",
+    askingPrice: 650,
+    reserveFraction: 0.35,
+    imageHint: "ping-pong",
+  },
+  {
+    name: "Dashboard Hula Dancer (Haunted Edition)",
+    description: "Dances when the car is off. In the garage. At night.",
+    category: "Collectibles",
+    askingPrice: 25,
+    reserveFraction: 0.7,
+    imageHint: "hula",
+  },
+  {
+    name: "Foot Massager (Tickle Mode Only)",
+    description: "Relaxation was the goal. Uncontrollable laughter was the result.",
+    category: "Health & Beauty",
+    askingPrice: 140,
+    reserveFraction: 0.5,
+    imageHint: "foot-massager",
+  },
+  {
+    name: "WiFi Extender (Makes WiFi Worse)",
+    description: "Now you have two networks. Both are terrible.",
+    category: "Electronics",
+    askingPrice: 90,
+    reserveFraction: 0.45,
+    imageHint: "wifi",
+  },
+  {
+    name: "Vintage Rotary Pay Phone",
+    description: "Accepts quarters. Calls nowhere. Great bathroom decor.",
+    category: "Collectibles",
+    askingPrice: 325,
+    reserveFraction: 0.45,
+    imageHint: "pay-phone",
+  },
+  {
+    name: "Tiki Torch Set (Sets Ambiance and Occasionally Fences)",
+    description: "Mood lighting with a side of property damage.",
+    category: "Outdoor",
+    askingPrice: 60,
+    reserveFraction: 0.6,
+    imageHint: "tiki",
+  },
+  {
+    name: "Personal Submarine (Bathtub-Sized)",
+    description: "Submerges 6 inches. Captain's hat not included.",
+    category: "Vehicles",
+    askingPrice: 12000,
+    reserveFraction: 0.25,
+    imageHint: "submarine",
+  },
+  {
+    name: "Mechanical Bull (Apartment-Friendly)",
+    description: "Only goes up to speed 2. Downstairs neighbor says that's enough.",
+    category: "Games & Toys",
+    askingPrice: 4200,
+    reserveFraction: 0.3,
+    imageHint: "bull",
+  },
+  {
+    name: "Rain Barrel (Mosquito Condo)",
+    description: "Collects water and breeds an entire ecosystem.",
+    category: "Home & Garden",
+    askingPrice: 80,
+    reserveFraction: 0.55,
+    imageHint: "barrel",
+  },
+  {
+    name: "Electric Pencil Sharpener (Industrial Strength)",
+    description: "Sharpens pencils to a molecular point. Also eats fingers.",
+    category: "Office",
+    askingPrice: 55,
+    reserveFraction: 0.55,
+    imageHint: "sharpener",
+  },
+  {
+    name: "Grandfather Clock Parts (Some Assembly Required)",
+    description: "Two bags of gears, one pendulum, zero instructions.",
+    category: "Home & Garden",
+    askingPrice: 900,
+    reserveFraction: 0.3,
+    imageHint: "gears",
+  },
+  {
+    name: "Camping Stove (One Burner, Maximum Drama)",
+    description: "Flames shoot 3 feet. Eyebrows sold separately.",
+    category: "Camping",
+    askingPrice: 95,
+    reserveFraction: 0.5,
+    imageHint: "camp-stove",
+  },
+  {
+    name: "Exercise Ball (Slowly Deflating)",
+    description: "Starts as a ball, ends as a pancake. Mid-meeting surprise.",
+    category: "Fitness",
+    askingPrice: 30,
+    reserveFraction: 0.65,
+    imageHint: "exercise-ball",
+  },
 ];
 
 // ── Per-round tracking ────────────────────────────────────────────────────────
@@ -833,6 +1816,8 @@ interface FmRoundData {
   votes: Map<string, string>;
   /** Resolve function to unblock voting wait. */
   votingResolve: (() => void) | null;
+  /** Timestamp when the combined browse+write phase started. */
+  browseWriteStartedAt: number;
 }
 
 // ── Game class ────────────────────────────────────────────────────────────────
@@ -933,7 +1918,8 @@ export default class LowballMarketplaceGame extends BaseGame {
 
     // Pick a random unused item
     const item = this._pickItem();
-    const reserve = Math.round(item.askingPrice * item.reserveFraction);
+    const characteristics = getCharacteristics(item);
+    const reserve = computeReserve(item);
 
     this.roundData = {
       item,
@@ -956,6 +1942,11 @@ export default class LowballMarketplaceGame extends BaseGame {
         imageHint: item.imageHint,
       },
       askingPrice: item.askingPrice,
+      characteristics: characteristics.map((c) => ({
+        label: c.label,
+        value: c.value,
+        // Don't send the raw multiplier — players must reason about it
+      })),
       durationMs: BIDDING_DURATION_MS,
       serverTimestamp: Date.now(),
     });
@@ -1055,7 +2046,7 @@ export default class LowballMarketplaceGame extends BaseGame {
   }
 
   private _computeClassicResults(): {
-    item: { name: string; category: string };
+    item: { name: string; category: string; description: string; askingPrice: number; imageHint: string };
     reserve: number;
     rankings: {
       playerId: string;
@@ -1068,7 +2059,7 @@ export default class LowballMarketplaceGame extends BaseGame {
     scores: Record<string, number>;
   } {
     if (!this.roundData) {
-      return { item: { name: "", category: "" }, reserve: 0, rankings: [], scores: {} };
+      return { item: { name: "", category: "", description: "", askingPrice: 0, imageHint: "" }, reserve: 0, rankings: [], scores: {} };
     }
 
     const reserve = this.roundData.reserve;
@@ -1138,7 +2129,13 @@ export default class LowballMarketplaceGame extends BaseGame {
     }
 
     return {
-      item: { name: this.roundData.item.name, category: this.roundData.item.category },
+      item: {
+        name: this.roundData.item.name,
+        category: this.roundData.item.category,
+        description: this.roundData.item.description,
+        askingPrice: this.roundData.item.askingPrice,
+        imageHint: this.roundData.item.imageHint,
+      },
       reserve,
       rankings,
       scores,
@@ -1169,12 +2166,15 @@ export default class LowballMarketplaceGame extends BaseGame {
       });
     }
 
+    const browseWriteStartedAt = Date.now();
+
     this.fmRoundData = {
       itemPool,
       picks: new Map(),
       entries: new Map(),
       votes: new Map(),
       votingResolve: null,
+      browseWriteStartedAt,
     };
 
     // Reset ready flags
@@ -1182,68 +2182,38 @@ export default class LowballMarketplaceGame extends BaseGame {
       p.isReady = false;
     }
 
-    // ── Phase 1: Browse & Pick ──────────────────────────────────────────
+    // ── Combined Browse & Write Phase ───────────────────────────
+    // One shared timer for both browsing and writing.
+    // When a player picks an item, they immediately receive fm_write_start
+    // and can start writing while others are still browsing.
+
     this.broadcast("fm_browse_start", {
       items: itemPool,
-      durationMs: FM_BROWSE_DURATION_MS,
-      serverTimestamp: Date.now(),
+      durationMs: FM_BROWSE_WRITE_DURATION_MS,
+      serverTimestamp: browseWriteStartedAt,
     });
 
-    await this._waitForConditionOrTimeout(
-      () => {
-        const active = this._activePlayers();
-        return active.every((p) => this.fmRoundData?.picks.has(p.id));
-      },
-      FM_BROWSE_DURATION_MS + 2000,
-    );
-
-    // Auto-assign random item to non-pickers
-    for (const p of this._activePlayers()) {
-      if (!this.fmRoundData.picks.has(p.id)) {
-        this.fmRoundData.picks.set(
-          p.id,
-          Math.floor(Math.random() * itemPool.length),
-        );
-      }
-    }
-
-    // ── Phase 2: Write Message ──────────────────────────────────────────
-    // Reset ready flags
-    for (const p of this.room.state.players.values()) {
-      p.isReady = false;
-    }
-
-    // Send each player their assigned item to write a message for
-    for (const p of this._activePlayers()) {
-      const itemIndex = this.fmRoundData.picks.get(p.id) ?? 0;
-      const selectedItem = itemPool[itemIndex];
-      this.send(p.id, "fm_write_start", {
-        item: selectedItem,
-        itemIndex,
-        durationMs: FM_WRITE_DURATION_MS,
-        serverTimestamp: Date.now(),
-      });
-    }
-    // Also broadcast so TV knows writing phase started
-    this.broadcast("fm_write_phase", {
-      durationMs: FM_WRITE_DURATION_MS,
-      serverTimestamp: Date.now(),
-    });
-
+    // Wait for all messages to be submitted OR timeout
     await this._waitForConditionOrTimeout(
       () => {
         const active = this._activePlayers();
         return active.every((p) => this.fmRoundData?.entries.has(p.id));
       },
-      FM_WRITE_DURATION_MS + 2000,
+      FM_BROWSE_WRITE_DURATION_MS + 2000,
     );
 
-    // Auto-submit blank message for non-submitters
+    // Auto-assign random item + blank message for non-submitters
+    const rd = this.fmRoundData;
+    if (!rd) return;
+
     for (const p of this._activePlayers()) {
-      if (!this.fmRoundData.entries.has(p.id)) {
-        const itemIndex = this.fmRoundData.picks.get(p.id) ?? 0;
+      if (!rd.picks.has(p.id)) {
+        rd.picks.set(p.id, Math.floor(Math.random() * itemPool.length));
+      }
+      if (!rd.entries.has(p.id)) {
+        const itemIndex = rd.picks.get(p.id) ?? 0;
         const selectedItem = itemPool[itemIndex];
-        this.fmRoundData.entries.set(p.id, {
+        rd.entries.set(p.id, {
           playerId: p.id,
           playerName: p.name,
           itemIndex,
@@ -1253,8 +2223,8 @@ export default class LowballMarketplaceGame extends BaseGame {
       }
     }
 
-    // ── Phase 3: Reveal Messages ────────────────────────────────────────
-    const entries = [...this.fmRoundData.entries.values()];
+    // ── Phase 3: Reveal Messages ────────────────────────────────────
+    const entries = [...rd.entries.values()];
     // Shuffle reveal order
     for (let i = entries.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -1272,7 +2242,7 @@ export default class LowballMarketplaceGame extends BaseGame {
     }
     this.broadcast("fm_reveal_done", {});
 
-    // ── Phase 4: Voting ─────────────────────────────────────────────────
+    // ── Phase 4: Voting ─────────────────────────────────────────────
     if (entries.length >= 2) {
       this.broadcast("fm_voting_start", {
         durationMs: FM_VOTING_DURATION_MS,
@@ -1292,7 +2262,7 @@ export default class LowballMarketplaceGame extends BaseGame {
       );
     }
 
-    // ── Phase 5: Results ────────────────────────────────────────────────
+    // ── Phase 5: Results ────────────────────────────────────────────
     const results = this._computeFmResults();
     this.broadcast("fm_result", results);
     await this.delay(FM_RESULTS_DISPLAY_MS);
@@ -1318,14 +2288,36 @@ export default class LowballMarketplaceGame extends BaseGame {
 
     if (itemIndex < 0 || itemIndex >= this.fmRoundData.itemPool.length) return;
 
+    // Already submitted a message — can't re-pick
+    if (this.fmRoundData.entries.has(client.sessionId)) return;
+
+    // Allow re-picking (overwrite previous pick)
     this.fmRoundData.picks.set(client.sessionId, itemIndex);
-    player.isReady = true;
+
+    const selectedItem = this.fmRoundData.itemPool[itemIndex];
+    const elapsed = Date.now() - this.fmRoundData.browseWriteStartedAt;
+    const remainingMs = Math.max(0, FM_BROWSE_WRITE_DURATION_MS - elapsed);
 
     this.send(client.sessionId, "fm_pick_confirmed", { itemIndex });
+
+    // Immediately send write start to this player with remaining time
+    this.send(client.sessionId, "fm_write_start", {
+      item: selectedItem,
+      itemIndex,
+      durationMs: remainingMs,
+      serverTimestamp: Date.now(),
+    });
 
     this.broadcast("fm_pick_update", {
       picksIn: this.fmRoundData.picks.size,
       totalPickers: this._activePlayers().length,
+    });
+
+    // Broadcast player status for TV dashboard
+    this.broadcast("fm_player_status", {
+      playerId: client.sessionId,
+      playerName: player.name,
+      status: "writing",
     });
   }
 
@@ -1336,6 +2328,9 @@ export default class LowballMarketplaceGame extends BaseGame {
 
     // Already submitted
     if (this.fmRoundData.entries.has(client.sessionId)) return;
+
+    // Must have picked first
+    if (!this.fmRoundData.picks.has(client.sessionId)) return;
 
     // Trim and cap length
     const trimmed = message.trim().slice(0, 200);
@@ -1357,6 +2352,13 @@ export default class LowballMarketplaceGame extends BaseGame {
     this.broadcast("fm_write_update", {
       writtenIn: this.fmRoundData.entries.size,
       totalWriters: this._activePlayers().length,
+    });
+
+    // Broadcast player status for TV dashboard
+    this.broadcast("fm_player_status", {
+      playerId: client.sessionId,
+      playerName: player.name,
+      status: "submitted",
     });
   }
 
@@ -1384,6 +2386,8 @@ export default class LowballMarketplaceGame extends BaseGame {
       playerId: string;
       playerName: string;
       itemName: string;
+      itemDescription: string;
+      itemCategory: string;
       message: string;
       voteCount: number;
     }[];
@@ -1412,6 +2416,8 @@ export default class LowballMarketplaceGame extends BaseGame {
         playerId: e.playerId,
         playerName: e.playerName,
         itemName: e.item.name,
+        itemDescription: e.item.description,
+        itemCategory: e.item.category,
         message: e.message,
         voteCount: vc,
       };

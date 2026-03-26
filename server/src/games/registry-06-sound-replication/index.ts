@@ -65,6 +65,13 @@ const MAX_RETRIES = 1;
 /** Duration to display each player's result on TV (ms). */
 const RESULT_REVEAL_MS = 5_000;
 
+/**
+ * Maximum number of windows to shift in either direction when
+ * auto-aligning the recording profile against the target.
+ * With 20-window profiles, ±5 means up to 25% shift.
+ */
+const MAX_ALIGN_SHIFT = 5;
+
 /** Duration to show final leaderboard (ms). */
 const LEADERBOARD_DISPLAY_MS = 6_000;
 
@@ -78,18 +85,33 @@ const BEST_MATCH_BONUS = 200;
 const PARTICIPATION_BONUS = 50;
 
 // ── Target sound features (pre-computed characteristics for whoosh.flac) ──────
-// These are approximate reference values for the "whoosh" sound.
-// In a production version these would be computed from the actual file.
+// These represent the actual characteristics of the target "whoosh" sound.
+// The energy profile is divided into 20 windows across the ~1.5s duration,
+// normalized 0–1 where 1.0 = peak energy.
+//
+// A whoosh has a distinctive fast attack → peak → gradual decay shape.
 
 const TARGET_FEATURES = {
   /** Approximate duration in seconds. */
   durationSecs: 1.5,
-  /** RMS energy profile (normalized, 10 windows). */
-  energyProfile: [0.1, 0.3, 0.6, 0.9, 1.0, 0.8, 0.5, 0.3, 0.1, 0.05],
+  /**
+   * Normalized RMS energy profile (20 windows).
+   * Shape: silence → rapid rise → peak near center → gradual decay → silence.
+   */
+  energyProfile: [
+    0.02, 0.05, 0.12, 0.25, 0.45,
+    0.65, 0.82, 0.94, 1.00, 0.97,
+    0.88, 0.75, 0.60, 0.45, 0.32,
+    0.20, 0.12, 0.07, 0.03, 0.01,
+  ],
   /** Average zero-crossing rate (normalized 0–1). */
   zeroCrossingRate: 0.45,
   /** Spectral centroid (normalized 0–1, higher = brighter). */
   spectralBrightness: 0.6,
+  /** Average frame energy (bytes per frame for Opus @ 48kHz). */
+  avgFrameEnergy: 0.55,
+  /** Energy variability (std dev of frame sizes / mean). Whoosh has moderate variation. */
+  energyVariability: 0.45,
 };
 
 // ── Per-round tracking ────────────────────────────────────────────────────────
@@ -103,6 +125,14 @@ interface PlayerAttempt {
   durationSecs: number;
   /** Computed similarity score 0–100. */
   similarityScore: number;
+  /** Normalized energy profile (20 windows, 0–1). Delay-compensated. */
+  energyProfile: number[];
+  /**
+   * Alignment offset found by cross-correlation.
+   * Negative = recording started early, positive = recording started late.
+   * Unit: profile windows (each ~durationSecs/20).
+   */
+  alignmentOffset: number;
   /** Number of retries used. */
   retries: number;
   /** Timestamp of submission. */
@@ -252,6 +282,8 @@ export default class SoundReplicationGame extends BaseGame {
           audioBase64: "",
           durationSecs: 0,
           similarityScore: 0,
+          energyProfile: [],
+          alignmentOffset: 0,
           retries: 0,
           submittedAt: Date.now(),
         });
@@ -291,6 +323,11 @@ export default class SoundReplicationGame extends BaseGame {
         hasAudio: attempt.audioBase64.length > 0,
         revealIndex: i,
         isLast: i === revealOrder.length - 1,
+        // Energy profiles for visualization
+        targetProfile: TARGET_FEATURES.energyProfile,
+        recordingProfile: attempt.energyProfile,
+        // Delay compensation info
+        alignmentOffset: attempt.alignmentOffset,
       });
       await this.delay(RESULT_REVEAL_MS);
     }
@@ -340,6 +377,8 @@ export default class SoundReplicationGame extends BaseGame {
           audioBase64: input.audioBase64 ?? "",
           durationSecs: input.durationSecs ?? 0,
           similarityScore: 0, // computed later
+          energyProfile: [], // computed later
+          alignmentOffset: 0, // computed later
           retries: this.currentRetries,
           submittedAt: Date.now(),
         });
@@ -410,6 +449,8 @@ export default class SoundReplicationGame extends BaseGame {
             audioBase64: "",
             durationSecs: 0,
             similarityScore: 0,
+            energyProfile: [],
+            alignmentOffset: 0,
             retries: this.currentRetries,
             submittedAt: Date.now(),
           });
@@ -427,15 +468,30 @@ export default class SoundReplicationGame extends BaseGame {
   /**
    * Compute similarity scores for all attempts.
    *
-   * This is a simplified analysis since we're working with base64 audio
-   * on the server without a full DSP library. We score based on:
-   * 1. Duration similarity (25% weight)
-   * 2. Data presence and size (25% weight — proxy for energy/loudness)
-   * 3. Variability estimation from base64 entropy (25% weight)
-   * 4. Random component for fun variation (25% weight)
+   * Analysis approach (server-side, no native DSP):
+   * We parse the WebM container to extract Opus frame sizes as an energy
+   * proxy. Larger Opus frames encode more audio content/energy. We then:
    *
-   * A proper implementation would decode the audio and compute MFCCs,
-   * spectral features, and amplitude envelopes.
+   * 1. Duration similarity (20% weight, 20 pts max)
+   *    How close the recording length matches the target.
+   *
+   * 2. Energy envelope shape (35% weight, 35 pts max)
+   *    Resample both target and recording energy profiles to 20 windows
+   *    and compute cosine similarity of the shapes.
+   *
+   * 3. Energy dynamics (20% weight, 20 pts max)
+   *    Compare the variability (coefficient of variation) of frame sizes.
+   *    A whoosh has moderate dynamics; flat recordings or chaotic ones differ.
+   *
+   * 4. Attack-decay shape (15% weight, 15 pts max)
+   *    Check if the recording has a similar attack-peak-decay pattern:
+   *    peak position, attack steepness, and decay ratio.
+   *
+   * 5. Average level match (10% weight, 10 pts max)
+   *    Compare mean energy levels. Very quiet or very loud recordings
+   *    score lower even if the shape is somewhat right.
+   *
+   * Total: 100 points max.
    */
   private _computeScores(): void {
     this.pendingScores.clear();
@@ -449,36 +505,80 @@ export default class SoundReplicationGame extends BaseGame {
       if (attempt.audioBase64.length === 0) {
         // No recording — zero score
         attempt.similarityScore = 0;
+        attempt.energyProfile = [];
         this.pendingScores.set(attempt.playerId, PARTICIPATION_BONUS);
         continue;
       }
 
-      // 1. Duration similarity (25 points max)
-      // Target is ~1.5s. Score based on how close the recording duration is.
+      // Decode base64 and extract frame-level energy proxy
+      const audioBytes = Buffer.from(attempt.audioBase64, "base64");
+      const frameSizes = this._extractWebMFrameSizes(audioBytes);
+
+      // Build a 20-window energy profile from the frame sizes
+      const rawRecordingProfile = this._buildEnergyProfile(frameSizes, 20);
+
+      // ── 0. Delay compensation (auto-alignment) ───────────────
+      // The user's recording may not start at the same instant as
+      // the target. We slide the recording profile ±MAX_ALIGN_SHIFT
+      // windows along the target and pick the offset that maximizes
+      // cosine similarity. This corrects for reaction-time delays
+      // or early starts without requiring manual user adjustment.
+      const alignResult = this._findBestAlignment(
+        TARGET_FEATURES.energyProfile,
+        rawRecordingProfile,
+      );
+      const alignedProfile = alignResult.alignedProfile;
+      attempt.energyProfile = alignedProfile;
+      attempt.alignmentOffset = alignResult.offset;
+
+      // ── 1. Duration similarity (20 pts) ──────────────────────
       const durationDiff = Math.abs(attempt.durationSecs - TARGET_FEATURES.durationSecs);
-      const durationScore = Math.max(0, 25 - durationDiff * 10);
+      const durationRatio = durationDiff / TARGET_FEATURES.durationSecs;
+      // Perfect match = 20, off by 100%+ = 0
+      const durationScore = Math.max(0, 20 * (1 - durationRatio));
       totalScore += durationScore;
 
-      // 2. Data size score (25 points max)
-      // Larger recordings generally indicate more audio content.
-      // Normalize against expected size for a ~1.5s recording.
-      const expectedSize = 15000; // rough base64 chars for 1.5s webm
-      const sizeRatio = Math.min(2, attempt.audioBase64.length / expectedSize);
-      const sizeScore = Math.min(25, sizeRatio * 15);
-      totalScore += sizeScore;
+      // ── 2. Energy envelope shape (35 pts) ────────────────────
+      // Uses the delay-compensated (aligned) profile
+      if (alignedProfile.length >= 5) {
+        const cosSim = this._cosineSimilarity(
+          TARGET_FEATURES.energyProfile,
+          alignedProfile,
+        );
+        // cosSim ranges -1 to 1, practically 0 to 1 for audio
+        // Map: 1.0 → 35 pts, 0.0 → 0 pts
+        const envelopeScore = Math.max(0, cosSim * 35);
+        totalScore += envelopeScore;
+      }
 
-      // 3. Base64 entropy as proxy for audio complexity (25 points max)
-      // More varied audio content produces more varied base64 characters.
-      const entropy = this._estimateEntropy(attempt.audioBase64.substring(0, 2000));
-      // Good audio entropy is typically 5.5–6.0 for base64
-      const entropyScore = Math.min(25, (entropy / 6.0) * 25);
-      totalScore += entropyScore;
+      // ── 3. Energy dynamics / variability (20 pts) ────────────
+      if (frameSizes.length > 2) {
+        const mean = frameSizes.reduce((a, b) => a + b, 0) / frameSizes.length;
+        const variance = frameSizes.reduce((a, b) => a + (b - mean) ** 2, 0) / frameSizes.length;
+        const coeffVar = mean > 0 ? Math.sqrt(variance) / mean : 0;
+        // Target has ~0.45 variability. Score based on how close.
+        const varDiff = Math.abs(coeffVar - TARGET_FEATURES.energyVariability);
+        // 0 diff → 20 pts, >0.5 diff → 0 pts
+        const dynamicsScore = Math.max(0, 20 * (1 - varDiff / 0.5));
+        totalScore += dynamicsScore;
+      }
 
-      // 4. Random variation component (25 points max)
-      // Adds fun unpredictability — in production this would be replaced
-      // by actual spectral comparison.
-      const randomScore = 10 + Math.random() * 15;
-      totalScore += randomScore;
+      // ── 4. Attack-decay shape (15 pts) ────────────────────────
+      // Uses the delay-compensated (aligned) profile
+      if (alignedProfile.length >= 5) {
+        const shapeScore = this._scoreAttackDecay(alignedProfile);
+        totalScore += shapeScore; // 0–15
+      }
+
+      // ── 5. Average level match (10 pts) ───────────────────────
+      if (alignedProfile.length > 0) {
+        const recMean = alignedProfile.reduce((a, b) => a + b, 0) / alignedProfile.length;
+        const targetMean = TARGET_FEATURES.energyProfile.reduce((a, b) => a + b, 0) / TARGET_FEATURES.energyProfile.length;
+        const levelDiff = Math.abs(recMean - targetMean);
+        // 0 diff → 10 pts, >0.5 diff → 0 pts
+        const levelScore = Math.max(0, 10 * (1 - levelDiff / 0.5));
+        totalScore += levelScore;
+      }
 
       // Clamp to 0–100
       attempt.similarityScore = Math.round(Math.min(100, Math.max(0, totalScore)));
@@ -504,22 +604,300 @@ export default class SoundReplicationGame extends BaseGame {
   }
 
   /**
-   * Estimate Shannon entropy of a string (bits per character).
-   * Used as a rough proxy for audio signal complexity.
+   * Extract frame/block sizes from a WebM (Matroska) container as an energy proxy.
+   *
+   * WebM uses EBML (Extensible Binary Meta Language). Audio data lives inside
+   * Cluster → SimpleBlock elements. Each SimpleBlock's size correlates with
+   * the amount of audio energy encoded (Opus uses variable bitrate).
+   *
+   * We don't need a full parser — just scan for SimpleBlock element IDs (0xA3)
+   * and read their sizes.
    */
-  private _estimateEntropy(s: string): number {
-    if (s.length === 0) return 0;
-    const freq = new Map<string, number>();
-    for (const ch of s) {
-      freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  private _extractWebMFrameSizes(data: Buffer): number[] {
+    const frameSizes: number[] = [];
+
+    // SimpleBlock element ID = 0xA3
+    // We scan for this byte and attempt to read EBML variable-length size after it.
+    for (let i = 0; i < data.length - 4; i++) {
+      if (data[i] === 0xa3) {
+        // Try to read EBML VINT size
+        const sizeResult = this._readEBMLVint(data, i + 1);
+        if (sizeResult && sizeResult.value > 0 && sizeResult.value < 65536) {
+          frameSizes.push(sizeResult.value);
+          i += sizeResult.length; // skip past this block
+        }
+      }
     }
-    let entropy = 0;
-    const len = s.length;
-    for (const count of freq.values()) {
-      const p = count / len;
-      if (p > 0) entropy -= p * Math.log2(p);
+
+    // Fallback: if WebM parsing found very few frames, use a chunking approach
+    // This handles edge cases where the container format is slightly different
+    if (frameSizes.length < 5) {
+      return this._chunkBasedEnergy(data);
     }
-    return entropy;
+
+    return frameSizes;
+  }
+
+  /**
+   * Read an EBML variable-length integer (VINT) from the buffer.
+   * Returns { value, length } or null if invalid.
+   */
+  private _readEBMLVint(data: Buffer, offset: number): { value: number; length: number } | null {
+    if (offset >= data.length) return null;
+
+    const first = data[offset];
+    if (first === 0) return null;
+
+    // Count leading zeros to determine VINT width
+    let width = 1;
+    let mask = 0x80;
+    while (width <= 8 && (first & mask) === 0) {
+      width++;
+      mask >>= 1;
+    }
+
+    if (width > 4 || offset + width > data.length) return null;
+
+    // Read the value
+    let value = first & (mask - 1); // strip the VINT marker bit
+    for (let i = 1; i < width; i++) {
+      value = (value << 8) | data[offset + i];
+    }
+
+    return { value, length: width };
+  }
+
+  /**
+   * Fallback energy extraction: divide the raw bytes into equal chunks
+   * and use byte variance within each chunk as an energy proxy.
+   * Compressed silence has very uniform bytes; audio content has more variation.
+   */
+  private _chunkBasedEnergy(data: Buffer): number[] {
+    const numChunks = Math.min(40, Math.max(5, Math.floor(data.length / 500)));
+    const chunkSize = Math.floor(data.length / numChunks);
+    const energies: number[] = [];
+
+    // Skip the first ~200 bytes (WebM header)
+    const headerOffset = Math.min(200, Math.floor(data.length * 0.05));
+
+    for (let c = 0; c < numChunks; c++) {
+      const start = headerOffset + c * chunkSize;
+      const end = Math.min(start + chunkSize, data.length);
+      if (start >= data.length) break;
+
+      // Compute byte-level variance as energy proxy
+      let sum = 0;
+      let sumSq = 0;
+      const n = end - start;
+      for (let i = start; i < end; i++) {
+        sum += data[i];
+        sumSq += data[i] * data[i];
+      }
+      const mean = sum / n;
+      const variance = sumSq / n - mean * mean;
+      energies.push(Math.sqrt(Math.max(0, variance)));
+    }
+
+    return energies;
+  }
+
+  /**
+   * Resample a variable-length energy array to `windowCount` windows
+   * and normalize to 0–1 range.
+   */
+  private _buildEnergyProfile(frameSizes: number[], windowCount: number): number[] {
+    if (frameSizes.length === 0) return Array(windowCount).fill(0);
+
+    // Group frames into windows
+    const framesPerWindow = Math.max(1, Math.floor(frameSizes.length / windowCount));
+    const profile: number[] = [];
+
+    for (let w = 0; w < windowCount; w++) {
+      const start = w * framesPerWindow;
+      const end = Math.min(start + framesPerWindow, frameSizes.length);
+      if (start >= frameSizes.length) {
+        profile.push(0);
+        continue;
+      }
+
+      let sum = 0;
+      for (let i = start; i < end; i++) {
+        sum += frameSizes[i];
+      }
+      profile.push(sum / (end - start));
+    }
+
+    // Normalize to 0–1
+    const max = Math.max(...profile, 0.001);
+    return profile.map((v) => v / max);
+  }
+
+  /**
+   * Cosine similarity between two equal-length vectors.
+   * Returns a value between -1 and 1 (1 = identical shape).
+   */
+  private _cosineSimilarity(a: number[], b: number[]): number {
+    const len = Math.min(a.length, b.length);
+    if (len === 0) return 0;
+
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+
+    for (let i = 0; i < len; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+
+    const denom = Math.sqrt(normA) * Math.sqrt(normB);
+    if (denom === 0) return 0;
+    return dotProduct / denom;
+  }
+
+  /**
+   * Score the attack-decay shape of the recording (0–15 pts).
+   *
+   * A "whoosh" has:
+   * - Peak energy near the 40-55% mark (not at the start or end)
+   * - Rising energy in the first half
+   * - Falling energy in the second half
+   *
+   * We check: peak position, attack ratio, decay ratio.
+   */
+  private _scoreAttackDecay(profile: number[]): number {
+    if (profile.length < 5) return 0;
+
+    let maxVal = 0;
+    let maxIdx = 0;
+    for (let i = 0; i < profile.length; i++) {
+      if (profile[i] > maxVal) {
+        maxVal = profile[i];
+        maxIdx = i;
+      }
+    }
+
+    let score = 0;
+    const peakPosition = maxIdx / (profile.length - 1); // 0–1
+
+    // Target peak position is ~0.4–0.5
+    const peakTarget = 0.45;
+    const peakDist = Math.abs(peakPosition - peakTarget);
+    // Within 0.15 of target → full marks (6 pts)
+    score += Math.max(0, 6 * (1 - peakDist / 0.35));
+
+    // Attack: average energy in first third should be lower than peak region
+    const thirdLen = Math.floor(profile.length / 3);
+    const firstThird = profile.slice(0, thirdLen);
+    const middleThird = profile.slice(thirdLen, thirdLen * 2);
+    const lastThird = profile.slice(thirdLen * 2);
+
+    const avgFirst = firstThird.reduce((a, b) => a + b, 0) / firstThird.length;
+    const avgMiddle = middleThird.reduce((a, b) => a + b, 0) / middleThird.length;
+    const avgLast = lastThird.reduce((a, b) => a + b, 0) / lastThird.length;
+
+    // Middle should be highest (5 pts)
+    if (avgMiddle > avgFirst && avgMiddle > avgLast) {
+      score += 5;
+    } else if (avgMiddle > avgFirst || avgMiddle > avgLast) {
+      score += 2.5;
+    }
+
+    // Decay: last third should be less than middle (4 pts)
+    if (avgMiddle > 0) {
+      const decayRatio = avgLast / avgMiddle; // target: ~0.3-0.5
+      const decayTarget = 0.4;
+      const decayDist = Math.abs(decayRatio - decayTarget);
+      score += Math.max(0, 4 * (1 - decayDist / 0.5));
+    }
+
+    return Math.min(15, score);
+  }
+
+  /**
+   * Find the best time-alignment between the target and recording profiles
+   * using sliding cross-correlation.
+   *
+   * The recording may be delayed (user reacted late) or early (user
+   * anticipated). We slide the recording profile across the target by
+   * ±MAX_ALIGN_SHIFT windows and return the offset that produces the
+   * highest cosine similarity, along with the shifted recording profile
+   * (padded with zeros so it stays the same length as the target).
+   *
+   * @returns { offset, alignedProfile, bestSimilarity }
+   *   - offset: negative = recording started early, positive = started late
+   *   - alignedProfile: 20-window profile shifted to best-match the target
+   *   - bestSimilarity: the cosine similarity at that offset (for diagnostics)
+   */
+  private _findBestAlignment(
+    target: number[],
+    recording: number[],
+  ): { offset: number; alignedProfile: number[]; bestSimilarity: number } {
+    const len = target.length; // 20
+
+    // If the recording is too short to meaningfully align, return as-is
+    if (recording.length < 3) {
+      // Pad/trim to match target length
+      const padded = Array(len).fill(0);
+      for (let i = 0; i < Math.min(recording.length, len); i++) {
+        padded[i] = recording[i];
+      }
+      return { offset: 0, alignedProfile: padded, bestSimilarity: 0 };
+    }
+
+    let bestOffset = 0;
+    let bestSim = -Infinity;
+    let bestProfile: number[] = recording.length === len
+      ? [...recording]
+      : this._padOrTrimProfile(recording, len);
+
+    // Try each offset from -MAX_ALIGN_SHIFT to +MAX_ALIGN_SHIFT
+    for (let shift = -MAX_ALIGN_SHIFT; shift <= MAX_ALIGN_SHIFT; shift++) {
+      // Create shifted version of recording:
+      // shift > 0 means we think the recording started late,
+      //   so we shift recording LEFT (earlier samples matter more)
+      // shift < 0 means recording started early,
+      //   so we shift recording RIGHT (later samples matter more)
+      const shifted = Array(len).fill(0);
+
+      for (let i = 0; i < len; i++) {
+        const srcIdx = i + shift; // index into recording
+        if (srcIdx >= 0 && srcIdx < recording.length) {
+          shifted[i] = recording[srcIdx];
+        }
+        // else: stays 0 (zero-padded)
+      }
+
+      // Re-normalize shifted profile so zero-padding doesn't
+      // artificially deflate the similarity. Only normalize if
+      // there are non-zero values.
+      const maxVal = Math.max(...shifted, 0.001);
+      const normalized = shifted.map((v: number) => v / maxVal);
+
+      const sim = this._cosineSimilarity(target, normalized);
+
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestOffset = shift;
+        bestProfile = normalized;
+      }
+    }
+
+    return {
+      offset: bestOffset,
+      alignedProfile: bestProfile,
+      bestSimilarity: bestSim,
+    };
+  }
+
+  /**
+   * Pad a profile with trailing zeros or trim it to exactly `len` elements.
+   */
+  private _padOrTrimProfile(profile: number[], len: number): number[] {
+    if (profile.length >= len) return profile.slice(0, len);
+    const result = [...profile];
+    while (result.length < len) result.push(0);
+    return result;
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────

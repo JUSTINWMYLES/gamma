@@ -63,6 +63,9 @@
   let revealRank = 0;
   let revealTotal = 0;
   let revealIsLast = false;
+  let revealTargetProfile: number[] = [];
+  let revealRecordingProfile: number[] = [];
+  let revealAlignmentOffset = 0;
 
   let leaderboard: { playerId: string; playerName: string; similarityScore: number; points: number; rank: number }[] = [];
 
@@ -101,8 +104,8 @@
 
   function playTargetSound() {
     stopTargetSound();
-    // whoosh.flac served from /audio/ directory
-    targetAudio = new Audio("/audio/whoosh.flac");
+    // whoosh.flac served from publicDir (../../audio → root of served files)
+    targetAudio = new Audio("/whoosh.flac");
     targetAudio.play().catch(() => {
       // Autoplay might be blocked
     });
@@ -210,6 +213,9 @@
     totalPlayers: number;
     revealIndex: number;
     isLast: boolean;
+    targetProfile?: number[];
+    recordingProfile?: number[];
+    alignmentOffset?: number;
   }) {
     subPhase = "result_reveal";
     revealPlayerName = data.playerName;
@@ -218,6 +224,9 @@
     revealRank = data.rank;
     revealTotal = data.totalPlayers;
     revealIsLast = data.isLast;
+    revealTargetProfile = data.targetProfile ?? [];
+    revealRecordingProfile = data.recordingProfile ?? [];
+    revealAlignmentOffset = data.alignmentOffset ?? 0;
   }
 
   function onLeaderboard(data: {
@@ -405,6 +414,49 @@
       </p>
 
       <h1 class="text-4xl font-black text-white">{revealPlayerName}</h1>
+
+      <!-- Amplitude comparison visualization -->
+      {#if revealTargetProfile.length > 0 && revealRecordingProfile.length > 0}
+        <div class="w-full max-w-2xl mx-auto space-y-2">
+          <div class="flex justify-between text-xs text-gray-500 px-2">
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-sm bg-purple-500 inline-block"></span> Target
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span> Recording
+            </span>
+          </div>
+          <div class="relative h-40 bg-gray-800 rounded-2xl p-4 flex items-end gap-[2px] overflow-hidden">
+            {#each revealTargetProfile as targetVal, i}
+              {@const recVal = revealRecordingProfile[i] ?? 0}
+              {@const barWidth = `${100 / revealTargetProfile.length}%`}
+              <div class="flex-1 flex items-end gap-[1px] h-full">
+                <!-- Target bar (behind) -->
+                <div
+                  class="flex-1 bg-purple-500/40 rounded-t-sm transition-all duration-700"
+                  style="height:{targetVal * 100}%"
+                ></div>
+                <!-- Recording bar (front) -->
+                <div
+                  class="flex-1 rounded-t-sm transition-all duration-700
+                    {Math.abs(targetVal - recVal) < 0.15 ? 'bg-emerald-500' :
+                     Math.abs(targetVal - recVal) < 0.3 ? 'bg-yellow-500' :
+                     'bg-red-500'}"
+                  style="height:{recVal * 100}%"
+                ></div>
+              </div>
+            {/each}
+          </div>
+          <p class="text-xs text-gray-600 text-center">
+            Energy envelope comparison &mdash; {revealTargetProfile.length} analysis windows
+            {#if revealAlignmentOffset !== 0}
+              <span class="text-purple-400 ml-1">
+                (auto-aligned {revealAlignmentOffset > 0 ? '+' : ''}{revealAlignmentOffset} windows)
+              </span>
+            {/if}
+          </p>
+        </div>
+      {/if}
 
       <!-- Score visualization -->
       <div class="w-full max-w-md mx-auto space-y-4">

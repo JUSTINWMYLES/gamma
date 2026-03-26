@@ -23,6 +23,7 @@
     | "waiting"
     | "bracket_init"
     | "match_preview"
+    | "countdown"
     | "tapping"
     | "match_result"
     | "bracket_advance"
@@ -73,6 +74,11 @@
 
   let roundSkipped = false;
   let skipReason = "";
+
+  // ── Countdown ──────────────────────────────────────────────────
+
+  let countdownValue = 0;
+  let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Actions ─────────────────────────────────────────────────────
 
@@ -261,11 +267,28 @@
     skipReason = data.reason;
   }
 
+  function onCountdown(data: { seconds: number }) {
+    countdownValue = data.seconds;
+    subPhase = "countdown";
+    // Tick down the countdown locally
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownInterval = setInterval(() => {
+      countdownValue--;
+      if (countdownValue <= 0) {
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+      }
+    }, 1000);
+  }
+
   // ── Lifecycle ───────────────────────────────────────────────────
 
   onMount(() => {
     room.onMessage("tap_bracket_init", onBracketInit);
     room.onMessage("tap_match_start", onMatchStart);
+    room.onMessage("tap_countdown", onCountdown);
     room.onMessage("tap_go", onTapGo);
     room.onMessage("tap_confirmed", onTapConfirmed);
     room.onMessage("tap_counts", onTapCounts);
@@ -279,6 +302,7 @@
 
   onDestroy(() => {
     clearTimer();
+    if (countdownInterval) clearInterval(countdownInterval);
   });
 
   // ── Derived ─────────────────────────────────────────────────────
@@ -324,6 +348,20 @@
         <p class="text-gray-400 text-sm">Get ready to tap!</p>
       {:else}
         <h2 class="text-xl font-bold text-gray-400">Spectating</h2>
+        <p class="text-gray-500 text-sm">Watch the TV for live action!</p>
+      {/if}
+    </div>
+
+  {:else if subPhase === "countdown"}
+    <div class="text-center space-y-6">
+      <p class="text-xs text-gray-500 uppercase tracking-widest">Round {bracketRound}</p>
+      {#if isInMatch}
+        <p class="text-lg text-gray-300">{me?.name ?? "You"} <span class="text-gray-500">vs</span> {opponentName}</p>
+        <p class="text-8xl font-black text-cyan-400 animate-pulse">{countdownValue > 0 ? countdownValue : 'GO!'}</p>
+        <p class="text-sm text-gray-400">Get ready to tap!</p>
+      {:else}
+        <h2 class="text-xl font-bold text-gray-400">Spectating</h2>
+        <p class="text-8xl font-black text-gray-500">{countdownValue > 0 ? countdownValue : 'GO!'}</p>
         <p class="text-gray-500 text-sm">Watch the TV for live action!</p>
       {/if}
     </div>

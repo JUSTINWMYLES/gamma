@@ -1,12 +1,14 @@
 <script lang="ts">
   /**
-   * Phone game component for "Evil Laugh Overlay" (registry-26).
+   * Phone game component for "Audio Overlay" (registry-26).
    *
-   * New flow sub-phases:
-   *   gif_browsing → gif_confirmed → waiting_turn → my_recording → recording_done
-   *   → watching_others → playback → voting → results
+   * Flow sub-phases:
+   *   category_choosing | category_waiting → gif_browsing → gif_confirmed →
+   *   waiting_turn → my_recording → recording_done → watching_others →
+   *   playback → voting → results
    *
    * Server messages listened:
+   *   category_selection_start, category_chosen,
    *   gif_selection_start, gif_selection_confirmed, gif_selection_update,
    *   gif_assigned, recording_turn, recording_submitted,
    *   playback_entry, playback_done,
@@ -25,6 +27,8 @@
 
   type SubPhase =
     | "waiting"
+    | "category_choosing"
+    | "category_waiting"
     | "gif_browsing"
     | "gif_confirmed"
     | "waiting_turn"
@@ -36,6 +40,35 @@
     | "results";
 
   let subPhase: SubPhase = "waiting";
+
+  // ── Category Selection ─────────────────────────────────────────
+
+  interface CategoryInfo {
+    id: string;
+    name: string;
+    icon: string;
+    description: string;
+  }
+
+  let categories: CategoryInfo[] = [];
+  let categoryChooserId = "";
+  let categoryChooserName = "";
+  let categoryTimeLeft = 0;
+  let categoryEndTime = 0;
+  let categoryTimer: ReturnType<typeof setInterval> | null = null;
+  let chosenCategory: CategoryInfo | null = null;
+  let amCategoryChooser = false;
+  let categoryRevealing = false;
+
+  const CATEGORY_ICONS: Record<string, string> = {
+    devil: "\uD83D\uDE08",
+    paw: "\uD83D\uDC3E",
+    car: "\uD83D\uDE97",
+    megaphone: "\uD83D\uDCE2",
+    music: "\uD83C\uDFB5",
+    trophy: "\uD83C\uDFC6",
+    shuffle: "\uD83C\uDFB2",
+  };
 
   // ── GIF Selection ───────────────────────────────────────────────
 
@@ -52,6 +85,7 @@
   let gifSelectionConfirmed = false;
   let selectionsSubmitted = 0;
   let selectionsTotal = 0;
+  let gifCategoryInfo: CategoryInfo | null = null;
 
   // ── Recording ───────────────────────────────────────────────────
 
@@ -99,6 +133,7 @@
   let results: {
     winner: string | null;
     scores: Record<string, number>;
+    category: string;
     entries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string; voteCount: number }[];
   } | null = null;
 
@@ -200,6 +235,10 @@
 
   // ── Actions ─────────────────────────────────────────────────────
 
+  function pickCategory(categoryId: string) {
+    room.send("game_input", { action: "select_category", category: categoryId });
+  }
+
   function selectGif(url: string) {
     selectedGifUrl = url;
   }
@@ -225,6 +264,7 @@
   // ── Timer helpers ───────────────────────────────────────────────
 
   function clearAllTimers() {
+    if (categoryTimer) { clearInterval(categoryTimer); categoryTimer = null; }
     if (gifSelectionTimer) { clearInterval(gifSelectionTimer); gifSelectionTimer = null; }
     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
@@ -232,11 +272,49 @@
 
   // ── Message handlers ────────────────────────────────────────────
 
-  function onGifSelectionStart(data: { gifs: GifEntry[]; durationMs: number; serverTimestamp: number }) {
+  function onCategorySelectionStart(data: {
+    chooserId: string;
+    chooserName: string;
+    categories: CategoryInfo[];
+    durationMs: number;
+    serverTimestamp: number;
+  }) {
+    categories = data.categories;
+    categoryChooserId = data.chooserId;
+    categoryChooserName = data.chooserName;
+    amCategoryChooser = data.chooserId === me?.id;
+    chosenCategory = null;
+    categoryRevealing = false;
+
+    subPhase = amCategoryChooser ? "category_choosing" : "category_waiting";
+
+    categoryEndTime = data.serverTimestamp + data.durationMs;
+    categoryTimeLeft = Math.max(0, (categoryEndTime - Date.now()) / 1000);
+
+    categoryTimer = setInterval(() => {
+      categoryTimeLeft = Math.max(0, (categoryEndTime - Date.now()) / 1000);
+    }, 200);
+  }
+
+  function onCategoryChosen(data: { category: CategoryInfo; chooserName: string }) {
+    chosenCategory = data.category;
+    categoryRevealing = true;
+    if (categoryTimer) { clearInterval(categoryTimer); categoryTimer = null; }
+    // The server will send gif_selection_start after a brief delay
+  }
+
+  function onGifSelectionStart(data: {
+    gifs: GifEntry[];
+    category: CategoryInfo;
+    durationMs: number;
+    serverTimestamp: number;
+  }) {
     subPhase = "gif_browsing";
     gifPool = data.gifs;
+    gifCategoryInfo = data.category;
     selectedGifUrl = "";
     gifSelectionConfirmed = false;
+    categoryRevealing = false;
     gifSelectionEndTime = data.serverTimestamp + data.durationMs;
     gifSelectionTimeLeft = Math.max(0, (gifSelectionEndTime - Date.now()) / 1000);
 
@@ -373,6 +451,8 @@
   // ── Lifecycle ───────────────────────────────────────────────────
 
   onMount(() => {
+    room.onMessage("category_selection_start", onCategorySelectionStart);
+    room.onMessage("category_chosen", onCategoryChosen);
     room.onMessage("gif_selection_start", onGifSelectionStart);
     room.onMessage("gif_selection_confirmed", onGifSelectionConfirmed);
     room.onMessage("gif_selection_update", onGifSelectionUpdate);
@@ -407,7 +487,7 @@
   $: myEntry = results?.entries.find((e) => e.playerId === me?.id);
 </script>
 
-<div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="evil-laugh">
+<div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="audio-overlay">
 
   {#if roundSkipped}
     <div class="text-center space-y-3">
@@ -416,13 +496,77 @@
     </div>
 
   {:else if subPhase === "waiting"}
-    <p class="text-gray-400 text-center">Get ready to pick a GIF...</p>
+    <p class="text-gray-400 text-center">Get ready...</p>
+
+  {:else if subPhase === "category_choosing"}
+    <!-- I'm the chosen player — pick a category -->
+    <div class="w-full max-w-sm space-y-4 overflow-y-auto max-h-[85vh]">
+      <div class="text-center sticky top-0 bg-gray-900 pb-2 z-10">
+        <h2 class="text-2xl font-black text-purple-400">You Choose!</h2>
+        <p class="text-sm text-gray-400 mt-1">Pick a GIF category for everyone</p>
+        <p class="text-lg font-mono text-white mt-2">{Math.ceil(categoryTimeLeft)}s</p>
+      </div>
+
+      <div class="space-y-2">
+        {#each categories as cat}
+          <button
+            class="w-full text-left px-4 py-4 rounded-xl border-2 transition-all active:scale-[0.97]
+              border-gray-700 bg-gray-800 hover:border-purple-500 active:border-purple-400"
+            on:click={() => pickCategory(cat.id)}
+          >
+            <div class="flex items-center gap-3">
+              <span class="text-3xl">{CATEGORY_ICONS[cat.icon] ?? '?'}</span>
+              <div class="flex-1 min-w-0">
+                <p class="font-bold text-white text-lg">{cat.name}</p>
+                <p class="text-sm text-gray-400 truncate">{cat.description}</p>
+              </div>
+            </div>
+          </button>
+        {/each}
+      </div>
+    </div>
+
+  {:else if subPhase === "category_waiting"}
+    <!-- Someone else is choosing the category -->
+    <div class="text-center space-y-6">
+      {#if categoryRevealing && chosenCategory}
+        <!-- Category reveal animation -->
+        <div class="animate-bounce">
+          <span class="text-6xl">{CATEGORY_ICONS[chosenCategory.icon] ?? '?'}</span>
+        </div>
+        <h2 class="text-3xl font-black text-purple-400">{chosenCategory.name}</h2>
+        <p class="text-gray-400">Get ready to browse GIFs!</p>
+      {:else}
+        <div class="space-y-4">
+          <h2 class="text-xl font-black text-purple-400">Choosing Category...</h2>
+          <p class="text-lg text-gray-300">
+            <span class="font-bold text-white">{categoryChooserName}</span> is picking the theme
+          </p>
+          <p class="text-3xl font-mono text-white">{Math.ceil(categoryTimeLeft)}s</p>
+        </div>
+
+        <!-- Show available categories dimmed -->
+        <div class="w-full max-w-xs space-y-1.5 opacity-60">
+          {#each categories as cat}
+            <div class="flex items-center gap-2 px-3 py-2 bg-gray-800/50 rounded-lg">
+              <span class="text-xl">{CATEGORY_ICONS[cat.icon] ?? '?'}</span>
+              <span class="text-sm text-gray-400">{cat.name}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
 
   {:else if subPhase === "gif_browsing"}
     <!-- GIF Selection Phase -->
     <div class="w-full max-w-sm space-y-4 overflow-y-auto max-h-[85vh]">
       <div class="text-center sticky top-0 bg-gray-900 pb-2 z-10">
         <h2 class="text-xl font-black text-purple-400">Pick a GIF!</h2>
+        {#if gifCategoryInfo}
+          <p class="text-xs text-purple-300 mt-0.5">
+            {CATEGORY_ICONS[gifCategoryInfo.icon] ?? ''} {gifCategoryInfo.name}
+          </p>
+        {/if}
         <p class="text-sm text-gray-400 mt-1">
           {Math.ceil(gifSelectionTimeLeft)}s remaining
           {#if selectionsTotal > 0}
@@ -535,7 +679,7 @@
     <div class="w-full max-w-sm text-center space-y-4">
       <h2 class="text-2xl font-black text-red-400">Your Turn!</h2>
       <p class="text-sm text-gray-400">
-        Dub this GIF with your best evil laugh
+        Dub this GIF with your audio
         <span class="text-gray-500">(picked by {assignedOriginalPicker})</span>
       </p>
 
@@ -683,7 +827,7 @@
         {#if results.winner}
           {@const winnerEntry = results.entries.find((e) => e.playerId === results?.winner)}
           <div class="bg-yellow-900/60 border border-yellow-500 rounded-xl p-4">
-            <p class="text-xs text-yellow-400 uppercase tracking-widest mb-1">Best Evil Laugh</p>
+            <p class="text-xs text-yellow-400 uppercase tracking-widest mb-1">Best Audio Overlay</p>
             <p class="text-2xl font-black text-yellow-200">{winnerEntry?.playerName ?? "???"}</p>
             <p class="text-sm text-yellow-400 mt-1">{winnerEntry?.voteCount ?? 0} votes</p>
           </div>
