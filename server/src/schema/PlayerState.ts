@@ -32,6 +32,16 @@ export class PlayerState extends Schema {
   /** Opponent session ID for the current 1v1 match. Empty string when FFA. */
   @type("string") currentMatchOpponentId: string = "";
 
+  // ── Player customization (icon / avatar) ──────────────────────────────────
+  /** Selected emoji for the player's icon circle. */
+  @type("string") iconEmoji: string = "";
+
+  /** Short text label for the player's icon (1-3 chars, e.g. initials). */
+  @type("string") iconText: string = "";
+
+  /** Background color for the player's icon circle (Tailwind-compatible hex). */
+  @type("string") iconBgColor: string = "";
+
   // ── registry-14 specific fields ───────────────────────────────────────────
   /** World-space X position (tile units). */
   @type("number") x: number = 0;

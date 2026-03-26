@@ -23,10 +23,12 @@
 
   type SubPhase =
     | "waiting"
-    | "active"     // Potato is being passed around
-    | "exploded"   // Explosion
-    | "voting"     // Vote phase
-    | "results";   // Round results
+    | "active"        // Potato is being passed around
+    | "exploded"      // Explosion
+    | "voting"        // Vote phase
+    | "delay_voting"  // Delay penalty vote
+    | "delay_result"  // Delay penalty result
+    | "results";      // Round results
 
   let subPhase: SubPhase = "waiting";
 
@@ -61,6 +63,34 @@
   let correctVoters: string[] = [];
   let resultScores: Record<string, number> = {};
   let passLeader: { id: string; name: string; count: number } | null = null;
+  let resultDelayPenalty: {
+    penalizedId: string;
+    penalizedName: string;
+    penaltyPoints: number;
+  } | null = null;
+
+  // ── Delay voting state ─────────────────────────────────────────
+
+  let delayPlayers: {
+    id: string;
+    name: string;
+    avgAcceptMs: number;
+    maxAcceptMs: number;
+    acceptCount: number;
+  }[] = [];
+  let delayVotingTimeLeft = 0;
+  let delayVotingEndTime = 0;
+  let delayVotingTimer: ReturnType<typeof setInterval> | null = null;
+  let delayVotesIn = 0;
+  let delayTotalVoters = 0;
+  let slowThresholdMs = 4000;
+
+  // ── Delay result state ─────────────────────────────────────────
+
+  let delayPenalizedName = "";
+  let delayPenalizedId = "";
+  let delayPenaltyPoints = 0;
+  let delayVoteCount = 0;
 
   // ── Round skipped ───────────────────────────────────────────────
 
@@ -71,6 +101,7 @@
 
   function clearAllTimers() {
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    if (delayVotingTimer) { clearInterval(delayVotingTimer); delayVotingTimer = null; }
   }
 
   // ── Message handlers ────────────────────────────────────────────
@@ -149,6 +180,7 @@
     correctVoters: string[];
     scores: Record<string, number>;
     passLeader: { id: string; name: string; count: number } | null;
+    delayPenalty: { penalizedId: string; penalizedName: string; penaltyPoints: number } | null;
   }) {
     subPhase = "results";
     clearAllTimers();
@@ -157,6 +189,50 @@
     correctVoters = data.correctVoters;
     resultScores = data.scores;
     passLeader = data.passLeader;
+    resultDelayPenalty = data.delayPenalty ?? null;
+  }
+
+  function onPotatoDelayVoteStart(data: {
+    players: { id: string; name: string; avgAcceptMs: number; maxAcceptMs: number; acceptCount: number }[];
+    durationMs: number;
+    serverTimestamp: number;
+    slowThresholdMs: number;
+  }) {
+    subPhase = "delay_voting";
+    delayPlayers = data.players;
+    delayVotesIn = 0;
+    delayTotalVoters = 0;
+    slowThresholdMs = data.slowThresholdMs;
+
+    delayVotingEndTime = data.serverTimestamp + data.durationMs;
+    delayVotingTimeLeft = Math.max(0, (delayVotingEndTime - Date.now()) / 1000);
+
+    clearAllTimers();
+    delayVotingTimer = setInterval(() => {
+      delayVotingTimeLeft = Math.max(0, (delayVotingEndTime - Date.now()) / 1000);
+    }, 100);
+  }
+
+  function onPotatoDelayVoteUpdate(data: { votesIn: number; totalVoters: number }) {
+    delayVotesIn = data.votesIn;
+    delayTotalVoters = data.totalVoters;
+  }
+
+  function onPotatoDelayResult(data: {
+    penalizedId: string;
+    penalizedName: string;
+    penaltyPoints: number;
+    voteCount: number;
+    totalVotes: number;
+  }) {
+    if (data.penalizedId) {
+      subPhase = "delay_result";
+      delayPenalizedId = data.penalizedId;
+      delayPenalizedName = data.penalizedName;
+      delayPenaltyPoints = data.penaltyPoints;
+      delayVoteCount = data.voteCount;
+    }
+    clearAllTimers();
   }
 
   function onRoundSkipped(data: { reason: string }) {
@@ -174,6 +250,9 @@
     room.onMessage("potato_vote_start", onPotatoVoteStart);
     room.onMessage("potato_vote_update", onPotatoVoteUpdate);
     room.onMessage("potato_result", onPotatoResult);
+    room.onMessage("potato_delay_vote_start", onPotatoDelayVoteStart);
+    room.onMessage("potato_delay_vote_update", onPotatoDelayVoteUpdate);
+    room.onMessage("potato_delay_result", onPotatoDelayResult);
     room.onMessage("round_skipped", onRoundSkipped);
   });
 
@@ -319,6 +398,74 @@
       {/if}
     </div>
 
+  {:else if subPhase === "delay_voting"}
+    <!-- Delay penalty voting phase -->
+    <div class="w-full max-w-2xl space-y-6 text-center">
+      <div>
+        <h1 class="text-3xl font-black text-purple-400">Who Delayed Unfairly?</h1>
+        <p class="text-lg text-gray-400 mt-2">Players are voting on who took too long to accept</p>
+      </div>
+
+      <!-- Players with accept times -->
+      <div class="space-y-3 max-w-lg mx-auto">
+        {#each delayPlayers as player}
+          <div class="bg-gray-800 border border-gray-700 rounded-xl px-6 py-4 flex items-center gap-4">
+            <div class="w-12 h-12 {player.maxAcceptMs >= slowThresholdMs ? 'bg-red-900 border-red-700' : 'bg-purple-900 border-purple-700'} border rounded-full flex items-center justify-center">
+              <span class="text-xl">{player.maxAcceptMs >= slowThresholdMs ? '🐢' : '🏃'}</span>
+            </div>
+            <span class="flex-1 text-xl font-semibold text-white text-left">{player.name}</span>
+            <div class="text-right">
+              <p class="text-sm {player.maxAcceptMs >= slowThresholdMs ? 'text-red-400 font-bold' : 'text-gray-400'}">
+                avg {(player.avgAcceptMs / 1000).toFixed(1)}s
+              </p>
+              {#if player.maxAcceptMs >= slowThresholdMs}
+                <p class="text-xs text-red-400">
+                  max {(player.maxAcceptMs / 1000).toFixed(1)}s
+                </p>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <!-- Timer -->
+      <p class="text-5xl font-mono font-black {delayVotingTimeLeft < 5 ? 'text-red-400 animate-pulse' : 'text-white'}">
+        {Math.ceil(delayVotingTimeLeft)}
+      </p>
+
+      <!-- Vote progress -->
+      {#if delayTotalVoters > 0}
+        <div class="w-64 mx-auto">
+          <div class="flex justify-between text-sm text-gray-400 mb-1">
+            <span>Votes in</span>
+            <span>{delayVotesIn} / {delayTotalVoters}</span>
+          </div>
+          <div class="h-3 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              class="h-full bg-purple-500 rounded-full transition-all"
+              style="width:{(delayVotesIn / delayTotalVoters) * 100}%"
+            ></div>
+          </div>
+        </div>
+      {/if}
+
+      <p class="text-sm text-gray-600">Penalty: -{50} pts for the most-voted player</p>
+    </div>
+
+  {:else if subPhase === "delay_result"}
+    <!-- Delay penalty result -->
+    <div class="w-full max-w-2xl space-y-6 text-center">
+      <div class="text-8xl">🐢</div>
+      <h1 class="text-4xl font-black text-purple-400">Delay Penalty!</h1>
+      <div class="bg-purple-900/30 border-2 border-purple-600 rounded-2xl p-6 shadow-lg">
+        <p class="text-4xl font-black text-purple-200">{delayPenalizedName}</p>
+        <p class="text-red-400 font-bold text-2xl mt-3">-{delayPenaltyPoints} pts</p>
+        <p class="text-lg text-gray-400 mt-2">
+          {delayVoteCount} vote{delayVoteCount !== 1 ? "s" : ""} for unfair delay
+        </p>
+      </div>
+    </div>
+
   {:else if subPhase === "results"}
     <!-- Results -->
     <div class="w-full max-w-2xl space-y-6">
@@ -338,6 +485,14 @@
           <p class="text-xs text-orange-400 uppercase tracking-widest mb-1">Most Passes</p>
           <p class="text-xl font-black text-orange-200">{passLeader.name}</p>
           <p class="text-sm text-orange-400">{passLeader.count} passes (+25 bonus)</p>
+        </div>
+      {/if}
+
+      {#if resultDelayPenalty && resultDelayPenalty.penalizedId}
+        <div class="text-center bg-purple-900/30 border border-purple-600 rounded-xl p-4">
+          <p class="text-xs text-purple-400 uppercase tracking-widest mb-1">Delay Penalty</p>
+          <p class="text-xl font-black text-purple-200">{resultDelayPenalty.penalizedName}</p>
+          <p class="text-sm text-red-400 font-bold">-{resultDelayPenalty.penaltyPoints} pts</p>
         </div>
       {/if}
 

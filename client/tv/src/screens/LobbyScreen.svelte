@@ -9,6 +9,7 @@
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../shared/types";
   import { GAME_REGISTRY, getGameUnavailableReason } from "../../../shared/types";
+  import PlayerIcon from "../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -211,6 +212,7 @@
           <ul class="space-y-2" data-testid="player-list">
             {#each [...state.players.values()] as player (player.id)}
               <li class="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-2">
+                <PlayerIcon player={player} size={32} />
                 <span class="flex-1 font-medium">{player.name}</span>
                 {#if player.isReady}
                   <span class="text-green-400 text-sm font-semibold">READY</span>

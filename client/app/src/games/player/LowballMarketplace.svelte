@@ -46,6 +46,7 @@
 
   let item: ItemInfo | null = null;
   let askingPrice = 0;
+  let characteristics: { label: string; value: string }[] = [];
   let biddingTimeLeft = 0;
   let biddingEndTime = 0;
   let biddingTimer: ReturnType<typeof setInterval> | null = null;
@@ -76,6 +77,7 @@
   }[] = [];
   let resultScores: Record<string, number> = {};
   let resultReserve = 0;
+  let resultItem: { name: string; category: string; description: string; askingPrice: number; imageHint: string } | null = null;
 
   // ── Funny Messages state ────────────────────────────────────────
 
@@ -122,7 +124,7 @@
   let fmResults: {
     winner: string | null;
     scores: Record<string, number>;
-    entries: { playerId: string; playerName: string; itemName: string; message: string; voteCount: number }[];
+    entries: { playerId: string; playerName: string; itemName: string; itemDescription: string; itemCategory: string; message: string; voteCount: number }[];
   } | null = null;
 
   // Round skipped
@@ -168,13 +170,24 @@
   }
 
   function fmConfirmPick() {
-    if (fmSelectedIndex == null || fmPickConfirmed) return;
+    if (fmSelectedIndex == null) return;
     room.send("game_input", { action: "fm_pick_item", itemIndex: fmSelectedIndex });
   }
 
   function fmSubmitMessage() {
     if (!fmMessageText.trim() || fmWriteConfirmed) return;
     room.send("game_input", { action: "fm_submit_message", message: fmMessageText.trim() });
+  }
+
+  function fmBackToBrowsing() {
+    // Go back to browsing to pick a different item
+    subPhase = "fm_browsing";
+    fmPickConfirmed = false;
+    fmSelectedIndex = null;
+    fmDetailIndex = null;
+    fmWriteItem = null;
+    fmMessageText = "";
+    if (fmWriteTimer) { clearInterval(fmWriteTimer); fmWriteTimer = null; }
   }
 
   function fmCastVote(targetId: string) {
@@ -189,12 +202,14 @@
   function onItemListing(data: {
     item: ItemInfo;
     askingPrice: number;
+    characteristics?: { label: string; value: string }[];
     durationMs: number;
     serverTimestamp: number;
   }) {
     subPhase = "bidding";
     item = data.item;
     askingPrice = data.askingPrice;
+    characteristics = data.characteristics ?? [];
     bidConfirmed = false;
     bidAmount = 0;
     sliderValue = 50;
@@ -234,7 +249,7 @@
   }
 
   function onRoundResult(data: {
-    item: { name: string; category: string };
+    item: { name: string; category: string; description: string; askingPrice: number; imageHint: string };
     reserve: number;
     rankings: typeof rankings;
     scores: Record<string, number>;
@@ -244,6 +259,7 @@
     rankings = data.rankings;
     resultScores = data.scores;
     resultReserve = data.reserve;
+    resultItem = data.item;
   }
 
   // ── Funny Messages message handlers ─────────────────────────────
@@ -271,8 +287,8 @@
 
   function onFmPickConfirmed(_data: { itemIndex: number }) {
     fmPickConfirmed = true;
-    subPhase = "fm_picked";
-    if (fmBrowseTimer) { clearInterval(fmBrowseTimer); fmBrowseTimer = null; }
+    // Don't change subPhase here — fm_write_start will follow immediately
+    // from the server with the selected item and remaining time.
   }
 
   function onFmPickUpdate(data: { picksIn: number; totalPickers: number }) {
@@ -292,10 +308,13 @@
     fmWriteConfirmed = false;
     fmWrittenIn = 0;
 
+    // Use the remaining time from the shared timer
     fmWriteEndTime = data.serverTimestamp + data.durationMs;
     fmWriteTimeLeft = Math.max(0, (fmWriteEndTime - Date.now()) / 1000);
 
-    clearAllTimers();
+    // Don't clear fmBrowseTimer — it's the same shared clock.
+    // But do start a write timer for the write countdown display.
+    if (fmWriteTimer) { clearInterval(fmWriteTimer); fmWriteTimer = null; }
     fmWriteTimer = setInterval(() => {
       fmWriteTimeLeft = Math.max(0, (fmWriteEndTime - Date.now()) / 1000);
     }, 200);
@@ -433,6 +452,33 @@
     "phone": "☎️", "sundial": "☀️", "unicycle": "🎪", "wind": "🌬️",
     "fryer": "🍳", "level": "📏", "binoculars": "🔭", "puzzle": "🧩",
     "toilet": "🚽",
+    // Batch 2
+    "roomba2": "🤖", "waffle": "🧇", "compass2": "🧭", "trampoline2": "🤸",
+    "pool": "🏊", "projector": "📽️", "flip-phone": "📱", "sword": "🗡️",
+    "skateboard": "🛹", "globe": "🌍", "hammock": "🏖️", "purifier": "💨",
+    "spice-rack": "🧂", "karaoke": "🎤", "mannequin": "👤", "bread": "🍞",
+    "vhs": "📼", "beanbag": "🛋️", "lava-lamp": "🫧", "megaphone": "📢",
+    "generator": "⚡", "tandem": "🚲", "water-bottle": "💧", "rubber-duck": "🦆",
+    "alarm": "⏰", "skillet": "🍳", "desk": "🖥️", "hamster-wheel": "🐹",
+    "speaker": "🔊", "churn": "🧈", "hose": "🚿", "espresso": "☕",
+    "disco": "🪩", "detector": "🔍", "treadmill-desk": "🏃", "lunchbox": "🥪",
+    "printer": "🖨️", "pogo": "🦘", "crystal": "🔮", "instant-pot": "🍲",
+    "sewing": "🧵", "scooter": "🛴", "spinner": "🌀", "snowglobe": "🏔️",
+    "monitor": "👶", "pool-table": "🎱", "solar": "☀️", "fish": "🐟",
+    "painting": "🎨", "foghorn": "📯", "ac-unit": "❄️", "turntable": "🎵",
+    "e-blanket": "🔥", "ramp": "📐", "pigeon": "🐦", "vacuum": "🧹",
+    "neon": "💡", "punching-bag": "🥊", "watering-can": "🚿", "bidet": "💦",
+    "cornhole": "🫘", "toaster-oven": "🍞", "walkie": "📻", "fireplace": "🔥",
+    "selfie-stick": "🤳", "dino": "🦖", "saddle": "🐴", "leaf-blower": "🍃",
+    "grow-light": "🌱", "meter": "🅿️", "keyboard": "⌨️", "mower": "🌿",
+    "goggles": "🥽", "rocking-chair": "🪑", "scale": "⚖️", "disco-toilet": "🪩",
+    "trimmer": "✂️", "pizza-oven": "🍕", "e-guitar": "🎸", "massage-chair": "💆",
+    "doorbell": "🔔", "rc-car": "🏎️", "ice-cream": "🍦", "bonsai": "🌳",
+    "chess": "♟️", "smart-fridge": "🧊", "fire-pit": "🔥", "helmet": "⛑️",
+    "popcorn": "🍿", "kettle": "🫖", "mini-fridge": "🧊", "ping-pong": "🏓",
+    "hula": "💃", "foot-massager": "🦶", "wifi": "📶", "pay-phone": "☎️",
+    "tiki": "🗿", "submarine": "🚢", "bull": "🐂", "barrel": "🛢️",
+    "sharpener": "✏️", "gears": "⚙️", "camp-stove": "🏕️", "exercise-ball": "⚽",
   };
 
   // Fake seller names for enriched detail views
@@ -541,6 +587,17 @@
             <p class="text-2xl font-black text-emerald-400">{formatPrice(askingPrice)}</p>
           </div>
           <p class="text-sm text-gray-400">{item.description}</p>
+
+          {#if characteristics.length > 0}
+            <div class="flex flex-wrap gap-2 pt-1">
+              {#each characteristics as trait}
+                <span class="inline-flex items-center gap-1 bg-gray-700 border border-gray-600 rounded-full px-2.5 py-1 text-xs">
+                  <span class="text-gray-400">{trait.label}:</span>
+                  <span class="text-white font-semibold">{trait.value}</span>
+                </span>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <div class="text-center">
@@ -622,11 +679,32 @@
     </div>
 
   {:else if subPhase === "results"}
-    <div class="w-full max-w-sm space-y-4 text-center">
-      <h2 class="text-xl font-black text-emerald-400">Round Results</h2>
+    <div class="w-full max-w-sm space-y-4 overflow-y-auto max-h-[85vh]">
+      <div class="text-center sticky top-0 bg-gray-900 pb-2 z-10">
+        <h2 class="text-xl font-black text-emerald-400">Round Results</h2>
+      </div>
 
+      <!-- Item details -->
+      {#if resultItem}
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="text-3xl">{emojiFor(resultItem.imageHint)}</span>
+            <div class="flex-1 min-w-0">
+              <p class="font-black text-white text-lg leading-tight">{resultItem.name}</p>
+              <p class="text-xs text-emerald-400 font-bold">{resultItem.category}</p>
+            </div>
+          </div>
+          <p class="text-sm text-gray-300 mb-2">{resultItem.description}</p>
+          <div class="flex items-center gap-4 text-xs text-gray-400">
+            <span>Asking: <span class="text-white font-bold">{formatPrice(resultItem.askingPrice)}</span></span>
+            <span>Reserve: <span class="text-yellow-400 font-bold">{formatPrice(resultReserve)}</span></span>
+          </div>
+        </div>
+      {/if}
+
+      <!-- My result highlight -->
       {#if myRanking}
-        <div class="bg-gray-800 rounded-xl p-4">
+        <div class="bg-gray-800 rounded-xl p-4 text-center">
           <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Your Bid</p>
           <p class="text-2xl font-black {myRanking.accepted ? 'text-emerald-400' : 'text-red-400'}">
             {formatPrice(myRanking.amount)}
@@ -636,21 +714,46 @@
               ? myRanking.rank === 1 ? 'BEST DEAL! Winner!' : `Accepted - Rank #${myRanking.rank}`
               : 'REJECTED - Below reserve'}
           </p>
+          <p class="text-2xl font-black mt-2 {myScore > 0 ? 'text-green-400' : 'text-gray-500'}">
+            +{myScore}
+          </p>
         </div>
       {/if}
 
-      <div class="bg-gray-800 rounded-xl p-4">
-        <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Points This Round</p>
-        <p class="text-3xl font-black {myScore > 0 ? 'text-green-400' : 'text-gray-500'}">
-          +{myScore}
-        </p>
-      </div>
-
-      <div class="bg-gray-800/50 rounded-xl p-3">
-        <p class="text-xs text-gray-500">
-          Reserve was {formatPrice(resultReserve)}
-        </p>
-      </div>
+      <!-- All bids -->
+      {#if rankings.length > 0}
+        <div class="bg-gray-800/50 rounded-xl p-3 space-y-2">
+          <p class="text-xs text-gray-400 uppercase tracking-widest text-center mb-1">All Bids</p>
+          {#each rankings.filter(r => r.accepted) as r}
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg
+              {r.playerId === me?.id ? 'bg-emerald-900/30 border border-emerald-700' : ''}">
+              <span class="text-xs text-emerald-400 font-bold w-6">#{r.rank}</span>
+              <span class="flex-1 text-sm text-white truncate
+                {r.rank === 1 ? 'font-black' : 'font-medium'}">
+                {r.playerName}
+                {#if r.rank === 1}<span class="text-yellow-400 text-xs ml-1">WINNER</span>{/if}
+              </span>
+              <span class="text-sm font-mono text-emerald-400">{formatPrice(r.amount)}</span>
+              <span class="text-xs text-green-400 font-bold">+{r.pointsEarned}</span>
+            </div>
+          {/each}
+          <!-- Reserve line -->
+          <div class="flex items-center gap-2 px-2 py-1">
+            <span class="flex-1 border-t border-dashed border-yellow-600"></span>
+            <span class="text-xs text-yellow-400 font-bold whitespace-nowrap">RESERVE {formatPrice(resultReserve)}</span>
+            <span class="flex-1 border-t border-dashed border-yellow-600"></span>
+          </div>
+          {#each rankings.filter(r => !r.accepted) as r}
+            <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg opacity-50
+              {r.playerId === me?.id ? 'bg-red-900/30 border border-red-800' : ''}">
+              <span class="text-xs text-red-400 font-bold w-6">x</span>
+              <span class="flex-1 text-sm text-gray-300 truncate">{r.playerName}</span>
+              <span class="text-sm font-mono text-red-400">{formatPrice(r.amount)}</span>
+              <span class="text-xs text-gray-500">+0</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
     </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -752,10 +855,7 @@
                 >Back to List</button>
                 <button
                   class="py-3 rounded-lg font-bold transition-all active:scale-95
-                    {fmPickConfirmed
-                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                      : 'bg-emerald-600 text-white active:bg-emerald-500'}"
-                  disabled={fmPickConfirmed}
+                    bg-emerald-600 text-white active:bg-emerald-500"
                   on:click={fmConfirmPick}
                 >Send Message</button>
               </div>
@@ -796,10 +896,14 @@
       {#if fmWriteItem}
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-3 flex items-center gap-3">
           <span class="text-3xl">{emojiFor(fmWriteItem.imageHint)}</span>
-          <div>
+          <div class="flex-1 min-w-0">
             <p class="font-bold text-white">{fmWriteItem.name}</p>
             <p class="text-xs text-emerald-400">{formatPrice(fmWriteItem.askingPrice)}</p>
           </div>
+          <button
+            class="text-xs text-gray-400 underline flex-shrink-0 active:text-white"
+            on:click={fmBackToBrowsing}
+          >Change</button>
         </div>
       {/if}
 
@@ -891,20 +995,27 @@
 
   {:else if subPhase === "fm_results"}
     <!-- Funny Messages results -->
-    <div class="w-full max-w-sm space-y-4 text-center">
-      <h2 class="text-xl font-black text-emerald-400">Results</h2>
+    <div class="w-full max-w-sm space-y-4 overflow-y-auto max-h-[85vh]">
+      <div class="text-center sticky top-0 bg-gray-900 pb-2 z-10">
+        <h2 class="text-xl font-black text-emerald-400">Results</h2>
+      </div>
 
       {#if fmResults}
+        <!-- Winner highlight -->
         {#if fmResults.winner}
           {@const winnerEntry = fmResults.entries.find((e) => e.playerId === fmResults?.winner)}
-          <div class="bg-yellow-900/60 border border-yellow-500 rounded-xl p-4">
+          <div class="bg-yellow-900/60 border border-yellow-500 rounded-xl p-4 text-center">
             <p class="text-xs text-yellow-400 uppercase tracking-widest mb-1">Funniest Message</p>
             <p class="text-2xl font-black text-yellow-200">{winnerEntry?.playerName ?? "???"}</p>
             <p class="text-sm text-yellow-400 mt-1">{winnerEntry?.voteCount ?? 0} votes</p>
+            {#if winnerEntry?.message}
+              <p class="text-sm text-yellow-100/80 mt-2 italic">"{winnerEntry.message}"</p>
+            {/if}
           </div>
         {/if}
 
-        <div class="bg-gray-800 rounded-xl p-4">
+        <!-- My score -->
+        <div class="bg-gray-800 rounded-xl p-4 text-center">
           <p class="text-xs text-gray-400 uppercase tracking-widest mb-1">Your Score</p>
           <p class="text-3xl font-black {fmMyScore > 0 ? 'text-green-400' : 'text-gray-500'}">
             +{fmMyScore}
@@ -915,6 +1026,31 @@
             </p>
           {/if}
         </div>
+
+        <!-- All entries -->
+        {#if fmResults.entries.length > 0}
+          <div class="space-y-2">
+            <p class="text-xs text-gray-400 uppercase tracking-widest text-center">All Messages</p>
+            {#each [...fmResults.entries].sort((a, b) => b.voteCount - a.voteCount) as entry, i}
+              <div class="bg-gray-800/50 rounded-xl p-3
+                {entry.playerId === me?.id ? 'border border-emerald-700 bg-emerald-900/20' : 'border border-gray-700/50'}">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs text-gray-500 font-mono w-5">#{i + 1}</span>
+                  <span class="flex-1 text-sm font-bold text-white truncate">
+                    {entry.playerName}
+                    {#if entry.playerId === fmResults.winner}
+                      <span class="text-yellow-400 text-xs ml-1">WINNER</span>
+                    {/if}
+                  </span>
+                  <span class="text-xs text-emerald-400 font-bold">{entry.voteCount}v</span>
+                  <span class="text-xs text-green-400">+{fmResults.scores[entry.playerId] ?? 0}</span>
+                </div>
+                <p class="text-xs text-gray-400 mb-1">{entry.itemName} &middot; {entry.itemCategory}</p>
+                <p class="text-sm text-gray-200 italic">"{entry.message}"</p>
+              </div>
+            {/each}
+          </div>
+        {/if}
       {/if}
     </div>
   {/if}

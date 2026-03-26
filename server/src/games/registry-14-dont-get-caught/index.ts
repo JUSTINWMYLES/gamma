@@ -8,8 +8,7 @@
  * • Players spawn on a procedurally-generated tile map and move via joystick
  *   or device tilt.
  * • Guards patrol waypoints and respect walls (axis-sliding collision).
- * • Each round the map is regenerated and one extra guard appears
- *   (round 1 = 1 guard, round 2 = 2, …, max 4).
+ * • 4 guards from round 1; 5 guards on the final round (max 5).
  * • If a guard has LOS to a player, that player's detection meter fills.
  *   Detection is faster when the player is near the centre of the guard's
  *   vision cone (direct line of sight boost).
@@ -43,6 +42,8 @@
 
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { buildBracket, advanceBracket, resolveHeat } from "../../utils/bracket";
+import { Heat, BracketState } from "../../schema/BracketState";
 import {
   GAME_MAP,
   getPatrolPath,
@@ -52,6 +53,7 @@ import {
   refreshLegacyExports,
   getCurrentTiles,
   isWalkable,
+  findPath,
   MAP_WIDTH,
   MAP_HEIGHT,
 } from "../../utils/tilemap";
@@ -72,7 +74,7 @@ const BASE_DETECTION_INCREMENT = 2;
 const DETECTION_PROXIMITY_MULTIPLIER = 2;
 const DETECTION_DECREMENT = 2;
 
-const BASE_GUARD_SPEED = 1.8;       // tiles/s
+const BASE_GUARD_SPEED = 2.2;       // tiles/s
 const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
@@ -89,7 +91,7 @@ const DIRECT_LOS_MULTIPLIER = 4; // 4x faster detection when dead center
 const GUARD_HALF = 0.45;
 
 /** Max guards regardless of round number. */
-const MAX_GUARDS = 4;
+const MAX_GUARDS = 5;
 
 /** Angle lerp rate (radians/tick) — controls how quickly guard turns. Higher = snappier. */
 const ANGLE_LERP_RATE = 0.12;
@@ -131,7 +133,21 @@ interface GuardRuntime {
   /** Current lateral wander offset (tiles) applied to waypoint target. */
   wanderX: number;
   wanderY: number;
+  /** BFS-computed path (list of tile centres). Empty = no active path. */
+  bfsPath: Array<{ x: number; y: number }>;
+  /** Tick count since last BFS recompute — prevents recomputing every tick. */
+  bfsAge: number;
+  /** Previous position for stuck detection. */
+  prevX: number;
+  prevY: number;
+  /** Number of consecutive ticks with negligible movement. */
+  stuckTicks: number;
 }
+
+/** Number of ticks with negligible movement before forcing BFS recompute. */
+const STUCK_TICK_THRESHOLD = 4;
+/** Distance threshold (tiles) below which a guard is considered "not moving". */
+const STUCK_DISTANCE_THRESHOLD = 0.02;
 
 // ── Angle lerp helper ─────────────────────────────────────────────────────────
 
@@ -147,7 +163,7 @@ function lerpAngle(current: number, target: number, t: number): number {
 
 export default class DontGetCaughtGame extends BaseGame {
   static override requiresTV = false;
-  static override supportsBracket = false;
+  static override supportsBracket = true;
   static override defaultRoundCount = 3;
   static override minRounds = 1;
   static override maxRounds = 5;
@@ -165,6 +181,9 @@ export default class DontGetCaughtGame extends BaseGame {
   private currentRound = 0;
   private guardRuntimes: GuardRuntime[] = [];
 
+  /** Seed for bracket randomization. */
+  private bracketSeed = 0;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
@@ -179,6 +198,155 @@ export default class DontGetCaughtGame extends BaseGame {
       p.isEliminated = false;
       p.isReady = false;
     }
+
+    this.bracketSeed = Date.now();
+
+    // If bracket mode, build the bracket
+    if (this.room.state.gameConfig.matchMode === "1v1_bracket") {
+      const playerIds = [...this.room.state.players.values()]
+        .filter((p) => p.isConnected)
+        .map((p) => p.id);
+      // Use 3-4 player heats depending on count
+      const heatSize = playerIds.length <= 6 ? 2 : playerIds.length <= 12 ? 3 : 4;
+      const bracket = buildBracket(playerIds, this.bracketSeed, { heatSize, advanceCount: 1 });
+      this.room.state.bracket = bracket;
+    }
+  }
+
+  /**
+   * Override runRounds for bracket mode.
+   * All players in the bracket round play simultaneously on the same map.
+   * After scoring, each heat is resolved: the player with fewest catches advances.
+   */
+  protected override async runRounds(): Promise<void> {
+    if (this.room.state.gameConfig.matchMode !== "1v1_bracket") {
+      return super.runRounds();
+    }
+
+    const bracket = this.room.state.bracket;
+
+    this.broadcast("bracket_init", {
+      totalPlayers: [...this.room.state.players.values()].filter((p) => p.isConnected).length,
+      heatSize: bracket.heatSize,
+    });
+
+    let bracketRoundNum = 0;
+
+    while (true) {
+      const currentBracketRound = bracket.rounds[bracket.currentRound];
+      if (!currentBracketRound) break;
+
+      const pendingHeats = currentBracketRound.heats.filter(
+        (h: Heat) => h.status !== "complete",
+      );
+
+      if (pendingHeats.length === 0) {
+        const advancers: string[] = [];
+        for (const h of currentBracketRound.heats) {
+          for (const aid of h.advancingIds) {
+            if (aid) advancers.push(aid);
+          }
+        }
+
+        if (advancers.length <= 1) break;
+
+        for (const p of this.room.state.players.values()) {
+          if (!p.isEliminated && !advancers.includes(p.id)) {
+            p.isEliminated = true;
+          }
+        }
+
+        advanceBracket(bracket, this.bracketSeed);
+
+        this.broadcast("bracket_round_advance", {
+          newRound: bracket.currentRound + 1,
+          remainingPlayers: advancers.length,
+        });
+
+        await this.delay(3000);
+        continue;
+      }
+
+      bracketRoundNum++;
+      this.room.state.currentRound = bracketRoundNum;
+
+      this.broadcast("bracket_heat_round", {
+        bracketRound: bracket.currentRound + 1,
+        heats: ([...currentBracketRound.heats] as Heat[]).map((h) => ({
+          id: h.id,
+          playerIds: [...h.playerIds],
+          status: h.status,
+        })),
+      });
+
+      for (const h of pendingHeats) {
+        h.status = "in_progress";
+      }
+
+      // Reset per-round elimination (bracket uses its own elimination, not in-round elimination)
+      for (const p of this.room.state.players.values()) {
+        if (!p.isEliminated) {
+          p.timesCaught = 0;
+          p.detectionMeter = 0;
+          p.isDetected = false;
+        }
+      }
+
+      this.setPhase("countdown");
+      await this.delay(3000);
+
+      this.setPhase("in_round");
+      this.room.state.phaseStartedAt = Date.now();
+      await this.delay(500);
+
+      await this.runRound(bracketRoundNum);
+      this.scoreRound(bracketRoundNum);
+
+      // Resolve heats: rank by survival (fewer catches, lower detection)
+      for (const heat of pendingHeats) {
+        const heatPlayerIds = [...heat.playerIds].filter((id): id is string => !!id);
+        const ranked = this._rankPlayersForBracket(heatPlayerIds);
+
+        if (ranked.length > 0) {
+          const advanceCount = bracket.advanceCount;
+          const advancing = ranked.slice(0, advanceCount).map((r) => r.playerId);
+          resolveHeat(heat, advancing);
+        } else {
+          heat.status = "complete";
+        }
+      }
+
+      // Un-eliminate players who were caught out during the round (bracket handles real elimination)
+      for (const p of this.room.state.players.values()) {
+        // Keep bracket-eliminated players eliminated, but restore round-eliminated ones
+        // (we'll re-eliminate bracket losers in the advance step above)
+        if (p.isEliminated) {
+          // Check if this player is still in any pending/upcoming heat
+          const stillInBracket = this._isPlayerInBracket(p.id, bracket);
+          if (stillInBracket) {
+            p.isEliminated = false;
+          }
+        }
+      }
+
+      this.setPhase("round_end");
+      await this.delay(4000);
+    }
+
+    const finalRound = bracket.rounds[bracket.currentRound];
+    if (finalRound) {
+      const champion = finalRound.heats[0]?.advancingIds[0];
+      if (champion) {
+        const champPlayer = this.room.state.players.get(champion);
+        this.broadcast("bracket_champion", {
+          championId: champion,
+          championName: champPlayer?.name ?? "Unknown",
+        });
+      }
+    }
+
+    this.setPhase("scoreboard");
+    await this.delay(6000);
   }
 
   protected override async runRound(round: number): Promise<void> {
@@ -210,7 +378,9 @@ export default class DontGetCaughtGame extends BaseGame {
     });
 
     // Spawn guards spread across the map, away from players
-    const guardCount = Math.min(round, MAX_GUARDS);
+    // 4 guards from round 1, MAX_GUARDS on the last round
+    const totalRounds = this.room.state.gameConfig.roundCount;
+    const guardCount = round >= totalRounds ? MAX_GUARDS : 4;
     this._spawnGuards(guardCount);
 
     const roundDurationMs = this.room.state.gameConfig.timeLimitSecs * 1000;
@@ -327,6 +497,11 @@ export default class DontGetCaughtGame extends BaseGame {
         rngSeed: i * 31337 + 997,
         wanderX: 0,
         wanderY: 0,
+        bfsPath: [],
+        bfsAge: 0,
+        prevX: g.x,
+        prevY: g.y,
+        stuckTicks: 0,
       });
     }
   }
@@ -355,24 +530,49 @@ export default class DontGetCaughtGame extends BaseGame {
       rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
       const rand = rt.rngSeed / 0x100000000;
 
-      // Chase mode: move directly towards target
+      rt.bfsAge++;
+
+      // Chase mode: pathfind towards target player
       if (guard.guardMode === "chase" && guard.targetPlayerId) {
         const target = this.room.state.players.get(guard.targetPlayerId);
         if (!target || target.isEliminated || !target.isConnected) {
           guard.guardMode = "patrol";
           guard.targetPlayerId = "";
+          rt.bfsPath = [];
         } else {
-          const result = this._moveTowardsSmooth(
-            guard,
-            target.x,
-            target.y,
-            this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
-          );
-          // If guard is fully blocked by walls during chase, drop back to patrol
-          // so it doesn't get permanently stuck against a wall.
-          if (result.blocked) {
-            guard.guardMode = "patrol";
-            guard.targetPlayerId = "";
+          // Recompute BFS path every 10 ticks (0.5s) or if no path
+          if (rt.bfsPath.length === 0 || rt.bfsAge >= 10) {
+            const newPath = findPath(guard.x, guard.y, target.x, target.y, 300);
+            if (newPath && newPath.length > 0) {
+              rt.bfsPath = newPath;
+            }
+            rt.bfsAge = 0;
+          }
+
+          // Follow BFS path
+          if (rt.bfsPath.length > 0) {
+            const nextWp = rt.bfsPath[0];
+            const result = this._moveTowardsSmooth(
+              guard, nextWp.x, nextWp.y,
+              this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
+            );
+            if (result.arrived) {
+              rt.bfsPath.shift();
+            } else if (result.blocked) {
+              // Path step blocked — recompute next tick
+              rt.bfsPath = [];
+              rt.bfsAge = 10;
+            }
+          } else {
+            // No BFS path — fall back to direct movement (close range)
+            const result = this._moveTowardsSmooth(
+              guard, target.x, target.y,
+              this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
+            );
+            if (result.blocked) {
+              guard.guardMode = "patrol";
+              guard.targetPlayerId = "";
+            }
           }
           continue;
         }
@@ -432,18 +632,77 @@ export default class DontGetCaughtGame extends BaseGame {
         rt.wanderY = 0;
       }
 
+      // Try direct movement first; if blocked, use BFS pathfinding
       const moveResult = this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt);
+
+      // ── Stuck detection: track position delta across ticks ──
+      const posDx = guard.x - rt.prevX;
+      const posDy = guard.y - rt.prevY;
+      const posDist = Math.sqrt(posDx * posDx + posDy * posDy);
+      rt.prevX = guard.x;
+      rt.prevY = guard.y;
+
+      if (posDist < STUCK_DISTANCE_THRESHOLD) {
+        rt.stuckTicks++;
+      } else {
+        rt.stuckTicks = 0;
+      }
+
+      // If stuck for too many ticks, force BFS recompute and clear wander
+      const isStuck = rt.stuckTicks >= STUCK_TICK_THRESHOLD;
+      if (isStuck) {
+        rt.wanderX = 0;
+        rt.wanderY = 0;
+        rt.bfsPath = [];
+        rt.bfsAge = 999; // force recompute below
+        // Recompute target without wander
+        targetX = waypoint.x + 0.5;
+        targetY = waypoint.y + 0.5;
+      }
+
       if (moveResult.arrived) {
         guard.patrolIndex =
           (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
         rt.wanderX = 0;
         rt.wanderY = 0;
-      } else if (moveResult.blocked) {
-        // Guard is fully blocked patrolling — reset wander and advance to next waypoint
-        rt.wanderX = 0;
-        rt.wanderY = 0;
-        guard.patrolIndex =
-          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+        rt.bfsPath = [];
+        rt.stuckTicks = 0;
+      } else if (moveResult.blocked || isStuck) {
+        // Guard is stuck — use BFS to navigate around the wall
+        if (rt.bfsPath.length === 0 || rt.bfsAge >= 6) {
+          const newPath = findPath(guard.x, guard.y, targetX, targetY, 200);
+          if (newPath && newPath.length > 0) {
+            rt.bfsPath = newPath;
+          } else {
+            // No path found — skip to next waypoint
+            rt.wanderX = 0;
+            rt.wanderY = 0;
+            guard.patrolIndex =
+              (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+            rt.bfsPath = [];
+            rt.stuckTicks = 0;
+          }
+          rt.bfsAge = 0;
+        }
+
+        // Follow BFS path step
+        if (rt.bfsPath.length > 0) {
+          const nextStep = rt.bfsPath[0];
+          const bfsResult = this._moveTowardsSmooth(guard, nextStep.x, nextStep.y, this.guardSpeed * dt);
+          if (bfsResult.arrived) {
+            rt.bfsPath.shift();
+            rt.stuckTicks = 0;
+          } else if (bfsResult.blocked) {
+            // BFS step also blocked — recompute
+            rt.bfsPath = [];
+            rt.bfsAge = 6;
+          }
+        }
+      } else {
+        // Moving fine with direct movement — clear any stale BFS path
+        if (rt.bfsPath.length > 0) {
+          rt.bfsPath = [];
+        }
       }
     }
   }
@@ -701,6 +960,61 @@ export default class DontGetCaughtGame extends BaseGame {
       isWalkable(Math.floor(x - h), Math.floor(y + h)) &&
       isWalkable(Math.floor(x + h), Math.floor(y + h))
     );
+  }
+
+  // ── Bracket helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Rank players within a bracket heat by survival performance.
+   * Best rank (1) = fewest catches, then lowest detection meter as tiebreak.
+   */
+  private _rankPlayersForBracket(
+    playerIds: string[],
+  ): { playerId: string; rank: number }[] {
+    const results = playerIds.map((pid) => {
+      const catches = this.caughtThisRound.get(pid) ?? 0;
+      const player = this.room.state.players.get(pid);
+      const meter = player?.detectionMeter ?? 100;
+      const eliminated = player?.isEliminated ?? true;
+      return { playerId: pid, catches, meter, eliminated };
+    });
+
+    // Sort: non-eliminated before eliminated, fewer catches first, lower meter first
+    results.sort((a, b) => {
+      if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+      if (a.catches !== b.catches) return a.catches - b.catches;
+      return a.meter - b.meter;
+    });
+
+    return results.map((r, i) => ({ playerId: r.playerId, rank: i + 1 }));
+  }
+
+  /**
+   * Check whether a player still appears in any non-complete heat in the
+   * current or future bracket rounds (i.e. they haven't been eliminated
+   * from the bracket yet).
+   */
+  private _isPlayerInBracket(playerId: string, bracket: BracketState): boolean {
+    for (let ri = bracket.currentRound; ri < bracket.rounds.length; ri++) {
+      const round = bracket.rounds[ri];
+      if (!round) continue;
+      for (const heat of round.heats) {
+        if (heat.status === "complete") continue;
+        for (const pid of heat.playerIds) {
+          if (pid === playerId) return true;
+        }
+      }
+    }
+    // Also check if the player was an advancer in the current round
+    const currentRound = bracket.rounds[bracket.currentRound];
+    if (currentRound) {
+      for (const heat of currentRound.heats) {
+        for (const aid of heat.advancingIds) {
+          if (aid === playerId) return true;
+        }
+      }
+    }
+    return false;
   }
 
   // ── Round end ─────────────────────────────────────────────────────────────

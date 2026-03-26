@@ -8,48 +8,65 @@
   export let state: RoomState;
 
   type FireStage = "strike" | "blow" | "shake" | "extinguish";
-  type GamePhase = "waiting" | "active" | "stage_complete" | "round_success" | "round_done";
+  type GamePhase = "waiting" | "active" | "round_end";
 
   let phase: GamePhase = "waiting";
-  let currentStage: FireStage = "strike";
-  let stageIndex = 0;
   let totalStages = 4;
 
-  let target = 0;
-  let current = 0;
-  let fireLevel = 0;
-  let invertedProgress = false;
+  // Timer
   let timeLeft = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
   let endAt = 0;
 
-  let standings: { playerId: string; playerName: string; contribution: number }[] = [];
+  // Per-player states from server updates.
+  interface PlayerDisplay {
+    playerId: string;
+    playerName: string;
+    stageIndex: number;
+    stage: FireStage | null;
+    current: number;
+    target: number;
+    totalContribution: number;
+    finished: boolean;
+  }
+  let players: PlayerDisplay[] = [];
 
-  // Campfire intensity (same mapping as player component)
+  // Round-end results.
+  interface RoundResult {
+    playerId: string;
+    playerName: string;
+    finished: boolean;
+    stagesCompleted: number;
+    totalContribution: number;
+  }
+  let roundResults: RoundResult[] = [];
+  let allFinished = false;
+
+  // Per-player campfire intensity calculation
   const STAGE_INTENSITY: Record<FireStage, [number, number]> = {
-    strike:     [0.0,  0.15],
-    blow:       [0.15, 0.45],
-    shake:      [0.45, 0.85],
-    extinguish: [0.85, 0.0],
+    strike:     [0.0,  0.25],
+    blow:       [0.25, 0.60],
+    shake:      [0.60, 1.0],
+    extinguish: [1.0,  0.0],
   };
-  let fireIntensity = 0;
 
-  $: {
-    const [from, to] = STAGE_INTENSITY[currentStage] ?? [0, 0];
-    const pct = target > 0
-      ? invertedProgress
-        ? 1 - fireLevel / target
-        : current / target
-      : 0;
-    const clampedPct = Math.max(0, Math.min(1, pct));
-    fireIntensity = from + (to - from) * clampedPct;
+  /** Compute fire intensity for a single player. */
+  function playerIntensity(p: PlayerDisplay): number {
+    if (p.finished) return 0;
+    if (!p.stage) return 0;
+    const [from, to] = STAGE_INTENSITY[p.stage] ?? [0, 0];
+    const pct = p.target > 0 ? Math.min(1, p.current / p.target) : 0;
+    return from + (to - from) * pct;
   }
 
+  // Canvas size adapts to number of players
+  $: campfireSize = players.length <= 2 ? 280 : players.length <= 4 ? 200 : 160;
+
   const STAGE_LABELS: Record<FireStage, string> = {
-    strike: "Striking the Match",
-    blow: "Blowing on the Fire",
-    shake: "Fanning the Flames",
-    extinguish: "Putting Out the Fire",
+    strike: "Strike",
+    blow: "Blow",
+    shake: "Shake",
+    extinguish: "Extinguish",
   };
 
   const STAGE_EMOJIS: Record<FireStage, string> = {
@@ -59,8 +76,8 @@
     extinguish: "🧯",
   };
 
-  function startTimer(durationMs: number, serverTimestamp: number) {
-    endAt = serverTimestamp + durationMs;
+  function startTimer(totalDurationMs: number, serverTimestamp: number) {
+    endAt = serverTimestamp + totalDurationMs;
     if (timer) clearInterval(timer);
     timer = setInterval(() => {
       timeLeft = Math.max(0, (endAt - Date.now()) / 1000);
@@ -74,61 +91,58 @@
   const stageNames: FireStage[] = ["strike", "blow", "shake", "extinguish"];
 
   onMount(() => {
-    room.onMessage("fire_round_start", () => {
-      phase = "waiting";
-      fireIntensity = 0;
-    });
-
-    room.onMessage("fire_stage_start", (d: {
-      stage: FireStage;
-      stageIndex: number;
+    room.onMessage("fire_round_start", (d: {
       totalStages: number;
-      target: number;
-      durationMs: number;
+      totalDurationMs: number;
       serverTimestamp: number;
-      invertedProgress: boolean;
+      players: { playerId: string; playerName: string; stageIndex: number; stage: string; current: number; target: number; finished: boolean }[];
     }) => {
       phase = "active";
-      currentStage = d.stage;
-      stageIndex = d.stageIndex;
       totalStages = d.totalStages;
-      target = d.target;
-      current = 0;
-      fireLevel = d.invertedProgress ? d.target : 0;
-      invertedProgress = d.invertedProgress;
-      standings = [];
-      startTimer(d.durationMs, d.serverTimestamp);
+      roundResults = [];
+      allFinished = false;
+
+      players = d.players.map((p) => ({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        stageIndex: p.stageIndex,
+        stage: p.stage as FireStage,
+        current: p.current,
+        target: p.target,
+        totalContribution: 0,
+        finished: p.finished,
+      }));
+
+      startTimer(d.totalDurationMs, d.serverTimestamp);
     });
 
-    room.onMessage("fire_stage_update", (d: {
-      stage: FireStage;
-      current: number;
-      target: number;
-      fireLevel: number;
+    room.onMessage("fire_update", (d: {
       timeLeftMs: number;
-      standings: { playerId: string; playerName: string; contribution: number }[];
-      invertedProgress: boolean;
+      players: { playerId: string; playerName: string; stageIndex: number; stage: string | null; current: number; target: number; totalContribution: number; finished: boolean }[];
     }) => {
-      current = d.current;
-      target = d.target;
-      fireLevel = d.fireLevel;
-      invertedProgress = d.invertedProgress;
       timeLeft = Math.max(0, d.timeLeftMs / 1000);
-      standings = [...d.standings].sort((a, b) => b.contribution - a.contribution);
+      players = d.players.map((p) => ({
+        playerId: p.playerId,
+        playerName: p.playerName,
+        stageIndex: p.stageIndex,
+        stage: p.stage as FireStage | null,
+        current: p.current,
+        target: p.target,
+        totalContribution: p.totalContribution,
+        finished: p.finished,
+      }));
     });
 
-    room.onMessage("fire_stage_end", (d: { stage: FireStage; success: boolean }) => {
-      phase = "stage_complete";
-      clearTimerInterval();
-    });
-
-    room.onMessage("fire_round_success", () => {
-      phase = "round_success";
-      clearTimerInterval();
-    });
-
-    room.onMessage("fire_round_done", () => {
-      phase = "round_done";
+    room.onMessage("fire_round_end", (d: {
+      allFinished: boolean;
+      playerResults: { playerId: string; playerName: string; finished: boolean; stagesCompleted: number; totalContribution: number }[];
+    }) => {
+      phase = "round_end";
+      allFinished = d.allFinished;
+      roundResults = d.playerResults.sort((a, b) => {
+        if (a.finished !== b.finished) return a.finished ? -1 : 1;
+        return b.stagesCompleted - a.stagesCompleted || b.totalContribution - a.totalContribution;
+      });
       clearTimerInterval();
     });
   });
@@ -136,99 +150,99 @@
   onDestroy(() => {
     clearTimerInterval();
   });
-
-  $: percent = target > 0
-    ? invertedProgress
-      ? Math.min(100, (1 - fireLevel / target) * 100)
-      : Math.min(100, (current / target) * 100)
-    : 0;
 </script>
 
-<div class="flex-1 flex flex-col items-center justify-center p-10 gap-6">
+<div class="flex-1 flex flex-col items-center justify-center p-8 gap-6">
   <h1 class="text-5xl font-black text-orange-400">Camp Fire</h1>
 
-  <!-- Stage progress bar -->
-  <div class="flex items-center gap-3">
-    {#each stageNames as sn, i}
-      <div class="flex items-center gap-2">
-        <div
-          class="w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all
-            {i < stageIndex ? 'bg-green-500 text-white' : i === stageIndex && phase === 'active' ? 'bg-orange-500 text-white animate-pulse' : 'bg-gray-700 text-gray-400'}"
-        >
-          {i < stageIndex ? '✓' : i + 1}
-        </div>
-        <span class="text-sm uppercase tracking-wider {i === stageIndex ? 'text-orange-300 font-bold' : 'text-gray-500'}">{sn}</span>
-      </div>
-      {#if i < stageNames.length - 1}
-        <div class="w-8 h-0.5 {i < stageIndex ? 'bg-green-500' : 'bg-gray-700'}"></div>
-      {/if}
-    {/each}
-  </div>
+  {#if phase === "active"}
+    <!-- Timer -->
+    <p class="text-7xl font-mono font-black {timeLeft < 10 ? 'text-red-400 animate-pulse' : 'text-white'}">
+      {Math.ceil(timeLeft)}
+    </p>
 
-  <!-- Main content area: campfire + stats side by side -->
-  <div class="flex items-center gap-10">
-    <!-- Campfire -->
-    <div class="flex-shrink-0">
-      <CampfireCanvas intensity={fireIntensity} width={400} height={450} />
-    </div>
+    <!-- Individual campfires for each player -->
+    <div class="flex flex-wrap items-start justify-center gap-6 w-full max-w-6xl">
+      {#each players as p}
+        <div class="flex flex-col items-center gap-2 {p.finished ? 'opacity-60' : ''}">
+          <!-- Player campfire -->
+          <CampfireCanvas intensity={playerIntensity(p)} width={campfireSize} height={Math.round(campfireSize * 1.15)} />
 
-    <!-- Stats panel -->
-    <div class="flex flex-col gap-6 min-w-[300px]">
-      {#if phase === "active"}
-        <!-- Stage label -->
-        <div class="text-center">
-          <p class="text-3xl font-black text-yellow-300">
-            {STAGE_EMOJIS[currentStage]} {STAGE_LABELS[currentStage]}
-          </p>
-        </div>
-
-        <!-- Timer -->
-        <p class="text-center text-7xl font-mono font-black {timeLeft < 5 ? 'text-red-400 animate-pulse' : 'text-white'}">
-          {Math.ceil(timeLeft)}
-        </p>
-
-        <!-- Progress bar -->
-        <div class="w-full bg-gray-800 border border-gray-700 rounded-2xl p-4">
-          <div class="flex justify-between text-gray-300 mb-2 text-sm">
-            <span>Progress</span>
-            <span>{Math.round(percent)}%</span>
+          <!-- Player name + status -->
+          <div class="text-center">
+            <p class="font-bold text-white text-sm truncate max-w-[180px]">{p.playerName}</p>
+            {#if p.finished}
+              <p class="text-green-400 text-xs font-bold uppercase">Done!</p>
+            {:else if p.stage}
+              <p class="text-orange-300 text-xs">
+                {STAGE_EMOJIS[p.stage]} {STAGE_LABELS[p.stage]}
+              </p>
+            {/if}
           </div>
-          <div class="h-6 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              class="h-full transition-all duration-150 rounded-full {invertedProgress ? 'bg-gradient-to-r from-red-500 via-orange-400 to-yellow-300' : 'bg-gradient-to-r from-orange-500 via-amber-400 to-yellow-300'}"
-              style="width:{percent}%"
-            ></div>
-          </div>
-        </div>
 
-      {:else if phase === "stage_complete"}
-        <p class="text-3xl font-black text-green-400 text-center">Stage Complete!</p>
-        <p class="text-xl text-gray-400 text-center">Next stage starting...</p>
-
-      {:else if phase === "round_success"}
-        <p class="text-4xl font-black text-green-400 text-center">All Stages Cleared!</p>
-
-      {:else if phase === "round_done"}
-        <p class="text-4xl font-black text-red-400 text-center">Round Over!</p>
-
-      {:else}
-        <p class="text-2xl text-gray-400 text-center">Get ready...</p>
-      {/if}
-
-      <!-- Contributions leaderboard -->
-      {#if standings.length > 0}
-        <div class="w-full bg-gray-800 border border-gray-700 rounded-xl p-4">
-          <p class="text-xs uppercase tracking-widest text-gray-400 mb-3">Contributions</p>
-          <div class="space-y-2">
-            {#each standings as s}
-              <div class="flex items-center gap-3">
-                <span class="flex-1 text-white font-semibold truncate">{s.playerName}</span>
-                <span class="font-mono text-orange-300">{s.contribution}</span>
-              </div>
+          <!-- Stage dots -->
+          <div class="flex items-center gap-1">
+            {#each stageNames as sn, i}
+              <div class="w-2.5 h-2.5 rounded-full transition-all
+                {i < p.stageIndex ? 'bg-green-400' :
+                 i === p.stageIndex && !p.finished ? 'bg-orange-400 animate-pulse' :
+                 p.finished ? 'bg-green-400' : 'bg-gray-600'}"></div>
+              {#if i < stageNames.length - 1}
+                <div class="w-2 h-px {i < p.stageIndex ? 'bg-green-400' : 'bg-gray-700'}"></div>
+              {/if}
             {/each}
           </div>
+
+          <!-- Progress bar -->
+          {#if !p.finished && p.target > 0}
+            {@const pct = Math.min(100, (p.current / p.target) * 100)}
+            <div class="w-full max-w-[180px] h-2 bg-gray-700 rounded-full overflow-hidden">
+              <div
+                class="h-full transition-all duration-150 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400"
+                style="width:{pct}%"
+              ></div>
+            </div>
+          {:else if p.finished}
+            <div class="w-full max-w-[180px] h-2 bg-green-500/30 rounded-full overflow-hidden">
+              <div class="h-full bg-green-400 rounded-full" style="width:100%"></div>
+            </div>
+          {/if}
+
+          <p class="text-[10px] text-gray-500">Effort: {p.totalContribution}</p>
         </div>
-      {/if}
+      {/each}
     </div>
-  </div>
+
+  {:else if phase === "round_end"}
+    <!-- Round results -->
+    <div class="flex items-center gap-10 w-full max-w-5xl">
+      <div class="flex-shrink-0">
+        <CampfireCanvas intensity={allFinished ? 0 : 0.3} width={300} height={350} />
+      </div>
+
+      <div class="flex-1 space-y-4">
+        <h2 class="text-3xl font-black {allFinished ? 'text-green-400' : 'text-red-400'} text-center">
+          {allFinished ? 'Everyone finished!' : "Time's up!"}
+        </h2>
+
+        <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-3">
+          <p class="text-xs uppercase tracking-widest text-gray-400 mb-3">Results</p>
+          {#each roundResults as r, rank}
+            <div class="flex items-center gap-3">
+              <span class="w-6 text-right font-mono text-gray-500 text-sm">{rank + 1}.</span>
+              <span class="flex-1 font-semibold {r.finished ? 'text-green-300' : 'text-gray-300'} truncate">{r.playerName}</span>
+              <span class="text-xs text-gray-400">{r.stagesCompleted}/{totalStages} stages</span>
+              {#if r.finished}
+                <span class="text-green-400 text-xs font-bold">DONE</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
+
+  {:else}
+    <p class="text-2xl text-gray-400">Get ready...</p>
+    <CampfireCanvas intensity={0} width={350} height={400} />
+  {/if}
 </div>

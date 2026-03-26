@@ -3,6 +3,9 @@
   import type { RoomState, PlayerState } from "../../../shared/types";
   import { GAME_REGISTRY, getGameUnavailableReason } from "../../../shared/types";
   import { onMount } from "svelte";
+  import GameDetailView from "../components/GameDetailView.svelte";
+  import PlayerCustomizer from "../components/PlayerCustomizer.svelte";
+  import PlayerIcon from "../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -22,6 +25,10 @@
     2: "Host is choosing activity level…",
     3: "Host is choosing display setup…",
   };
+
+  // ── Player customization panel ───────────────────────────────────────────
+  let showCustomizer = false;
+  $: hasCustomIcon = !!(me?.iconEmoji || me?.iconText);
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -66,6 +73,54 @@
     room.send("update_config", patch);
   }
 
+  // ── Touch discrimination ────────────────────────────────────────────────
+  // On mobile, scrolling through the game list can falsely trigger a tap.
+  // Track touchstart position and only treat it as a tap if the finger
+  // moved less than 10 px.
+  let touchStartY = 0;
+  let touchMoved = false;
+
+  function onTouchStart(e: TouchEvent) {
+    touchStartY = e.touches[0].clientY;
+    touchMoved = false;
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (Math.abs(e.touches[0].clientY - touchStartY) > 10) {
+      touchMoved = true;
+    }
+  }
+
+  function onGameTap(id: string, unavailable: string | null) {
+    if (touchMoved || unavailable) return;
+    selectGame(id);
+  }
+
+  // ── Game detail overlay ─────────────────────────────────────────────────
+  let detailGameId: string | null = null;
+  $: detailGame = detailGameId ? GAME_REGISTRY.find((g) => g.id === detailGameId) ?? null : null;
+
+  const DETAIL_THEMES: Record<string, { accent: string; bg: string }> = {
+    "registry-03-tap-speed": { accent: "#ff6020", bg: "radial-gradient(ellipse at 50% 100%, #3d0e00, #0d0200)" },
+    "registry-04-escape-maze": { accent: "#70e870", bg: "radial-gradient(ellipse at 50% 60%, #0a200a, #040a03)" },
+    "registry-06-sound-replication": { accent: "#d080ff", bg: "radial-gradient(ellipse at 50% 50%, #1a0030, #06000e)" },
+    "registry-07-hot-potato": { accent: "#ff9050", bg: "radial-gradient(ellipse at 50% 80%, #3d0a00, #0d0302)" },
+    "registry-14-dont-get-caught": { accent: "#c8c8c8", bg: "#050505" },
+    "registry-17-fire-match-blow-shake": { accent: "#f0c040", bg: "linear-gradient(180deg, #1e1500, #0e0a00)" },
+    "registry-19-shave-the-yak": { accent: "#40f0a0", bg: "radial-gradient(ellipse at 50% 80%, #001e10, #000a06)" },
+    "registry-20-odd-one-out": { accent: "#f060a0", bg: "radial-gradient(ellipse at 50% 50%, #200010, #08000a)" },
+    "registry-25-lowball-marketplace": { accent: "#f0c040", bg: "linear-gradient(180deg, #1e1500, #0e0a00)" },
+    "registry-26-audio-overlay": { accent: "#80a8ff", bg: "#020408" },
+  };
+
+  function openDetail(gameId: string) {
+    detailGameId = gameId;
+  }
+
+  function closeDetail() {
+    detailGameId = null;
+  }
+
   // Start setup on first render if host and not yet started
   onMount(() => {
     if (isHost && setupStep === 0) {
@@ -75,6 +130,22 @@
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="phone-lobby">
+
+  <!-- ── Game detail overlay ──────────────────────────────────── -->
+  {#if detailGame}
+    {@const dTheme = DETAIL_THEMES[detailGame.id] ?? { accent: "#818cf8", bg: "#050505" }}
+    {@const dUnavailable = getGameUnavailableReason(detailGame, state)}
+    <GameDetailView
+      game={detailGame}
+      accent={dTheme.accent}
+      artBg={dTheme.bg}
+      {isHost}
+      isSelected={state.selectedGame === detailGame.id}
+      unavailableReason={dUnavailable}
+      on:back={closeDetail}
+      on:select={(e) => { selectGame(e.detail.gameId); closeDetail(); }}
+    />
+  {/if}
 
   <!-- ── Room code (always visible) ──────────────────────────────── -->
   <div class="text-center">
@@ -190,25 +261,34 @@
     <!-- Game selection / display -->
     {#if isHost}
       <!-- Host: interactive game picker -->
-      <div class="w-full max-w-xs space-y-2">
+      <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
         {#each GAME_REGISTRY as g}
           {@const unavailableReason = getGameUnavailableReason(g, state)}
-          <button
-            class="w-full text-left px-4 py-3 rounded-lg border transition-colors
-              {state.selectedGame === g.id
-                ? 'border-indigo-500 bg-indigo-900 text-white'
-                : unavailableReason
-                  ? 'border-gray-700 bg-gray-900 text-gray-500 opacity-60'
-                  : 'border-gray-700 bg-gray-800 text-gray-300 active:border-gray-500'}"
-            on:click={() => !unavailableReason && selectGame(g.id)}
-            disabled={!!unavailableReason}
-          >
-            <p class="font-semibold text-sm">{g.label}</p>
-            <p class="text-xs mt-0.5 {unavailableReason ? 'text-gray-600' : 'text-gray-400'}">{g.description}</p>
-            {#if unavailableReason}
-              <p class="text-xs text-gray-600 mt-1">{unavailableReason}</p>
-            {/if}
-          </button>
+          <div class="relative">
+            <button
+              class="w-full text-left px-4 py-3 pr-10 rounded-lg border transition-colors
+                {state.selectedGame === g.id
+                  ? 'border-indigo-500 bg-indigo-900 text-white'
+                  : unavailableReason
+                    ? 'border-gray-700 bg-gray-900 text-gray-500 opacity-60'
+                    : 'border-gray-700 bg-gray-800 text-gray-300 active:border-gray-500'}"
+              on:touchstart={onTouchStart}
+              on:touchmove={onTouchMove}
+              on:click={() => onGameTap(g.id, unavailableReason)}
+              disabled={!!unavailableReason}
+            >
+              <p class="font-semibold text-sm">{g.label}</p>
+              <p class="text-xs mt-0.5 {unavailableReason ? 'text-gray-600' : 'text-gray-400'}">{g.description}</p>
+              {#if unavailableReason}
+                <p class="text-xs text-gray-600 mt-1">{unavailableReason}</p>
+              {/if}
+            </button>
+            <button
+              class="absolute top-3 right-3 w-6 h-6 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xs active:text-white active:bg-gray-600 transition-colors"
+              title="View details"
+              on:click|stopPropagation={() => openDetail(g.id)}
+            >i</button>
+          </div>
         {/each}
       </div>
 
@@ -241,43 +321,65 @@
         </div>
       {/if}
     {:else}
-      <!-- Non-host: read-only game info -->
+      <!-- Non-host: read-only game info — always show scrollable list -->
       {#if selectedGameMeta}
-        <div class="bg-indigo-900 border border-indigo-600 rounded-xl p-4 w-full max-w-xs text-center">
-          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-1">Selected game</p>
-          <p class="font-bold text-white">{selectedGameMeta.label}</p>
-          <p class="text-xs text-gray-300 mt-1">{selectedGameMeta.description}</p>
+        <div class="bg-indigo-900 border border-indigo-600 rounded-xl p-3 w-full max-w-xs text-center">
+          <p class="text-xs text-indigo-400 uppercase tracking-widest mb-0.5">Selected game</p>
+          <p class="font-bold text-white text-sm">{selectedGameMeta.label}</p>
         </div>
       {:else}
-        <div class="w-full max-w-xs space-y-2">
-          <p class="text-gray-400 text-sm text-center">Host is picking a game…</p>
-          {#each GAME_REGISTRY as g}
-            {@const unavailable = getGameUnavailableReason(g, state)}
-            <div
-              class="px-4 py-3 rounded-lg border
-                {unavailable
-                  ? 'border-gray-700 bg-gray-900 opacity-50'
-                  : 'border-gray-700 bg-gray-800'}"
-            >
-              <p class="font-semibold text-sm {unavailable ? 'text-gray-500' : 'text-gray-200'}">{g.label}</p>
-              {#if unavailable}
-                <p class="text-xs text-gray-600 mt-0.5">{unavailable}</p>
-              {/if}
-            </div>
-          {/each}
-        </div>
+        <p class="text-gray-400 text-sm text-center">Host is picking a game…</p>
       {/if}
+      <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
+        {#each GAME_REGISTRY as g}
+          {@const unavailable = getGameUnavailableReason(g, state)}
+          <button
+            class="w-full text-left px-4 py-3 rounded-lg border cursor-pointer transition-colors
+              {state.selectedGame === g.id
+                ? 'border-indigo-500 bg-indigo-900/50'
+                : unavailable
+                  ? 'border-gray-700 bg-gray-900 opacity-50'
+                  : 'border-gray-700 bg-gray-800 active:border-gray-600'}"
+            on:click={() => openDetail(g.id)}
+          >
+            <p class="font-semibold text-sm {state.selectedGame === g.id ? 'text-indigo-300' : unavailable ? 'text-gray-500' : 'text-gray-200'}">{g.label}</p>
+            <p class="text-xs mt-0.5 text-gray-400">{g.description}</p>
+            {#if unavailable}
+              <p class="text-xs text-gray-600 mt-0.5">{unavailable}</p>
+            {/if}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <!-- Player customizer panel -->
+    {#if showCustomizer}
+      <div class="bg-gray-800/80 border border-gray-700 rounded-2xl p-5 w-full max-w-xs shadow-xl">
+        <PlayerCustomizer {room} {me} on:done={() => (showCustomizer = false)} />
+      </div>
     {/if}
 
     <!-- Player list -->
     <div class="bg-gray-800 rounded-xl p-4 w-full max-w-xs">
-      <p class="text-gray-400 text-sm mb-2 text-center">Players ({state.players.size})</p>
+      <div class="flex items-center justify-between mb-2">
+        <p class="text-gray-400 text-sm text-center flex-1">Players ({state.players.size})</p>
+        <button
+          class="text-xs px-2.5 py-1 rounded-lg transition-colors
+            {showCustomizer
+              ? 'bg-indigo-600 text-white'
+              : 'bg-gray-700 text-gray-400 active:text-white'}"
+          on:click={() => (showCustomizer = !showCustomizer)}
+        >{hasCustomIcon ? 'Edit icon' : 'Set icon'}</button>
+      </div>
       <ul class="space-y-1">
         {#each [...state.players.values()] as p}
           <li class="flex items-center justify-between text-sm">
-            <span class="{p.id === me?.id ? 'font-bold text-indigo-400' : 'text-gray-300'}">{p.name}{p.id === me?.id ? ' (you)' : ''}</span>
+            <span class="flex items-center gap-1.5">
+              <PlayerIcon player={p} size={24} />
+              <span class="{p.id === me?.id ? 'font-bold text-indigo-400' : 'text-gray-300'}">{p.name}{p.id === me?.id ? ' (you)' : ''}</span>
+            </span>
             {#if p.isReady}
-              <span class="text-green-400 font-bold">✓</span>
+              <span class="text-green-400 font-bold">&#x2713;</span>
             {/if}
           </li>
         {/each}

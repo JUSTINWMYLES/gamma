@@ -30,7 +30,7 @@
   }
 
   const particles: Particle[] = [];
-  const MAX_PARTICLES = 120;
+  const MAX_PARTICLES = 200;
 
   /** Ember particles that drift upward when fire is active. */
   interface Ember {
@@ -43,7 +43,7 @@
     size: number;
   }
   const embers: Ember[] = [];
-  const MAX_EMBERS = 25;
+  const MAX_EMBERS = 40;
 
   function spawnParticle(baseX: number, baseY: number, spread: number, heightScale: number) {
     const angle = Math.random() * Math.PI * 2;
@@ -51,11 +51,11 @@
     particles.push({
       x: baseX + Math.cos(angle) * r,
       y: baseY,
-      vx: (Math.random() - 0.5) * 1.2 * (spread / 20),
-      vy: -(1.5 + Math.random() * 2.5) * heightScale,
+      vx: (Math.random() - 0.5) * 1.5 * (spread / 20),
+      vy: -(2.0 + Math.random() * 3.5) * heightScale,
       life: 0,
-      maxLife: 25 + Math.random() * 30,
-      size: 4 + Math.random() * 6 * heightScale,
+      maxLife: 25 + Math.random() * 35,
+      size: 5 + Math.random() * 8 * heightScale,
     });
   }
 
@@ -124,13 +124,13 @@
 
   function drawGlow(ctx: CanvasRenderingContext2D, cx: number, by: number, inten: number) {
     if (inten < 0.02) return;
-    const glowRadius = 40 + inten * 80;
-    const grad = ctx.createRadialGradient(cx, by - 20 * inten, 0, cx, by - 20 * inten, glowRadius);
-    grad.addColorStop(0, `rgba(255,160,30,${0.25 * inten})`);
-    grad.addColorStop(0.5, `rgba(255,80,0,${0.10 * inten})`);
+    const glowRadius = 50 + inten * 120;
+    const grad = ctx.createRadialGradient(cx, by - 30 * inten, 0, cx, by - 30 * inten, glowRadius);
+    grad.addColorStop(0, `rgba(255,160,30,${0.30 * inten})`);
+    grad.addColorStop(0.5, `rgba(255,80,0,${0.15 * inten})`);
     grad.addColorStop(1, "rgba(255,80,0,0)");
     ctx.fillStyle = grad;
-    ctx.fillRect(cx - glowRadius, by - glowRadius - 20 * inten, glowRadius * 2, glowRadius * 2);
+    ctx.fillRect(cx - glowRadius, by - glowRadius - 30 * inten, glowRadius * 2, glowRadius * 2);
   }
 
   function render() {
@@ -163,16 +163,16 @@
 
     // Spawn flame particles based on intensity
     if (inten > 0.01) {
-      const spawnRate = Math.ceil(inten * 6);
-      const spread = 8 + inten * 22;
-      const heightScale = 0.3 + inten * 0.9;
+      const spawnRate = Math.ceil(inten * 10);
+      const spread = 10 + inten * 35;
+      const heightScale = 0.4 + inten * 1.4;
       for (let i = 0; i < spawnRate; i++) {
         if (particles.length < MAX_PARTICLES) {
           spawnParticle(cx, baseY - 2, spread, heightScale);
         }
       }
       // Embers
-      if (inten > 0.3 && Math.random() < inten * 0.3) {
+      if (inten > 0.2 && Math.random() < inten * 0.5) {
         if (embers.length < MAX_EMBERS) {
           spawnEmber(cx, baseY, spread);
         }

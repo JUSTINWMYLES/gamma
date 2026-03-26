@@ -15,13 +15,14 @@
   import { TILE_SIZE_PX, TILE } from "../../../../shared/types";
   import OddOneOutTV from "../../games/viewer/OddOneOutTV.svelte";
   import ShaveYakTV from "../../games/viewer/ShaveYakTV.svelte";
-  import EvilLaughTV from "../../games/viewer/EvilLaughTV.svelte";
+  import AudioOverlayTV from "../../games/viewer/AudioOverlayTV.svelte";
   import LowballMarketplaceTV from "../../games/viewer/LowballMarketplaceTV.svelte";
   import FireMatchBlowShakeTV from "../../games/viewer/FireMatchBlowShakeTV.svelte";
   import HotPotatoTV from "../../games/viewer/HotPotatoTV.svelte";
   import TapSpeedTV from "../../games/viewer/TapSpeedTV.svelte";
   import SoundReplicationTV from "../../games/viewer/SoundReplicationTV.svelte";
   import EscapeMazeTV from "../../games/viewer/EscapeMazeTV.svelte";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -29,7 +30,7 @@
   // ── Game routing ──────────────────────────────────────────────────
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
-  $: isEvilLaugh = state.selectedGame === "registry-26-evil-laugh-overlay";
+  $: isAudioOverlay = state.selectedGame === "registry-26-audio-overlay";
   $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
   $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
   $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
@@ -50,7 +51,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isEvilLaugh || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -229,8 +230,8 @@
   <EscapeMazeTV {room} {state} />
 {:else if isOddOneOut}
   <OddOneOutTV {room} {state} />
-{:else if isEvilLaugh}
-  <EvilLaughTV {room} {state} />
+{:else if isAudioOverlay}
+  <AudioOverlayTV {room} {state} />
 {:else if isLowball}
   <LowballMarketplaceTV {room} {state} />
 {:else if isFireMatch}
@@ -271,6 +272,7 @@
               class="w-3 h-3 rounded-full flex-shrink-0"
               style="background:{['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#14b8a6'][i % 8]}"
             ></span>
+            <PlayerIcon player={p} size={20} />
             <span class="flex-1 text-sm truncate">{p.name}</span>
             <span class="text-xs font-mono text-gray-300">{p.score}</span>
             {#if p.isEliminated}

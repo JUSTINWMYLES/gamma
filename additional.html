@@ -1,0 +1,407 @@
+
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Card Images</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: #18181b;
+  font-family: 'Georgia', serif;
+  padding: 24px 16px;
+  min-height: 100vh;
+}
+h1 {
+  color: #71717a;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+  text-align: center;
+}
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: center;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.card {
+  background: #1c1c22;
+  border-radius: 16px;
+  overflow: hidden;
+  width: 200px;
+  border: 1px solid #2a2a32;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.card-img {
+  width: 200px;
+  height: 140px;
+  display: block;
+}
+.card-body {
+  padding: 10px 12px 12px;
+}
+.card-tag {
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #52525b;
+  margin-bottom: 4px;
+  font-family: 'Courier New', monospace;
+}
+.card-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: #e4e4e7;
+  margin-bottom: 4px;
+  font-family: 'Georgia', serif;
+}
+.card-desc {
+  font-size: 10px;
+  color: #71717a;
+  line-height: 1.4;
+  font-family: 'Georgia', serif;
+}
+
+/* ── ODD ONE OUT animations ── */
+@keyframes figure-sway {
+0%,100% { transform: translateY(0) rotate(0deg); }
+50%     { transform: translateY(-2px) rotate(1deg); }
+}
+@keyframes odd-pulse {
+0%,100% { opacity: 0.15; r: 18; }
+50%     { opacity: 0.35; r: 22; }
+}
+@keyframes eye-dart {
+0%,40%,100% { transform: translateX(0); }
+50%,90%     { transform: translateX(3px); }
+70%         { transform: translateX(-2px); }
+}
+@keyframes question-blink {
+0%,85%,100% { opacity: 0; }
+90%,95%     { opacity: 1; }
+}
+
+/* ── EVIL LAUGH animations ── */
+@keyframes gif-bounce {
+0%,100% { transform: translateY(0); }
+50%     { transform: translateY(-3px); }
+}
+@keyframes mouth-open {
+0%,100% { d: path(“M 88 72 Q 100 78 112 72”); }
+50%     { d: path(“M 88 72 Q 100 84 112 72”); }
+}
+@keyframes laugh-wave {
+0%   { transform: translateX(-10px); opacity:0; }
+20%  { opacity: 1; }
+100% { transform: translateX(20px); opacity: 0; }
+}
+@keyframes phone-glow {
+0%,100% { opacity: 0.6; }
+50%     { opacity: 1; }
+}
+
+/* ── LOWBALL animations ── */
+@keyframes tag-swing {
+0%,100% { transform: rotate(-3deg); }
+50%     { transform: rotate(3deg); }
+}
+@keyframes dollar-float {
+0%   { transform: translateY(0) rotate(-5deg); opacity: 1; }
+100% { transform: translateY(-30px) rotate(5deg); opacity: 0; }
+}
+@keyframes offer-pop {
+0%,70%  { transform: scale(0); opacity: 0; }
+80%     { transform: scale(1.15); opacity: 1; }
+100%    { transform: scale(1); opacity: 1; }
+}
+
+/* ── MATCH FIRE animations ── */
+@keyframes match-strike {
+0%,100% { transform: rotate(-35deg) translate(0,0); }
+40%     { transform: rotate(-20deg) translate(6px,-4px); }
+60%     { transform: rotate(-35deg) translate(0,0); }
+}
+@keyframes flame-flick {
+0%,100% { transform: scaleX(1) scaleY(1); opacity: 1; }
+30%     { transform: scaleX(0.8) scaleY(1.2); opacity: 0.9; }
+60%     { transform: scaleX(1.2) scaleY(0.85); opacity: 1; }
+}
+@keyframes spark-fly {
+0%   { transform: translate(0,0) scale(1); opacity: 1; }
+100% { transform: translate(var(–sx), var(–sy)) scale(0); opacity: 0; }
+}
+@keyframes meter-fill {
+0%   { width: 4px; }
+100% { width: 52px; }
+}
+</style>
+
+</head>
+<body>
+<h1>Game Card Images</h1>
+<div class="grid">
+
+  <!-- ═══════════════════════════════════════
+       2. ODD ONE OUT
+  ════════════════════════════════════════ -->
+
+  <div class="card">
+    <svg class="card-img" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="odd-bg" cx="50%" cy="40%" r="65%">
+          <stop offset="0%" stop-color="#1e2438"/>
+          <stop offset="100%" stop-color="#0e1020"/>
+        </radialGradient>
+      </defs>
+
+
+  <rect width="200" height="140" fill="url(#odd-bg)"/>
+
+  <!-- subtle grid floor -->
+  <line x1="0" y1="110" x2="200" y2="110" stroke="#ffffff" stroke-width="0.5" opacity="0.06"/>
+  <line x1="0" y1="125" x2="200" y2="125" stroke="#ffffff" stroke-width="0.5" opacity="0.04"/>
+
+  <!-- pulse ring around odd player -->
+  <circle cx="100" cy="72" r="18" fill="none" stroke="#e84040" stroke-width="1.5" style="animation: odd-pulse 2.2s ease-in-out infinite;" opacity="0.2"/>
+
+  <!-- 5 player figures -->
+  <!-- player 1 (left) -->
+  <g style="animation: figure-sway 3.1s ease-in-out infinite; transform-origin: 36px 90px; animation-delay: 0s;">
+    <circle cx="36" cy="72" r="8" fill="#4a90d8"/>
+    <rect x="30" y="80" width="12" height="20" rx="4" fill="#3a78c0"/>
+    <rect x="26" y="82" width="6" height="14" rx="3" fill="#3a78c0"/>
+    <rect x="40" y="82" width="6" height="14" rx="3" fill="#3a78c0"/>
+    <rect x="31" y="99" width="5" height="12" rx="2" fill="#2a5090"/>
+    <rect x="37" y="99" width="5" height="12" rx="2" fill="#2a5090"/>
+    <!-- normal face -->
+    <circle cx="34" cy="70" r="2" fill="#1a3060"/>
+    <circle cx="38" cy="70" r="2" fill="#1a3060"/>
+    <path d="M 33 75 Q 36 77 39 75" stroke="#1a3060" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- player 2 -->
+  <g style="animation: figure-sway 2.8s ease-in-out infinite; transform-origin: 68px 90px; animation-delay: 0.4s;">
+    <circle cx="68" cy="72" r="8" fill="#58c080"/>
+    <rect x="62" y="80" width="12" height="20" rx="4" fill="#48a868"/>
+    <rect x="58" y="82" width="6" height="14" rx="3" fill="#48a868"/>
+    <rect x="72" y="82" width="6" height="14" rx="3" fill="#48a868"/>
+    <rect x="63" y="99" width="5" height="12" rx="2" fill="#38884e"/>
+    <rect x="69" y="99" width="5" height="12" rx="2" fill="#38884e"/>
+    <circle cx="66" cy="70" r="2" fill="#1a4020"/>
+    <circle cx="70" cy="70" r="2" fill="#1a4020"/>
+    <path d="M 65 75 Q 68 77 71 75" stroke="#1a4020" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- player 3 — THE ODD ONE (subtle wink / micro-action) -->
+  <g style="animation: figure-sway 3.4s ease-in-out infinite; transform-origin: 100px 90px; animation-delay: 0.2s;">
+    <circle cx="100" cy="72" r="8" fill="#d870a0"/>
+    <rect x="94" y="80" width="12" height="20" rx="4" fill="#c05888"/>
+    <rect x="90" y="82" width="6" height="14" rx="3" fill="#c05888"/>
+    <rect x="104" y="82" width="6" height="14" rx="3" fill="#c05888"/>
+    <rect x="95" y="99" width="5" height="12" rx="2" fill="#a04070"/>
+    <rect x="101" y="99" width="5" height="12" rx="2" fill="#a04070"/>
+    <!-- odd eyes — one slightly different -->
+    <circle cx="98" cy="70" r="2" fill="#4a1030"/>
+    <!-- winking eye (subtle) -->
+    <path d="M 100 69.5 Q 102 68 104 69.5" stroke="#4a1030" stroke-width="1.5" fill="none" stroke-linecap="round" style="animation: eye-dart 3s ease-in-out infinite;"/>
+    <path d="M 97 75 Q 100 73 103 75" stroke="#4a1030" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <!-- tiny subtle hand gesture -->
+    <circle cx="90" cy="90" r="2.5" fill="#d870a0" opacity="0.8" style="animation: eye-dart 2.4s ease-in-out infinite; animation-delay:0.5s;"/>
+  </g>
+
+  <!-- player 4 -->
+  <g style="animation: figure-sway 2.6s ease-in-out infinite; transform-origin: 132px 90px; animation-delay: 0.6s;">
+    <circle cx="132" cy="72" r="8" fill="#e8a030"/>
+    <rect x="126" y="80" width="12" height="20" rx="4" fill="#d08820"/>
+    <rect x="122" y="82" width="6" height="14" rx="3" fill="#d08820"/>
+    <rect x="136" y="82" width="6" height="14" rx="3" fill="#d08820"/>
+    <rect x="127" y="99" width="5" height="12" rx="2" fill="#b06810"/>
+    <rect x="133" y="99" width="5" height="12" rx="2" fill="#b06810"/>
+    <circle cx="130" cy="70" r="2" fill="#4a2e00"/>
+    <circle cx="134" cy="70" r="2" fill="#4a2e00"/>
+    <path d="M 129 75 Q 132 77 135 75" stroke="#4a2e00" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- player 5 -->
+  <g style="animation: figure-sway 3.2s ease-in-out infinite; transform-origin: 164px 90px; animation-delay: 1s;">
+    <circle cx="164" cy="72" r="8" fill="#9070e0"/>
+    <rect x="158" y="80" width="12" height="20" rx="4" fill="#7858c8"/>
+    <rect x="154" y="82" width="6" height="14" rx="3" fill="#7858c8"/>
+    <rect x="168" y="82" width="6" height="14" rx="3" fill="#7858c8"/>
+    <rect x="159" y="99" width="5" height="12" rx="2" fill="#5840a0"/>
+    <rect x="165" y="99" width="5" height="12" rx="2" fill="#5840a0"/>
+    <circle cx="162" cy="70" r="2" fill="#2a1060"/>
+    <circle cx="166" cy="70" r="2" fill="#2a1060"/>
+    <path d="M 161 75 Q 164 77 167 75" stroke="#2a1060" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- vote bubbles removed — no random WHO? text -->
+
+  <!-- label -->
+  <text x="100" y="134" text-anchor="middle" font-size="7" fill="#ffffff" font-family="monospace" opacity="0.3">FIND THE IMPOSTOR</text>
+</svg>
+<div class="card-body">
+  <div class="card-tag">social · deduction</div>
+  <div class="card-title">Odd One Out</div>
+  <div class="card-desc">Someone got a secret micro-action. Can you spot who?</div>
+</div>
+
+
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       3. AUDIO OVERLAY
+  ════════════════════════════════════════ -->
+
+  <div class="card">
+    <svg class="card-img" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="laugh-bg" cx="50%" cy="50%" r="60%">
+          <stop offset="0%" stop-color="#1a0e28"/>
+          <stop offset="100%" stop-color="#0a0810"/>
+        </radialGradient>
+        <radialGradient id="screen-glow" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#3a2858" stop-opacity="0.8"/>
+          <stop offset="100%" stop-color="#1a0e28" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+
+
+  <rect width="200" height="140" fill="url(#laugh-bg)"/>
+
+  <!-- central glow from phone screen -->
+  <ellipse cx="100" cy="80" rx="70" ry="55" fill="url(#screen-glow)"/>
+
+  <!-- centered phone with mic / recording interface -->
+  <g style="animation: gif-bounce 3.1s ease-in-out infinite; transform-origin: 100px 75px;">
+    <rect x="75" y="44" width="50" height="72" rx="7" fill="#2a1e3e"/>
+    <rect x="78" y="50" width="44" height="56" rx="4" fill="#302440"/>
+    <!-- mic recording indicator -->
+    <circle cx="100" cy="76" r="18" fill="#282040"/>
+    <path d="M 95 66 L 95 82 Q 95 88 100 88 Q 105 88 105 82 L 105 66 Q 105 62 100 62 Q 95 62 95 66 Z" fill="#e03040"/>
+    <!-- mic stand arc -->
+    <path d="M 92 88 Q 92 94 100 94 Q 108 94 108 88" stroke="#e03040" stroke-width="1.5" fill="none"/>
+    <line x1="100" y1="94" x2="100" y2="100" stroke="#e03040" stroke-width="1.5"/>
+    <!-- sound waves left -->
+    <path d="M 88 72 Q 85 76 88 80" stroke="#e03040" stroke-width="1.2" fill="none" opacity="0.7" style="animation: laugh-wave 1.5s ease-out infinite;"/>
+    <path d="M 84 68 Q 80 76 84 84" stroke="#e03040" stroke-width="1" fill="none" opacity="0.5" style="animation: laugh-wave 1.5s ease-out infinite; animation-delay: 0.3s;"/>
+    <!-- sound waves right -->
+    <path d="M 112 72 Q 115 76 112 80" stroke="#e03040" stroke-width="1.2" fill="none" opacity="0.7" style="animation: laugh-wave 1.5s ease-out infinite; animation-delay: 0.15s;"/>
+    <path d="M 116 68 Q 120 76 116 84" stroke="#e03040" stroke-width="1" fill="none" opacity="0.5" style="animation: laugh-wave 1.5s ease-out infinite; animation-delay: 0.45s;"/>
+    <!-- REC indicator -->
+    <circle cx="115" cy="54" r="3.5" fill="#e03030" style="animation: phone-glow 1s ease-in-out infinite;"/>
+    <!-- phone home bar -->
+    <rect x="93" y="111" width="14" height="3" rx="1.5" fill="#1a1028"/>
+  </g>
+
+  <!-- category labels around the phone -->
+  <text x="30" y="52" text-anchor="middle" font-size="7" fill="#a080d0" font-family="monospace" opacity="0.5">animals</text>
+  <text x="170" y="52" text-anchor="middle" font-size="7" fill="#a080d0" font-family="monospace" opacity="0.5">yells</text>
+  <text x="30" y="112" text-anchor="middle" font-size="7" fill="#a080d0" font-family="monospace" opacity="0.4">vehicles</text>
+  <text x="170" y="112" text-anchor="middle" font-size="7" fill="#a080d0" font-family="monospace" opacity="0.4">evil laughs</text>
+
+  <!-- top label -->
+  <text x="100" y="22" text-anchor="middle" font-size="8" fill="#a080d0" font-family="monospace" letter-spacing="2" opacity="0.8">RECORD · OVERLAY · VOTE</text>
+</svg>
+<div class="card-body">
+  <div class="card-tag">audio · creative</div>
+  <div class="card-title">Audio Overlay</div>
+  <div class="card-desc">Pick a GIF category, record audio over someone else's pick, vote for best combo.</div>
+</div>
+
+
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       4. LOWBALL MARKETPLACE
+  ════════════════════════════════════════ -->
+
+  <div class="card">
+    <svg class="card-img" viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="market-bg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#f5f0e8"/>
+          <stop offset="100%" stop-color="#e8e0d0"/>
+        </linearGradient>
+        <linearGradient id="listing-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="100%" stop-color="#f5f0e8"/>
+        </linearGradient>
+      </defs>
+
+
+  <!-- bright marketplace bg (daytime, community board feel) -->
+  <rect width="200" height="140" fill="url(#market-bg)"/>
+
+  <!-- subtle header line -->
+  <rect x="0" y="0" width="200" height="18" fill="#e8e0d0"/>
+  <text x="100" y="13" text-anchor="middle" font-size="8" fill="#6a5a40" font-family="Georgia,serif" font-weight="bold">Marketplace</text>
+
+  <!-- listing card 1 -->
+  <rect x="8" y="24" width="56" height="80" rx="5" fill="url(#listing-grad)" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))"/>
+  <!-- item image placeholder - old sofa -->
+  <rect x="8" y="24" width="56" height="36" rx="5" fill="#d4c8a8"/>
+  <!-- sofa illustration -->
+  <rect x="14" y="44" width="44" height="16" rx="6" fill="#8b5e3c"/>
+  <rect x="12" y="38" width="14" height="20" rx="4" fill="#7a5030"/>
+  <rect x="46" y="38" width="14" height="20" rx="4" fill="#7a5030"/>
+  <rect x="14" y="40" width="44" height="8" rx="3" fill="#9a6e48"/>
+  <text x="36" y="68" text-anchor="middle" font-size="6.5" fill="#2a1a0a" font-family="Georgia,serif">Vintage Sofa</text>
+  <text x="36" y="78" text-anchor="middle" font-size="7" fill="#c03010" font-family="monospace" font-weight="bold">$450</text>
+  <!-- lowball offer -->
+  <rect x="12" y="84" width="48" height="16" rx="3" fill="#fff3e0" style="animation: offer-pop 3s ease-in-out infinite; animation-delay: 0.5s;"/>
+  <text x="36" y="95" text-anchor="middle" font-size="8" fill="#e05a00" font-family="monospace" font-weight="bold">offer: $3</text>
+
+  <!-- listing card 2 -->
+  <rect x="72" y="24" width="56" height="80" rx="5" fill="url(#listing-grad)" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))"/>
+  <rect x="72" y="24" width="56" height="36" rx="5" fill="#c8d8e8"/>
+  <!-- exercise bike -->
+  <ellipse cx="100" cy="51" rx="10" ry="10" fill="none" stroke="#4070a0" stroke-width="2"/>
+  <rect x="94" y="38" width="12" height="4" rx="2" fill="#3060a0"/>
+  <rect x="96" y="42" width="8" height="14" rx="2" fill="#4070a0"/>
+  <rect x="90" y="54" width="20" height="3" rx="1.5" fill="#3060a0"/>
+  <text x="100" y="68" text-anchor="middle" font-size="6" fill="#2a1a0a" font-family="Georgia,serif">Exercise Bike</text>
+  <text x="100" y="78" text-anchor="middle" font-size="7" fill="#c03010" font-family="monospace" font-weight="bold">$200</text>
+  <rect x="76" y="84" width="48" height="16" rx="3" fill="#fff3e0" style="animation: offer-pop 3s ease-in-out infinite; animation-delay: 1.2s;"/>
+  <text x="100" y="95" text-anchor="middle" font-size="8" fill="#e05a00" font-family="monospace" font-weight="bold">offer: $1</text>
+
+  <!-- listing card 3 -->
+  <rect x="136" y="24" width="56" height="80" rx="5" fill="url(#listing-grad)" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.15))"/>
+  <rect x="136" y="24" width="56" height="36" rx="5" fill="#d8e8c8"/>
+  <!-- hot tub -->
+  <rect x="142" y="34" width="44" height="22" rx="8" fill="#5090c0"/>
+  <ellipse cx="164" cy="34" rx="22" ry="6" fill="#70b0e0"/>
+  <!-- bubbles -->
+  <circle cx="156" cy="42" r="2" fill="white" opacity="0.6"/>
+  <circle cx="164" cy="39" r="1.5" fill="white" opacity="0.5"/>
+  <circle cx="172" cy="43" r="2" fill="white" opacity="0.6"/>
+  <text x="164" y="68" text-anchor="middle" font-size="6" fill="#2a1a0a" font-family="Georgia,serif">Hot Tub (used)</text>
+  <text x="164" y="78" text-anchor="middle" font-size="7" fill="#c03010" font-family="monospace" font-weight="bold">$800</text>
+  <rect x="140" y="84" width="48" height="16" rx="3" fill="#fff3e0" style="animation: offer-pop 3s ease-in-out infinite; animation-delay: 2s;"/>
+  <text x="164" y="95" text-anchor="middle" font-size="8" fill="#e05a00" font-family="monospace" font-weight="bold">offer: $4</text>
+
+  <!-- bottom label -->
+  <text x="100" y="132" text-anchor="middle" font-size="6" fill="#8a7a60" font-family="monospace" opacity="0.6">GO LOW... BUT NOT TOO LOW</text>
+
+</svg>
+<div class="card-body">
+  <div class="card-tag">comedy · voting</div>
+  <div class="card-title">Lowball Marketplace</div>
+  <div class="card-desc">Browse fake listings. Send the most insulting offer.</div>
+</div>
+
+
+  </div>
+
+
+  </div>
+
+</div>
+</body>
+</html>

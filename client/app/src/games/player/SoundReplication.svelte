@@ -76,6 +76,9 @@
   let revealPoints = 0;
   let revealRank = 0;
   let revealTotal = 0;
+  let revealTargetProfile: number[] = [];
+  let revealRecordingProfile: number[] = [];
+  let revealAlignmentOffset = 0;
 
   let leaderboard: { playerId: string; playerName: string; similarityScore: number; points: number; rank: number }[] = [];
 
@@ -282,6 +285,9 @@
     totalPlayers: number;
     revealIndex: number;
     isLast: boolean;
+    targetProfile?: number[];
+    recordingProfile?: number[];
+    alignmentOffset?: number;
   }) {
     subPhase = "results";
     revealPlayerName = data.playerName;
@@ -289,6 +295,9 @@
     revealPoints = data.points;
     revealRank = data.rank;
     revealTotal = data.totalPlayers;
+    revealTargetProfile = data.targetProfile ?? [];
+    revealRecordingProfile = data.recordingProfile ?? [];
+    revealAlignmentOffset = data.alignmentOffset ?? 0;
   }
 
   function onLeaderboard(data: {
@@ -523,6 +532,38 @@
     <div class="text-center space-y-4">
       <p class="text-xs text-gray-500 uppercase tracking-widest">Result</p>
       <h2 class="text-2xl font-black text-white">{revealPlayerName}</h2>
+
+      <!-- Mini amplitude comparison -->
+      {#if revealTargetProfile.length > 0 && revealRecordingProfile.length > 0}
+        <div class="w-full max-w-xs mx-auto">
+          <div class="flex justify-between text-[10px] text-gray-500 px-1 mb-1">
+            <span class="flex items-center gap-1">
+              <span class="w-2 h-2 rounded-sm bg-purple-500 inline-block"></span> Target
+            </span>
+            <span class="flex items-center gap-1">
+              <span class="w-2 h-2 rounded-sm bg-emerald-500 inline-block"></span> You
+            </span>
+          </div>
+           <div class="h-16 bg-gray-800 rounded-xl p-2 flex items-end gap-[1px]">
+            {#each revealTargetProfile as targetVal, i}
+              {@const recVal = revealRecordingProfile[i] ?? 0}
+              <div class="flex-1 flex items-end gap-[1px] h-full">
+                <div class="flex-1 bg-purple-500/40 rounded-t-sm" style="height:{targetVal * 100}%"></div>
+                <div class="flex-1 rounded-t-sm
+                  {Math.abs(targetVal - recVal) < 0.15 ? 'bg-emerald-500' :
+                   Math.abs(targetVal - recVal) < 0.3 ? 'bg-yellow-500' : 'bg-red-500'}"
+                  style="height:{recVal * 100}%"></div>
+              </div>
+            {/each}
+          </div>
+          {#if revealAlignmentOffset !== 0}
+            <p class="text-[9px] text-purple-400 text-center mt-0.5">
+              Auto-aligned {revealAlignmentOffset > 0 ? '+' : ''}{revealAlignmentOffset} windows
+            </p>
+          {/if}
+        </div>
+      {/if}
+
       <div class="bg-gray-800 rounded-xl p-6 space-y-2">
         <p class="text-xs text-gray-400 uppercase">Similarity</p>
         <p class="text-5xl font-black {revealScore >= 70 ? 'text-green-400' : revealScore >= 40 ? 'text-yellow-400' : 'text-red-400'}">

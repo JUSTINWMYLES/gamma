@@ -9,12 +9,14 @@
   import type { GameMeta, RoomState } from "../../../shared/types";
   import { GAME_REGISTRY, getGameUnavailableReason } from "../../../shared/types";
   import { createEventDispatcher } from "svelte";
+  import GameCardArt from "./GameCardArt.svelte";
 
   export let state: RoomState;
   export let readonly = false;
 
   const dispatch = createEventDispatcher<{
     select: { gameId: string };
+    detail: { gameId: string };
   }>();
 
   /** Theme mapping per game ID — maps to card visual styles. */
@@ -91,21 +93,13 @@
       footerBg: "#1a1200", border: "rgba(200,150,20,0.2)",
       nameColor: "#f0c040", metaColor: "rgba(220,180,80,0.6)",
     },
-    "registry-26-evil-laugh-overlay": {
+    "registry-26-audio-overlay": {
       icon: "laugh", theme: "space",
       bg: "#020408",
       glow: "rgba(60,80,200,0.35)",
       footerBg: "#020408", border: "rgba(80,120,255,0.2)",
       nameColor: "#80a8ff", metaColor: "rgba(100,140,255,0.6)",
     },
-  };
-
-  const ICON_MAP: Record<string, string> = {
-    zap: "\u26A1", fire: "\uD83D\uDD25", flame: "\uD83D\uDD25",
-    stealth: "\uD83D\uDD75\uFE0F", scissors: "\u2702\uFE0F",
-    eye: "\uD83D\uDC41\uFE0F", money: "\uD83D\uDCB0",
-    laugh: "\uD83D\uDE08", audio: "\uD83C\uDFA4",
-    maze: "\uD83C\uDFDB\uFE0F",
   };
 
   function getTheme(id: string) {
@@ -118,8 +112,18 @@
   }
 
   function handleClick(game: GameMeta, unavailable: string | null) {
-    if (readonly || unavailable) return;
+    if (readonly) {
+      // Non-host: clicking a card opens detail view
+      dispatch("detail", { gameId: game.id });
+      return;
+    }
+    if (unavailable) return;
     dispatch("select", { gameId: game.id });
+  }
+
+  function handleDetailClick(e: Event, game: GameMeta) {
+    e.stopPropagation();
+    dispatch("detail", { gameId: game.id });
   }
 </script>
 
@@ -138,7 +142,14 @@
       disabled={!!unavailable || readonly}
     >
       <div class="card-art" style="background: {theme.bg}">
-        <span class="card-icon">{ICON_MAP[theme.icon] ?? "\uD83C\uDFAE"}</span>
+        <GameCardArt gameId={game.id} accent={theme.nameColor} />
+        <button class="card-info-btn" on:click={(e) => handleDetailClick(e, game)} title="View details">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+            <line x1="7" y1="6" x2="7" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="7" cy="4.2" r="0.8" fill="currentColor"/>
+          </svg>
+        </button>
       </div>
       <div class="card-footer">
         <span class="card-name">{game.label}</span>
@@ -169,6 +180,7 @@
     gap: 16px;
     max-width: 1000px;
     width: 100%;
+    padding-top: 8px;
   }
 
   .card {
@@ -179,17 +191,17 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 6px 30px var(--glow);
-    border: none;
+    border: 1px solid var(--border-color);
     padding: 0;
     text-align: left;
     color: inherit;
     background: transparent;
+    box-shadow: none;
   }
 
   .card:not(.unavailable):not(.readonly):hover {
     transform: translateY(-6px) scale(1.02);
-    box-shadow: 0 16px 50px var(--glow);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
   }
 
   .card:not(.unavailable):not(.readonly):active {
@@ -215,10 +227,41 @@
     overflow: hidden;
   }
 
-  .card-icon {
-    font-size: 2.5rem;
-    z-index: 1;
-    filter: drop-shadow(0 0 16px var(--glow));
+  .card-info-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0;
+    transition: opacity 0.2s, background 0.15s;
+    backdrop-filter: blur(4px);
+  }
+
+  .card:hover .card-info-btn,
+  .card:focus-within .card-info-btn {
+    opacity: 1;
+  }
+
+  /* Always show on touch devices since there's no hover */
+  @media (hover: none) {
+    .card-info-btn {
+      opacity: 0.7;
+    }
+  }
+
+  .card-info-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
   }
 
   .card-footer {
@@ -227,6 +270,7 @@
     z-index: 2;
     background: var(--footer-bg);
     border-top: 1px solid var(--border-color);
+    flex: 1;
   }
 
   .card-name {
@@ -291,5 +335,50 @@
     z-index: 6;
     box-shadow: 0 0 20px rgba(129,140,248,0.4);
     pointer-events: none;
+  }
+
+  /* ── Light mode overrides ──────────────────────────────────────── */
+  :global(.light) .card {
+    border-color: rgba(0,0,0,0.1);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  :global(.light) .card:not(.unavailable):not(.readonly):hover {
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  }
+
+  :global(.light) .card-art {
+    /* Lighten the dark gradient backgrounds for light mode */
+    filter: brightness(1.8) saturate(0.7);
+  }
+
+  :global(.light) .card-footer {
+    background: #ffffff;
+    border-top-color: rgba(0,0,0,0.08);
+  }
+
+  :global(.light) .card-name {
+    filter: brightness(0.7) saturate(1.2);
+  }
+
+  :global(.light) .card-desc {
+    color: #6b7280;
+  }
+
+  :global(.light) .card-meta {
+    color: #9ca3af;
+  }
+
+  :global(.light) .card-tag {
+    border-color: rgba(0,0,0,0.15);
+    color: #6b7280;
+  }
+
+  :global(.light) .card-overlay {
+    background: rgba(255,255,255,0.7);
+  }
+
+  :global(.light) .card-unavailable-text {
+    color: rgba(0,0,0,0.5);
   }
 </style>

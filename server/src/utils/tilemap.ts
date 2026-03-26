@@ -263,3 +263,89 @@ export function isWalkable(col: number, row: number): boolean {
 export function isHidingSpot(_col: number, _row: number): boolean {
   return false;
 }
+
+// ── BFS pathfinding for guard AI ─────────────────────────────────────────────
+
+/**
+ * BFS path from tile (sx, sy) to tile (gx, gy) on the current map.
+ * Returns an array of tile-centre positions [{x, y}, ...] from start to goal
+ * (excluding the start tile), or null if unreachable.
+ *
+ * This is used for guard pathfinding so they can route around walls instead of
+ * getting stuck when axis-sliding fails.
+ */
+export function findPath(
+  sx: number, sy: number,
+  gx: number, gy: number,
+  maxSteps: number = 200,
+): Vec2[] | null {
+  // Convert to tile coordinates
+  const startCol = Math.floor(sx);
+  const startRow = Math.floor(sy);
+  const goalCol  = Math.floor(gx);
+  const goalRow  = Math.floor(gy);
+
+  if (startCol === goalCol && startRow === goalRow) return [];
+
+  if (!isWalkable(goalCol, goalRow)) return null;
+
+  const w = _currentMap.width;
+  const h = _currentMap.height;
+
+  // BFS
+  const visited = new Uint8Array(w * h);
+  const parentIdx = new Int32Array(w * h).fill(-1);
+  const queue: number[] = [];
+
+  const startKey = startRow * w + startCol;
+  const goalKey  = goalRow  * w + goalCol;
+  visited[startKey] = 1;
+  queue.push(startKey);
+
+  const dirs = [
+    [0, -1], [0, 1], [-1, 0], [1, 0], // 4-directional
+  ];
+
+  let found = false;
+  let steps = 0;
+
+  while (queue.length > 0 && steps < maxSteps) {
+    const current = queue.shift()!;
+    steps++;
+    const cr = Math.floor(current / w);
+    const cc = current % w;
+
+    for (const [dc, dr] of dirs) {
+      const nc = cc + dc;
+      const nr = cr + dr;
+      if (nc < 0 || nr < 0 || nc >= w || nr >= h) continue;
+      const nk = nr * w + nc;
+      if (visited[nk]) continue;
+      if (!isWalkable(nc, nr)) continue;
+
+      visited[nk] = 1;
+      parentIdx[nk] = current;
+
+      if (nk === goalKey) {
+        found = true;
+        break;
+      }
+      queue.push(nk);
+    }
+    if (found) break;
+  }
+
+  if (!found) return null;
+
+  // Reconstruct path
+  const path: Vec2[] = [];
+  let cur = goalKey;
+  while (cur !== startKey && cur !== -1) {
+    const r = Math.floor(cur / w);
+    const c = cur % w;
+    path.push({ x: c + 0.5, y: r + 0.5 }); // tile centres
+    cur = parentIdx[cur];
+  }
+  path.reverse();
+  return path;
+}

@@ -74,7 +74,7 @@
       type: pick([...SHAPE_TYPES]),
       size: randBetween(8, 22),
       color: pick(palette),
-      alpha: randBetween(0.25, 0.65),
+      alpha: randBetween(0.12, 0.35),
       lineWidth: randBetween(1.2, 2.5),
       rotation: randBetween(0, Math.PI * 2),
       vx: Math.cos(angle) * speed * randBetween(-1.5, 1.5),

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RoomState, PlayerState } from "../../../shared/types";
+  import PlayerIcon from "../components/PlayerIcon.svelte";
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 
@@ -45,6 +46,7 @@
         {@const h = barHeight(p.score)}
         <div class="flex flex-col items-center justify-end gap-2 flex-1">
           <!-- Name + score above bar -->
+          <PlayerIcon player={p} size={40} />
           <p class="font-bold text-center text-sm leading-tight {LABEL_COLORS[slot]}">{p.name}</p>
           <p class="font-mono text-lg font-black {LABEL_COLORS[slot]}">{p.score}</p>
           <!-- The bar -->
@@ -70,6 +72,7 @@
       {#each sortedPlayers as p, i}
         <div class="flex items-center gap-4 bg-gray-800 rounded-xl px-6 py-3">
           <span class="text-2xl w-10 text-center">{['🥇','🥈','🥉'][i] ?? `#${i+1}`}</span>
+          <PlayerIcon player={p} size={32} />
           <span class="flex-1 font-semibold">{p.name}</span>
           <span class="font-mono text-xl">{p.score}</span>
         </div>
