@@ -59,7 +59,29 @@ const SURVIVAL_POINTS = 50;
 /** Bonus points for the player who passed the most. */
 const PASS_LEADER_BONUS = 25;
 
+/** Duration of the delay-penalty voting phase (ms). */
+const DELAY_VOTE_DURATION_MS = 12_000;
+
+/** Points deducted from the most-voted delay offender. */
+const DELAY_PENALTY_POINTS = 50;
+
+/** Time considered "slow" for accepting (ms) — used as reference info only. */
+const SLOW_ACCEPT_THRESHOLD_MS = 4_000;
+
 // ── Per-round tracking (not in schema — private server state) ─────────────────
+
+interface PassRecord {
+  /** Session ID of the player who passed. */
+  fromId: string;
+  /** Session ID of the player who received. */
+  toId: string;
+  /** Epoch ms when the pass was initiated (holder tapped "Pass"). */
+  passedAt: number;
+  /** Epoch ms when the target tapped "Accept". */
+  acceptedAt: number;
+  /** How long the target took to accept (ms). */
+  acceptDurationMs: number;
+}
 
 interface RoundState {
   /** Session ID of the current potato holder. */
@@ -80,20 +102,32 @@ interface RoundState {
   /** Whether the holder has initiated a pass (waiting for target to accept). */
   passInFlight: boolean;
 
+  /** Epoch ms when the current pass was initiated (for tracking accept time). */
+  passInitiatedAt: number;
+
   /** Per-player pass counts for the round. */
   passCounts: Map<string, number>;
 
-  /** Votes: voterId -> suspectId. */
+  /** Full pass history with accept times. */
+  passRecords: PassRecord[];
+
+  /** Votes: voterId -> suspectId (who was holding). */
   votes: Map<string, string>;
 
   /** Whether voting phase is active. */
   votingOpen: boolean;
+
+  /** Delay votes: voterId -> suspectId (who delayed unfairly). */
+  delayVotes: Map<string, string>;
+
+  /** Whether delay voting phase is active. */
+  delayVotingOpen: boolean;
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
 
 interface HotPotatoInput {
-  action: "potato_pass" | "potato_accept" | "potato_vote";
+  action: "potato_pass" | "potato_accept" | "potato_vote" | "potato_delay_vote";
   targetId?: string;
 }
 
@@ -159,9 +193,13 @@ export default class HotPotatoGame extends BaseGame {
       timerEndsAt: now + timerMs,
       exploded: false,
       passInFlight: false,
+      passInitiatedAt: 0,
       passCounts: new Map(),
+      passRecords: [],
       votes: new Map(),
       votingOpen: false,
+      delayVotes: new Map(),
+      delayVotingOpen: false,
     };
 
     // ── 3. Notify all clients ──────────────────────────────────────────────
@@ -198,12 +236,17 @@ export default class HotPotatoGame extends BaseGame {
       this.roundResolve = resolve;
     });
 
-    // ── 6. Voting phase ────────────────────────────────────────────────────
+    // ── 6. Voting phase (who was holding?) ──────────────────────────────────
     if (this.roundState) {
       await this._runVotingPhase();
     }
 
-    // ── 7. Results phase ───────────────────────────────────────────────────
+    // ── 7. Delay-penalty voting phase (who unfairly delayed?) ─────────────
+    if (this.roundState && this.roundState.passRecords.length > 0) {
+      await this._runDelayVotingPhase();
+    }
+
+    // ── 8. Results phase ───────────────────────────────────────────────────
     if (this.roundState) {
       this._computeAndBroadcastResults();
     }
@@ -236,6 +279,9 @@ export default class HotPotatoGame extends BaseGame {
       case "potato_vote":
         this._handleVote(client, input.targetId);
         break;
+      case "potato_delay_vote":
+        this._handleDelayVote(client, input.targetId);
+        break;
     }
   }
 
@@ -257,7 +303,7 @@ export default class HotPotatoGame extends BaseGame {
    */
   private _handlePass(client: Client): void {
     const rs = this.roundState;
-    if (!rs || rs.exploded || rs.votingOpen) return;
+    if (!rs || rs.exploded || rs.votingOpen || rs.delayVotingOpen) return;
 
     // Only the current holder can pass
     if (client.sessionId !== rs.holderId) return;
@@ -266,6 +312,7 @@ export default class HotPotatoGame extends BaseGame {
     if (rs.passInFlight) return;
 
     rs.passInFlight = true;
+    rs.passInitiatedAt = Date.now();
 
     // Increment pass count for this player
     const count = (rs.passCounts.get(client.sessionId) ?? 0) + 1;
@@ -285,13 +332,27 @@ export default class HotPotatoGame extends BaseGame {
    */
   private _handleAccept(client: Client): void {
     const rs = this.roundState;
-    if (!rs || rs.exploded || rs.votingOpen) return;
+    if (!rs || rs.exploded || rs.votingOpen || rs.delayVotingOpen) return;
 
     // Only the current target can accept
     if (client.sessionId !== rs.targetId) return;
 
     // Must be in flight (holder already pressed pass)
     if (!rs.passInFlight) return;
+
+    // Record the accept time
+    const acceptedAt = Date.now();
+    const acceptDurationMs = rs.passInitiatedAt > 0
+      ? acceptedAt - rs.passInitiatedAt
+      : 0;
+
+    rs.passRecords.push({
+      fromId: rs.holderId,
+      toId: client.sessionId,
+      passedAt: rs.passInitiatedAt,
+      acceptedAt,
+      acceptDurationMs,
+    });
 
     rs.passInFlight = false;
 
@@ -350,7 +411,7 @@ export default class HotPotatoGame extends BaseGame {
    */
   private _handleVote(client: Client, targetId: string | undefined): void {
     const rs = this.roundState;
-    if (!rs || !rs.votingOpen || !targetId) return;
+    if (!rs || !rs.votingOpen || rs.delayVotingOpen || !targetId) return;
 
     const voterId = client.sessionId;
 
@@ -529,6 +590,164 @@ export default class HotPotatoGame extends BaseGame {
     rs.votingOpen = false;
   }
 
+  // ── Delay-penalty voting phase ────────────────────────────────────────────
+
+  /**
+   * After the normal "who was holding?" vote, run a second vote:
+   * "Who unfairly delayed accepting the potato?"
+   *
+   * Shows players the average accept times so they can make informed votes.
+   * The most-voted player loses DELAY_PENALTY_POINTS.
+   */
+  private async _runDelayVotingPhase(): Promise<void> {
+    const rs = this.roundState;
+    if (!rs) return;
+
+    // Compute per-player average accept times from pass records
+    const acceptTimesMap = new Map<string, number[]>();
+    for (const record of rs.passRecords) {
+      const times = acceptTimesMap.get(record.toId) ?? [];
+      times.push(record.acceptDurationMs);
+      acceptTimesMap.set(record.toId, times);
+    }
+
+    // Build suspects list with accept time stats
+    const delayStats: {
+      id: string;
+      name: string;
+      avgAcceptMs: number;
+      maxAcceptMs: number;
+      acceptCount: number;
+    }[] = [];
+
+    for (const [playerId, times] of acceptTimesMap.entries()) {
+      const player = this.room.state.players.get(playerId);
+      if (!player || !player.isConnected || player.isEliminated) continue;
+      const avg = times.reduce((sum, t) => sum + t, 0) / times.length;
+      const max = Math.max(...times);
+      delayStats.push({
+        id: playerId,
+        name: player.name,
+        avgAcceptMs: Math.round(avg),
+        maxAcceptMs: max,
+        acceptCount: times.length,
+      });
+    }
+
+    // Only run delay vote if there were at least 2 players who accepted passes
+    if (delayStats.length < 2) return;
+
+    // Check if anyone was notably slow (above threshold) — skip if all were fast
+    const anyoneSlowish = delayStats.some(
+      (s) => s.maxAcceptMs >= SLOW_ACCEPT_THRESHOLD_MS * 0.5,
+    );
+    if (!anyoneSlowish) return;
+
+    rs.delayVotingOpen = true;
+
+    this.broadcast("potato_delay_vote_start", {
+      players: delayStats,
+      durationMs: DELAY_VOTE_DURATION_MS,
+      serverTimestamp: Date.now(),
+      slowThresholdMs: SLOW_ACCEPT_THRESHOLD_MS,
+    });
+
+    // Wait for all delay votes or timeout
+    const totalVoters = this._activePlayers().length;
+
+    await new Promise<void>((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (rs.delayVotes.size >= totalVoters) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 200);
+
+      const timeout = setTimeout(() => {
+        clearInterval(checkInterval);
+        resolve();
+      }, DELAY_VOTE_DURATION_MS);
+
+      this._registerTimer(timeout);
+    });
+
+    rs.delayVotingOpen = false;
+
+    // Determine who got the most delay votes
+    if (rs.delayVotes.size > 0) {
+      const voteTally = new Map<string, number>();
+      for (const targetId of rs.delayVotes.values()) {
+        voteTally.set(targetId, (voteTally.get(targetId) ?? 0) + 1);
+      }
+
+      let maxVotes = 0;
+      let penalizedId = "";
+      for (const [playerId, count] of voteTally.entries()) {
+        if (count > maxVotes) {
+          maxVotes = count;
+          penalizedId = playerId;
+        }
+      }
+
+      // Apply penalty if someone got at least 1 vote
+      if (penalizedId) {
+        const penalizedPlayer = this.room.state.players.get(penalizedId);
+        const currentPending = this.pendingScores.get(penalizedId) ?? 0;
+        this.pendingScores.set(penalizedId, currentPending - DELAY_PENALTY_POINTS);
+
+        this.broadcast("potato_delay_result", {
+          penalizedId,
+          penalizedName: penalizedPlayer?.name ?? "Unknown",
+          penaltyPoints: DELAY_PENALTY_POINTS,
+          voteCount: maxVotes,
+          totalVotes: rs.delayVotes.size,
+        });
+
+        // Brief pause to show the delay result
+        await this.delay(3_000);
+        return;
+      }
+    }
+
+    // No votes cast — broadcast skip
+    this.broadcast("potato_delay_result", {
+      penalizedId: "",
+      penalizedName: "",
+      penaltyPoints: 0,
+      voteCount: 0,
+      totalVotes: 0,
+    });
+  }
+
+  /**
+   * During delay-voting phase, a player votes for who they think
+   * unfairly delayed accepting the potato.
+   */
+  private _handleDelayVote(client: Client, targetId: string | undefined): void {
+    const rs = this.roundState;
+    if (!rs || !rs.delayVotingOpen || !targetId) return;
+
+    const voterId = client.sessionId;
+
+    // Can't vote twice
+    if (rs.delayVotes.has(voterId)) return;
+
+    // Target must be a valid player
+    if (!this.room.state.players.has(targetId)) return;
+
+    rs.delayVotes.set(voterId, targetId);
+
+    // Confirm to the voter
+    this.send(voterId, "potato_delay_vote_confirmed", {});
+
+    // Broadcast vote progress
+    const totalVoters = this._activePlayers().length;
+    this.broadcast("potato_delay_vote_update", {
+      votesIn: rs.delayVotes.size,
+      totalVoters,
+    });
+  }
+
   // ── Results computation ───────────────────────────────────────────────────
 
   private _computeAndBroadcastResults(): void {
@@ -586,12 +805,43 @@ export default class HotPotatoGame extends BaseGame {
 
     const holder = this.room.state.players.get(rs.holderId);
 
+    // Compute delay penalty info for results
+    let delayPenalty: {
+      penalizedId: string;
+      penalizedName: string;
+      penaltyPoints: number;
+    } | null = null;
+
+    if (rs.delayVotes.size > 0) {
+      const voteTally = new Map<string, number>();
+      for (const targetId of rs.delayVotes.values()) {
+        voteTally.set(targetId, (voteTally.get(targetId) ?? 0) + 1);
+      }
+      let maxVotes = 0;
+      let penalizedId = "";
+      for (const [playerId, count] of voteTally.entries()) {
+        if (count > maxVotes) {
+          maxVotes = count;
+          penalizedId = playerId;
+        }
+      }
+      if (penalizedId) {
+        const penalized = this.room.state.players.get(penalizedId);
+        delayPenalty = {
+          penalizedId,
+          penalizedName: penalized?.name ?? "Unknown",
+          penaltyPoints: DELAY_PENALTY_POINTS,
+        };
+      }
+    }
+
     this.broadcast("potato_result", {
       holderId: rs.holderId,
       holderName: holder?.name ?? "Unknown",
       correctVoters,
       scores,
       passLeader: passLeader ?? { id: "", name: "", count: 0 },
+      delayPenalty,
     });
   }
 

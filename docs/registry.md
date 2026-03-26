@@ -23,7 +23,7 @@ The canonical design documents for each registry item live in `docs/registry/` a
 - [Shave The Yak](docs/registry/registry-19-shave-the-yak.md)
 - [Odd One Out](docs/registry/registry-20-odd-one-out.md)
 - [Phone Notes Song Match](docs/registry/registry-21-phone-notes-song.md)
-- [Evil Laugh Overlay](docs/registry/registry-22-evil-laugh-overlay.md)
+- [Audio Overlay](docs/registry/registry-22-audio-overlay.md)
 - [Dad Joke Word Mess-Up](docs/registry/registry-23-dad-joke-mess-up.md)
 - [Meme Silly Poses](docs/registry/registry-24-meme-silly-poses.md)
 - [Lowball Marketplace Game](docs/registry/registry-25-lowball-marketplace.md)

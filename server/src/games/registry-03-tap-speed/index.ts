@@ -33,8 +33,8 @@
 
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
-import { buildBracket, advanceBracket } from "../../utils/bracket";
-import { BracketState } from "../../schema/BracketState";
+import { buildBracket, advanceBracket, getMatchPlayers, resolveHeat1v1 } from "../../utils/bracket";
+import { BracketState, Heat } from "../../schema/BracketState";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -144,12 +144,6 @@ export default class TapSpeedGame extends BaseGame {
 
     // Assign bracket to room state so clients can render it
     this.room.state.bracket = bracket;
-
-    // Broadcast the bracket setup
-    this.broadcast("tap_bracket_init", {
-      totalPlayers: playerIds.length,
-      totalRounds: this._estimateBracketRounds(playerIds.length),
-    });
   }
 
   /**
@@ -159,22 +153,43 @@ export default class TapSpeedGame extends BaseGame {
   protected override async runRounds(): Promise<void> {
     const bracket = this.room.state.bracket;
 
+    // Enter in_round phase immediately — TapSpeed manages its own sub-phases
+    // (bracket_init → match_preview → countdown → tapping → result, etc.)
+    // We stay in "in_round" for the entire bracket to prevent the game
+    // component from being unmounted/remounted by phase switches.
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    await this.delay(500); // let clients mount the game component
+
+    // Broadcast the bracket setup (now the game component is mounted)
+    const playerIds = this._activePlayers().map((p) => p.id);
+    this.broadcast("tap_bracket_init", {
+      totalPlayers: playerIds.length,
+      totalRounds: this._estimateBracketRounds(playerIds.length),
+    });
+
+    // Brief pause to show bracket overview
+    await this.delay(3000);
+
     while (true) {
       const bracketRoundIndex = bracket.currentRound;
       const currentBracketRound = bracket.rounds[bracketRoundIndex];
       if (!currentBracketRound) break;
 
-      const pendingMatches = currentBracketRound.matches.filter(
-        (m) => m.status !== "complete",
+      const pendingHeats = currentBracketRound.heats.filter(
+        (h: Heat) => h.status !== "complete",
       );
 
-      if (pendingMatches.length === 0) {
-        // All matches done in this round — check if we should advance
-        const winners = currentBracketRound.matches
-          .map((m) => m.winnerId)
-          .filter((w) => w && w !== "");
+      if (pendingHeats.length === 0) {
+        // All heats done in this round — check if we should advance
+        const advancers: string[] = [];
+        for (const h of currentBracketRound.heats) {
+          for (const aid of h.advancingIds) {
+            if (aid) advancers.push(aid);
+          }
+        }
 
-        if (winners.length <= 1) {
+        if (advancers.length <= 1) {
           // Tournament complete — one champion
           break;
         }
@@ -190,41 +205,41 @@ export default class TapSpeedGame extends BaseGame {
         continue;
       }
 
-      // Run each pending match in this bracket round sequentially
-      for (const match of pendingMatches) {
-        // Skip byes (already complete)
-        if (match.player2Id === "BYE") continue;
+      // Run each pending heat in this bracket round sequentially
+      for (const heat of pendingHeats) {
+        // Skip byes (already complete — shouldn't appear since we filtered, but guard)
+        const [heatP1, heatP2] = getMatchPlayers(heat);
+        if (!heatP2 || heatP2 === "") continue;
 
         // Update room state round number for UI display
         this.room.state.currentRound = bracketRoundIndex + 1;
 
         // Set opponents on player state
-        const p1 = this.room.state.players.get(match.player1Id);
-        const p2 = this.room.state.players.get(match.player2Id);
-        if (p1) p1.currentMatchOpponentId = match.player2Id;
-        if (p2) p2.currentMatchOpponentId = match.player1Id;
+        const p1 = this.room.state.players.get(heatP1);
+        const p2 = this.room.state.players.get(heatP2);
+        if (p1) p1.currentMatchOpponentId = heatP2;
+        if (p2) p2.currentMatchOpponentId = heatP1;
 
         // Announce upcoming match
-        match.status = "in_progress";
+        heat.status = "in_progress";
         this.broadcast("tap_match_start", {
-          matchId: match.id,
-          player1Id: match.player1Id,
+          matchId: heat.id,
+          player1Id: heatP1,
           player1Name: p1?.name ?? "Unknown",
-          player2Id: match.player2Id,
+          player2Id: heatP2,
           player2Name: p2?.name ?? "Unknown",
           bracketRound: bracketRoundIndex + 1,
         });
 
-        // Countdown before match
-        this.setPhase("countdown");
+        // Show match preview for a moment before countdown
+        await this.delay(2000);
+
+        // Broadcast countdown within the game component (no phase change)
+        this.broadcast("tap_countdown", { seconds: 3 });
         await this.delay(3000);
 
-        // Run the match
-        this.setPhase("in_round");
-        this.room.state.phaseStartedAt = Date.now();
-        await this.delay(500); // let clients mount
-
-        await this._runMatch(match.id, match.player1Id, match.player2Id);
+        // Run the match (stay in "in_round" phase the whole time)
+        await this._runMatch(heat.id, heatP1, heatP2);
 
         // Determine winner
         const cm = this.currentMatch!;
@@ -244,8 +259,7 @@ export default class TapSpeedGame extends BaseGame {
         }
 
         // Record winner in bracket state
-        match.winnerId = winnerId;
-        match.status = "complete";
+        resolveHeat1v1(heat, winnerId);
 
         // Mark loser as eliminated
         const loser = this.room.state.players.get(loserId);
@@ -261,7 +275,7 @@ export default class TapSpeedGame extends BaseGame {
         // Broadcast match result
         const winner = this.room.state.players.get(winnerId);
         this.broadcast("tap_match_result", {
-          matchId: match.id,
+          matchId: heat.id,
           winnerId,
           winnerName: winner?.name ?? "Unknown",
           loserId,
@@ -277,38 +291,35 @@ export default class TapSpeedGame extends BaseGame {
 
         this.currentMatch = null;
 
-        // Show result, then pause before next match
-        this.setPhase("round_end");
+        // Stay in "in_round" phase — the match_result message drives the
+        // client sub-phase. Just delay to let players see the result.
         await this.delay(MATCH_RESULT_DELAY_MS);
 
-        // Inter-match delay if more matches remain
-        const remainingInRound = currentBracketRound.matches.filter(
-          (m) => m.status !== "complete",
+        // Inter-match delay if more heats remain
+        const remainingInRound = currentBracketRound.heats.filter(
+          (h: Heat) => h.status !== "complete",
         );
         if (remainingInRound.length > 0) {
           await this.delay(INTER_MATCH_DELAY_MS);
         }
       }
 
-      // After running all matches in this bracket round, loop back to
+      // After running all heats in this bracket round, loop back to
       // check if we need to advance or if the tournament is over
     }
 
     // ── Tournament complete ────────────────────────────────────────────────
     const finalRound = bracket.rounds[bracket.currentRound];
-    const champion = finalRound?.matches[0]?.winnerId;
+    const finalHeat = finalRound?.heats[0];
+    const champion = finalHeat?.advancingIds[0] ?? "";
 
     if (champion) {
       this._addScore(champion, CHAMPION_BONUS);
 
-      // Find runner-up (loser of final match)
-      const finalMatch = finalRound!.matches[0];
-      const runnerUp = finalMatch
-        ? finalMatch.player1Id === champion
-          ? finalMatch.player2Id
-          : finalMatch.player1Id
-        : null;
-      if (runnerUp && runnerUp !== "BYE") {
+      // Find runner-up (loser of final heat)
+      const [fp1, fp2] = finalHeat ? getMatchPlayers(finalHeat) : ["", ""];
+      const runnerUp = fp1 === champion ? fp2 : fp1;
+      if (runnerUp && runnerUp !== "") {
         this._addScore(runnerUp, RUNNER_UP_BONUS);
       }
 

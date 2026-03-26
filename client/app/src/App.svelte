@@ -16,6 +16,8 @@
 
   // ── Shared components ─────────────────────────────────────────────
   import FloatingBackground from "./components/FloatingBackground.svelte";
+  import ThemeToggle from "./components/ThemeToggle.svelte";
+  import { isDark } from "./stores/theme";
 
   // ── Role selection ────────────────────────────────────────────────
   import RoleSelectScreen from "./screens/RoleSelectScreen.svelte";
@@ -58,31 +60,84 @@
   let error: string = "";
   let connecting = false;
   let leavingVoluntarily = false;
+  let showLeaveConfirm = false;
+
+  // ── Session persistence for reconnection on page refresh ──────────
+  const SESSION_KEY = "gamma-session";
+
+  interface SessionInfo {
+    roomCode: string;
+    name: string;
+    role: "player" | "viewer";
+  }
+
+  function saveSession(info: SessionInfo) {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(info));
+    } catch { /* quota exceeded or private browsing — non-critical */ }
+  }
+
+  function loadSession(): SessionInfo | null {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      return JSON.parse(raw) as SessionInfo;
+    } catch { return null; }
+  }
+
+  function clearSession() {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+  }
 
   // ── Viewer-only background music ──────────────────────────────────
-  let cloudDancerTrack: HTMLAudioElement | null = null;
-  let fartingAroundTrack: HTMLAudioElement | null = null;
-  let currentTrack: "cloud" | "fart" | null = null;
+
+  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking";
+
+  const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string }> = {
+    cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    fart:           { file: "/farting_around.mp3",   volume: 0.42, attribution: '"Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    zazie:          { file: "/zazie.mp3",            volume: 0.35, attribution: '"Zazie" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    pixelland:      { file: "/pixelland.mp3",        volume: 0.35, attribution: '"Pixelland" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    vivacity:       { file: "/vivacity.mp3",         volume: 0.35, attribution: '"Vivacity" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    le_grand_chase: { file: "/le_grand_chase.mp3",   volume: 0.35, attribution: '"Le Grand Chase" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    thinking:       { file: "/thinking_music.mp3",   volume: 0.35, attribution: '"Thinking Music" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+  };
+
+  /** Map of track ID → Audio element, initialised in onMount. */
+  const tracks = new Map<TrackId, HTMLAudioElement>();
+  let currentTrack: TrackId | null = null;
   let audioBlocked = false;
 
   function pauseAllTracks() {
-    if (cloudDancerTrack) cloudDancerTrack.pause();
-    if (fartingAroundTrack) fartingAroundTrack.pause();
+    for (const audio of tracks.values()) {
+      audio.pause();
+    }
   }
 
-  function desiredTrack(): "cloud" | "fart" | null {
+  /** Game-to-track mapping for in_round phase. */
+  const GAME_TRACK_MAP: Record<string, TrackId> = {
+    "registry-19-shave-the-yak":        "fart",
+    "registry-25-lowball-marketplace":   "zazie",
+    "registry-04-escape-maze":           "pixelland",
+    "registry-17-fire-match-blow-shake": "vivacity",
+    "registry-14-dont-get-caught":       "le_grand_chase",
+    "registry-20-odd-one-out":           "thinking",
+  };
+
+  function desiredTrack(): TrackId | null {
     if (role !== "viewer" || !state) return null;
-    if (phase === "in_round" && state.selectedGame === "registry-19-shave-the-yak") {
-      return "fart";
-    }
     if (phase === "lobby") {
       return "cloud";
+    }
+    // Play game-specific music during in_round (and countdown/instructions for smoother transitions)
+    if (phase === "in_round" || phase === "countdown" || phase === "instructions") {
+      return GAME_TRACK_MAP[state.selectedGame] ?? null;
     }
     return null;
   }
 
   async function syncTrackPlayback() {
-    if (!cloudDancerTrack || !fartingAroundTrack) return;
+    if (tracks.size === 0) return;
 
     const next = desiredTrack();
     if (!next) {
@@ -95,7 +150,8 @@
 
     pauseAllTracks();
 
-    const target = next === "cloud" ? cloudDancerTrack : fartingAroundTrack;
+    const target = tracks.get(next);
+    if (!target) return;
     target.currentTime = 0;
     try {
       await target.play();
@@ -131,6 +187,7 @@
       wireRoom(r);
       viewerView = "room";
       connecting = false;
+      saveSession({ roomCode: roomCode.toUpperCase(), name: "", role: "viewer" });
     } catch (e) {
       error = `Could not join room: ${String(e)}`;
       connecting = false;
@@ -157,6 +214,10 @@
 
     r.onError((code: number, msg?: string) => {
       error = `Server error ${code}: ${msg ?? "unknown"}`;
+      // Serious errors: auto-return to start after a brief delay
+      setTimeout(() => {
+        if (error) resetToRoleSelect();
+      }, 4000);
     });
 
     r.onLeave((code: number) => {
@@ -166,6 +227,10 @@
       } else {
         error = "Disconnected from server.";
       }
+      // Auto-return to start after showing the message
+      setTimeout(() => {
+        if (error) resetToRoleSelect();
+      }, 4000);
     });
   }
 
@@ -176,6 +241,7 @@
       const r = await joinRoom(roomCode, name);
       wireRoom(r);
       playerView = "room";
+      saveSession({ roomCode: roomCode.toUpperCase(), name, role: "player" });
     } catch (e) {
       error = String(e);
       throw e;
@@ -187,6 +253,11 @@
       const r = await createRoom(name);
       wireRoom(r);
       playerView = "room";
+      // Room code is in the state — save it for reconnection
+      const roomCode = r.state?.roomCode ?? "";
+      if (roomCode) {
+        saveSession({ roomCode, name, role: "player" });
+      }
     } catch (e) {
       error = String(e);
       playerView = "landing";
@@ -206,20 +277,13 @@
     playerView = "landing";
     viewerView = "join_code";
     leavingVoluntarily = false;
+    clearSession();
     pauseAllTracks();
     currentTrack = null;
   }
 
   onMount(() => {
-    cloudDancerTrack = new Audio("/cloud_dancer.mp3");
-    cloudDancerTrack.loop = true;
-    cloudDancerTrack.volume = 0.35;
-
-    fartingAroundTrack = new Audio("/farting_around.mp3");
-    fartingAroundTrack.loop = true;
-    fartingAroundTrack.volume = 0.42;
-
-    // Safety net: restart track if 'ended' fires despite loop=true
+    // Initialise all music tracks from config
     const restartOnEnd = (e: Event) => {
       const audio = e.target as HTMLAudioElement;
       if (audio.loop && audio.paused) {
@@ -227,12 +291,42 @@
         audio.play().catch(() => {});
       }
     };
-    cloudDancerTrack.addEventListener("ended", restartOnEnd);
-    fartingAroundTrack.addEventListener("ended", restartOnEnd);
+
+    for (const [id, cfg] of Object.entries(TRACK_CONFIG) as [TrackId, typeof TRACK_CONFIG[TrackId]][]) {
+      const audio = new Audio(cfg.file);
+      audio.loop = true;
+      audio.volume = cfg.volume;
+      audio.addEventListener("ended", restartOnEnd);
+      tracks.set(id, audio);
+    }
 
     window.addEventListener("pointerdown", onUserInteraction);
     window.addEventListener("keydown", onUserInteraction);
     window.addEventListener("touchstart", onUserInteraction, { passive: true });
+
+    // ── Auto-reconnect on page refresh ────────────────────────────────
+    // If we have a saved session (from before refresh), attempt to rejoin
+    // the same room with the same name so the server can match us to our
+    // disconnected PlayerState and restore our score/state.
+    const saved = loadSession();
+    if (saved) {
+      if (saved.role === "player" && saved.roomCode && saved.name) {
+        role = "player";
+        connecting = true;
+        onJoin(saved.roomCode, saved.name)
+          .then(() => { connecting = false; })
+          .catch(() => {
+            // Room gone or server restarted — clear stale session and show landing
+            clearSession();
+            connecting = false;
+            error = "";
+            playerView = "landing";
+          });
+      } else if (saved.role === "viewer" && saved.roomCode) {
+        role = "viewer";
+        viewerJoinRoom(saved.roomCode);
+      }
+    }
   });
 
   onDestroy(() => {
@@ -261,12 +355,9 @@
     currentTrack = null;
   }
 
-  $: activeTrackAttribution =
-    currentTrack === "cloud"
-      ? 'Music: "Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0'
-      : currentTrack === "fart"
-        ? 'Music: "Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0'
-        : "";
+  $: activeTrackAttribution = currentTrack
+    ? `Music: ${TRACK_CONFIG[currentTrack].attribution}`
+    : "";
 
   // Show floating background on pre-game screens only (not during active games)
   const gamePhases: Phase[] = ["instructions", "countdown", "in_round", "round_end", "scoreboard", "game_over", "game_loading"];
@@ -281,7 +372,49 @@
 <div class="min-h-screen flex flex-col bg-gray-950 text-white">
 
   {#if showBackground}
-    <FloatingBackground dark={true} />
+    <FloatingBackground dark={$isDark} />
+  {/if}
+
+  <!-- Theme toggle — visible in lobby/pre-game phases -->
+  {#if showBackground}
+    <div class="fixed top-3 right-3 z-50">
+      <ThemeToggle />
+    </div>
+  {/if}
+
+  <!-- ── Leave Room button (visible when connected to a room) ──── -->
+  {#if room && state && !error}
+    <button
+      class="fixed top-3 left-3 z-50 w-9 h-9 flex items-center justify-center rounded-lg bg-gray-800/80 border border-gray-700 text-gray-400 hover:text-white hover:bg-gray-700 active:bg-red-900 transition-colors"
+      title="Leave room"
+      on:click={() => (showLeaveConfirm = true)}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 100-2H3z" clip-rule="evenodd"/>
+        <path fill-rule="evenodd" d="M13.293 9.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 14H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
+      </svg>
+    </button>
+  {/if}
+
+  <!-- ── Leave confirmation dialog ─────────────────────────────── -->
+  {#if showLeaveConfirm}
+    <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60"
+         on:click|self={() => (showLeaveConfirm = false)}>
+      <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 mx-6 max-w-xs w-full text-center space-y-4 shadow-2xl">
+        <h3 class="text-lg font-bold text-white">Leave room?</h3>
+        <p class="text-sm text-gray-400">You'll be disconnected and sent back to the start screen.</p>
+        <div class="flex gap-3">
+          <button
+            class="flex-1 py-3 rounded-xl text-sm font-semibold bg-gray-700 text-gray-300 active:bg-gray-600 transition-colors"
+            on:click={() => (showLeaveConfirm = false)}
+          >Cancel</button>
+          <button
+            class="flex-1 py-3 rounded-xl text-sm font-semibold bg-red-600 text-white active:bg-red-500 transition-colors"
+            on:click={() => { showLeaveConfirm = false; resetToRoleSelect(); }}
+          >Leave</button>
+        </div>
+      </div>
+    </div>
   {/if}
 
   <!-- ── Error overlay ─────────────────────────────────────────────── -->
@@ -289,6 +422,7 @@
     <div class="flex-1 flex items-center justify-center p-6">
       <div class="text-center space-y-4">
         <p class="text-red-400 text-xl">{error}</p>
+        <p class="text-gray-500 text-sm">Returning to start...</p>
         <button
           class="px-6 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-500"
           on:click={resetToRoleSelect}
@@ -346,16 +480,6 @@
         <p class="text-2xl animate-pulse">Connecting to server...</p>
       </div>
     {:else if state}
-      <!-- Back button (only in lobby) -->
-      {#if phase === "lobby"}
-        <div class="absolute top-4 left-4 z-50">
-          <button
-            class="text-sm text-gray-500 hover:text-gray-300 underline"
-            on:click={resetToRoleSelect}
-          >Change role</button>
-        </div>
-      {/if}
-
       {#if phase === "lobby"}
         <ViewerLobby room={typedRoom} state={typedState} />
       {:else if phase === "game_loading"}
@@ -435,10 +559,16 @@
     {/if}
   {/if}
 
-  {#if activeTrackAttribution}
-    <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
-      {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
-    </div>
+  {#if role === "viewer"}
+    {#if activeTrackAttribution}
+      <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
+        {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
+      </div>
+    {:else if phase === "lobby" && room && state}
+      <div class="px-3 py-2 text-[11px] text-gray-500 bg-black/20 border-t border-white/10 text-center">
+        Music: Kevin MacLeod (incompetech.com) — Licensed under CC BY 4.0
+      </div>
+    {/if}
   {/if}
 
   {#if audioBlocked}

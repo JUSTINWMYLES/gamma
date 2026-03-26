@@ -32,6 +32,8 @@
 
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { buildBracket, advanceBracket, resolveHeat } from "../../utils/bracket";
+import { Heat } from "../../schema/BracketState";
 import {
   createYakMask,
   applySwipe,
@@ -90,7 +92,7 @@ interface PlayerRound {
 
 export default class ShaveYakGame extends BaseGame {
   static override requiresTV = false;
-  static override supportsBracket = false;
+  static override supportsBracket = true;
   static override defaultRoundCount = 1;
   static override minRounds = 1;
   static override maxRounds = 3;
@@ -107,12 +109,142 @@ export default class ShaveYakGame extends BaseGame {
   /** Interval that broadcasts all-player progress to view_screen clients. */
   private progressInterval: ReturnType<typeof setInterval> | null = null;
 
+  /** Seed for bracket randomization. */
+  private bracketSeed = 0;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
     for (const p of this.room.state.players.values()) {
       p.isReady = false;
+      p.isEliminated = false;
     }
+
+    this.bracketSeed = Date.now();
+
+    // If bracket mode, build the bracket
+    if (this.room.state.gameConfig.matchMode === "1v1_bracket") {
+      const playerIds = [...this.room.state.players.values()]
+        .filter((p) => p.isConnected)
+        .map((p) => p.id);
+      const heatSize = playerIds.length <= 6 ? 2 : 3;
+      const bracket = buildBracket(playerIds, this.bracketSeed, { heatSize, advanceCount: 1 });
+      this.room.state.bracket = bracket;
+    }
+  }
+
+  /**
+   * Override runRounds for bracket mode.
+   * All players in the current bracket round play simultaneously.
+   * After scoring, each heat is resolved by shaved percentage ranking.
+   */
+  protected override async runRounds(): Promise<void> {
+    if (this.room.state.gameConfig.matchMode !== "1v1_bracket") {
+      return super.runRounds();
+    }
+
+    const bracket = this.room.state.bracket;
+
+    this.broadcast("bracket_init", {
+      totalPlayers: [...this.room.state.players.values()].filter((p) => p.isConnected).length,
+      heatSize: bracket.heatSize,
+    });
+
+    let bracketRoundNum = 0;
+
+    while (true) {
+      const currentBracketRound = bracket.rounds[bracket.currentRound];
+      if (!currentBracketRound) break;
+
+      const pendingHeats = currentBracketRound.heats.filter(
+        (h: Heat) => h.status !== "complete",
+      );
+
+      if (pendingHeats.length === 0) {
+        const advancers: string[] = [];
+        for (const h of currentBracketRound.heats) {
+          for (const aid of h.advancingIds) {
+            if (aid) advancers.push(aid);
+          }
+        }
+
+        if (advancers.length <= 1) break;
+
+        for (const p of this.room.state.players.values()) {
+          if (!p.isEliminated && !advancers.includes(p.id)) {
+            p.isEliminated = true;
+          }
+        }
+
+        advanceBracket(bracket, this.bracketSeed);
+
+        this.broadcast("bracket_round_advance", {
+          newRound: bracket.currentRound + 1,
+          remainingPlayers: advancers.length,
+        });
+
+        await this.delay(3000);
+        continue;
+      }
+
+      bracketRoundNum++;
+      this.room.state.currentRound = bracketRoundNum;
+
+      this.broadcast("bracket_heat_round", {
+        bracketRound: bracket.currentRound + 1,
+        heats: ([...currentBracketRound.heats] as Heat[]).map((h) => ({
+          id: h.id,
+          playerIds: [...h.playerIds],
+          status: h.status,
+        })),
+      });
+
+      for (const h of pendingHeats) {
+        h.status = "in_progress";
+      }
+
+      this.setPhase("countdown");
+      await this.delay(3000);
+
+      this.setPhase("in_round");
+      this.room.state.phaseStartedAt = Date.now();
+      await this.delay(500);
+
+      await this.runRound(bracketRoundNum);
+      this.scoreRound(bracketRoundNum);
+
+      // Resolve each heat by shaved percentage
+      for (const heat of pendingHeats) {
+        const heatPlayerIds = [...heat.playerIds].filter((id): id is string => !!id);
+        const ranked = this._rankPlayersForBracket(heatPlayerIds);
+
+        if (ranked.length > 0) {
+          const advanceCount = bracket.advanceCount;
+          const advancing = ranked.slice(0, advanceCount).map((r) => r.playerId);
+          resolveHeat(heat, advancing);
+        } else {
+          heat.status = "complete";
+        }
+      }
+
+      this.setPhase("round_end");
+      await this.delay(4000);
+    }
+
+    const finalRound = bracket.rounds[bracket.currentRound];
+    if (finalRound) {
+      const champion = finalRound.heats[0]?.advancingIds[0];
+      if (champion) {
+        const champPlayer = this.room.state.players.get(champion);
+        this.broadcast("bracket_champion", {
+          championId: champion,
+          championName: champPlayer?.name ?? "Unknown",
+        });
+      }
+    }
+
+    this.setPhase("scoreboard");
+    await this.delay(6000);
   }
 
   protected override async runRound(_round: number): Promise<void> {
@@ -232,6 +364,24 @@ export default class ShaveYakGame extends BaseGame {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /**
+   * Rank players within a heat by their shaved percentage (descending).
+   * Uses the playerRounds map to compute shaved % for each player.
+   */
+  private _rankPlayersForBracket(
+    playerIds: string[],
+  ): { playerId: string; rank: number }[] {
+    const results = playerIds.map((pid) => {
+      const pr = this.playerRounds.get(pid);
+      const pct = pr ? computeShavedPercent(pr.mask) : 0;
+      return { playerId: pid, shavedPercent: pct };
+    });
+
+    results.sort((a, b) => b.shavedPercent - a.shavedPercent);
+
+    return results.map((r, i) => ({ playerId: r.playerId, rank: i + 1 }));
+  }
 
   private _handleMiss(
     sessionId: string,

@@ -159,16 +159,60 @@ export class GammaRoom extends Room<RoomState> {
   }
 
   private _onPlayerJoin(client: Client, options: JoinOptions): void {
-    // Reconnect: reuse existing PlayerState slot
+    // Reconnect (same sessionId): reuse existing PlayerState slot.
+    // This handles Colyseus's built-in allowReconnection() path.
     const existing = this.state.players.get(client.sessionId);
     if (existing) {
       existing.isConnected = true;
       return;
     }
 
+    // ── Name-based reconnection ──────────────────────────────────────────────
+    // When a player refreshes the page they get a new sessionId, so the
+    // sessionId-based check above won't match.  If there's a disconnected
+    // player with the same name, reclaim that slot — preserving score and
+    // all game-specific state.
+    const incomingName = (options.name ?? "Player").slice(0, 20);
+    const disconnected = this._findDisconnectedPlayerByName(incomingName);
+
+    if (disconnected) {
+      const oldId = disconnected.id;
+
+      // Migrate the PlayerState to the new sessionId
+      this.state.players.delete(oldId);
+      disconnected.id = client.sessionId;
+      disconnected.isConnected = true;
+      this.state.players.set(client.sessionId, disconnected);
+
+      // If the reconnecting player was the host, update hostSessionId
+      if (this.state.hostSessionId === oldId) {
+        this.state.hostSessionId = client.sessionId;
+      }
+
+      // Update any opponent references that point to the old sessionId
+      // (e.g., 1v1 bracket matches in TapSpeed)
+      for (const p of this.state.players.values()) {
+        if (p.currentMatchOpponentId === oldId) {
+          p.currentMatchOpponentId = client.sessionId;
+        }
+      }
+
+      // Notify the active game plugin so it can update internal state
+      if (this.game) {
+        this.game.onPlayerReconnected?.(oldId, client.sessionId, client);
+      }
+
+      GammaRoom.playerReconnects.add(1, { roomCode: this.state.roomCode });
+      console.log(
+        `[GammaRoom] player reconnected by name — oldId=${oldId} newId=${client.sessionId} name=${incomingName}`,
+      );
+      return;
+    }
+
+    // ── Fresh join ───────────────────────────────────────────────────────────
     const player = new PlayerState();
     player.id = client.sessionId;
-    player.name = (options.name ?? "Player").slice(0, 20);
+    player.name = incomingName;
     this.state.players.set(client.sessionId, player);
 
     // First player becomes host if no TV
@@ -181,6 +225,23 @@ export class GammaRoom extends Room<RoomState> {
       playerName: player.name,
     });
     console.log(`[GammaRoom] player joined — id=${client.sessionId} name=${player.name}`);
+  }
+
+  /**
+   * Find a disconnected player with the given name.
+   * Returns the first match, or null if none found.
+   *
+   * Edge case: if multiple disconnected players share the same name,
+   * we return the first one found (Map iteration order = insertion order).
+   * In practice, duplicate names in the same room are rare.
+   */
+  private _findDisconnectedPlayerByName(name: string): PlayerState | null {
+    for (const player of this.state.players.values()) {
+      if (!player.isConnected && player.name === name) {
+        return player;
+      }
+    }
+    return null;
   }
 
   // ── Message registration ──────────────────────────────────────────────────
@@ -197,6 +258,30 @@ export class GammaRoom extends Room<RoomState> {
       const p = this.state.players.get(client.sessionId);
       if (p && this.state.phase === "lobby") p.isReady = false;
     });
+
+    /** Player customizes their icon/avatar (allowed during lobby). */
+    this.onMessage(
+      "customize_player",
+      (client, data: { iconEmoji?: string; iconText?: string; iconBgColor?: string }) => {
+        const p = this.state.players.get(client.sessionId);
+        if (!p) return;
+        // Only allow customization during lobby phase
+        if (this.state.phase !== "lobby") return;
+
+        // Validate and set emoji (max 4 chars to cover multi-codepoint emoji)
+        if (typeof data.iconEmoji === "string") {
+          p.iconEmoji = data.iconEmoji.slice(0, 4);
+        }
+        // Validate and set text (max 3 chars)
+        if (typeof data.iconText === "string") {
+          p.iconText = data.iconText.slice(0, 3);
+        }
+        // Validate and set bg color (must look like a hex color or preset name)
+        if (typeof data.iconBgColor === "string" && data.iconBgColor.length <= 20) {
+          p.iconBgColor = data.iconBgColor;
+        }
+      },
+    );
 
     /** Host kicks a player from the room (lobby only). */
     this.onMessage("kick_player", (client, data: { targetId: string }) => {

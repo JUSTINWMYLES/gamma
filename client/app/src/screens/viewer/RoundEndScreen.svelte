@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 </script>
@@ -10,6 +11,7 @@
     {#each sortedPlayers as p, i}
       <div class="flex items-center gap-4 bg-gray-800 rounded-xl px-6 py-3">
         <span class="text-2xl font-black text-gray-500">#{i + 1}</span>
+        <PlayerIcon player={p} size={32} />
         <span class="flex-1 font-semibold {p.isEliminated ? 'line-through text-gray-500' : ''}">{p.name}</span>
         <span class="font-mono text-xl text-indigo-300">{p.score}</span>
       </div>

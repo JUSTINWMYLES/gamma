@@ -87,6 +87,23 @@
     animation: wmTl 3.8s steps(1) infinite;
   }
 
+  /* Light mode: use screen blend for better contrast on white backgrounds */
+  :global(.light) .wordmark .mg {
+    mix-blend-mode: screen;
+  }
+  :global(.light) .wordmark .tl {
+    mix-blend-mode: screen;
+  }
+  :global(.light) .wordmark .base {
+    color: #6b5f90;
+  }
+  :global(.light) .wm-label {
+    color: #6b5f90;
+  }
+  :global(.light) .wordmark-glow {
+    background: radial-gradient(ellipse at center, rgba(124,111,173,0.12) 0%, transparent 70%);
+  }
+
   @keyframes wmMg {
     0%, 84%  { opacity: 0; clip-path: inset(100% 0 0 0); transform: translate(0); }
     85%      { opacity: 1; clip-path: inset(12% 0 52% 0); transform: translate(-7px, 0); }

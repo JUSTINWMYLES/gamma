@@ -29,6 +29,8 @@
     | "spectating"    // Someone else has the potato
     | "exploded"      // Timer ran out
     | "voting"        // Vote on who was holding
+    | "delay_voting"  // Vote on who unfairly delayed
+    | "delay_result"  // Brief display of delay penalty
     | "results";      // Round results
 
   let subPhase: SubPhase = "waiting";
@@ -71,6 +73,39 @@
   let correctVoters: string[] = [];
   let resultScores: Record<string, number> = {};
   let passLeader: { id: string; name: string; count: number } | null = null;
+  let resultDelayPenalty: {
+    penalizedId: string;
+    penalizedName: string;
+    penaltyPoints: number;
+  } | null = null;
+
+  // ── Delay voting state ─────────────────────────────────────────
+
+  let delayPlayers: {
+    id: string;
+    name: string;
+    avgAcceptMs: number;
+    maxAcceptMs: number;
+    acceptCount: number;
+  }[] = [];
+  let delayVotingTimeLeft = 0;
+  let delayVotingEndTime = 0;
+  let delayVotingTimer: ReturnType<typeof setInterval> | null = null;
+  let myDelayVote: string | null = null;
+  let delayVoteConfirmed = false;
+  let delayVotesIn = 0;
+  let delayTotalVoters = 0;
+  let slowThresholdMs = 4000;
+
+  /** Mirror of server constant for display purposes. */
+  const DELAY_PENALTY_POINTS = 50;
+
+  // ── Delay result state ─────────────────────────────────────────
+
+  let delayPenalizedName = "";
+  let delayPenalizedId = "";
+  let delayPenaltyPoints = 0;
+  let delayVoteCount = 0;
 
   // ── Round skipped ───────────────────────────────────────────────
 
@@ -82,6 +117,7 @@
   function clearAllTimers() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    if (delayVotingTimer) { clearInterval(delayVotingTimer); delayVotingTimer = null; }
   }
 
   // ── Actions ─────────────────────────────────────────────────────
@@ -101,6 +137,12 @@
     if (myVote || voteConfirmed) return;
     myVote = tid;
     room.send("game_input", { action: "potato_vote", targetId: tid });
+  }
+
+  function castDelayVote(tid: string) {
+    if (myDelayVote || delayVoteConfirmed) return;
+    myDelayVote = tid;
+    room.send("game_input", { action: "potato_delay_vote", targetId: tid });
   }
 
   // ── Message handlers ────────────────────────────────────────────
@@ -226,6 +268,7 @@
     correctVoters: string[];
     scores: Record<string, number>;
     passLeader: { id: string; name: string; count: number } | null;
+    delayPenalty: { penalizedId: string; penalizedName: string; penaltyPoints: number } | null;
   }) {
     subPhase = "results";
     clearAllTimers();
@@ -234,6 +277,55 @@
     correctVoters = data.correctVoters;
     resultScores = data.scores;
     passLeader = data.passLeader;
+    resultDelayPenalty = data.delayPenalty ?? null;
+  }
+
+  function onPotatoDelayVoteStart(data: {
+    players: { id: string; name: string; avgAcceptMs: number; maxAcceptMs: number; acceptCount: number }[];
+    durationMs: number;
+    serverTimestamp: number;
+    slowThresholdMs: number;
+  }) {
+    subPhase = "delay_voting";
+    delayPlayers = data.players.filter((p) => p.id !== me?.id);
+    myDelayVote = null;
+    delayVoteConfirmed = false;
+    delayVotesIn = 0;
+    slowThresholdMs = data.slowThresholdMs;
+
+    delayVotingEndTime = data.serverTimestamp + data.durationMs;
+    delayVotingTimeLeft = Math.max(0, (delayVotingEndTime - Date.now()) / 1000);
+
+    clearAllTimers();
+    delayVotingTimer = setInterval(() => {
+      delayVotingTimeLeft = Math.max(0, (delayVotingEndTime - Date.now()) / 1000);
+    }, 200);
+  }
+
+  function onPotatoDelayVoteConfirmed() {
+    delayVoteConfirmed = true;
+  }
+
+  function onPotatoDelayVoteUpdate(data: { votesIn: number; totalVoters: number }) {
+    delayVotesIn = data.votesIn;
+    delayTotalVoters = data.totalVoters;
+  }
+
+  function onPotatoDelayResult(data: {
+    penalizedId: string;
+    penalizedName: string;
+    penaltyPoints: number;
+    voteCount: number;
+    totalVotes: number;
+  }) {
+    if (data.penalizedId) {
+      subPhase = "delay_result";
+      delayPenalizedId = data.penalizedId;
+      delayPenalizedName = data.penalizedName;
+      delayPenaltyPoints = data.penaltyPoints;
+      delayVoteCount = data.voteCount;
+    }
+    clearAllTimers();
   }
 
   function onRoundSkipped(data: { reason: string }) {
@@ -255,6 +347,10 @@
     room.onMessage("potato_vote_confirmed", onPotatoVoteConfirmed);
     room.onMessage("potato_vote_update", onPotatoVoteUpdate);
     room.onMessage("potato_result", onPotatoResult);
+    room.onMessage("potato_delay_vote_start", onPotatoDelayVoteStart);
+    room.onMessage("potato_delay_vote_confirmed", onPotatoDelayVoteConfirmed);
+    room.onMessage("potato_delay_vote_update", onPotatoDelayVoteUpdate);
+    room.onMessage("potato_delay_result", onPotatoDelayResult);
     room.onMessage("round_skipped", onRoundSkipped);
   });
 
@@ -267,6 +363,7 @@
   $: myScore = resultScores[me?.id ?? ""] ?? 0;
   $: iWasCorrect = correctVoters.includes(me?.id ?? "");
   $: iWasHolder = resultHolderId === me?.id;
+  $: iWasPenalized = resultDelayPenalty?.penalizedId === me?.id;
   $: timerUrgent = timeRemaining < 4;
   $: timerDisplay = Math.max(0, Math.ceil(timeRemaining * 10) / 10).toFixed(1);
 </script>
@@ -420,6 +517,78 @@
       {/if}
     </div>
 
+  {:else if subPhase === "delay_voting"}
+    <!-- Vote on who unfairly delayed accepting -->
+    <div class="w-full max-w-sm space-y-4">
+      <div class="text-center">
+        <h2 class="text-xl font-black text-purple-400">Who Delayed Unfairly?</h2>
+        <p class="text-sm text-gray-400 mt-1">
+          Vote for the player who took too long to accept
+        </p>
+        <p class="text-sm text-gray-500 mt-1">
+          {Math.ceil(delayVotingTimeLeft)}s remaining
+          {#if delayVotesIn > 0}
+            <span class="ml-2 text-gray-500">({delayVotesIn}/{delayTotalVoters} voted)</span>
+          {/if}
+        </p>
+      </div>
+
+      {#if delayVoteConfirmed}
+        <div class="bg-purple-900 border border-purple-600 rounded-xl p-4 text-center">
+          <p class="text-purple-200 font-bold">Vote submitted!</p>
+          <p class="text-purple-400 text-sm mt-1">Waiting for others...</p>
+        </div>
+      {:else}
+        <div class="space-y-2">
+          {#each delayPlayers as suspect}
+            <button
+              class="w-full text-left px-4 py-3 rounded-lg border transition-colors active:scale-[0.98]
+                {myDelayVote === suspect.id
+                  ? 'border-purple-500 bg-purple-900 text-white'
+                  : 'border-gray-700 bg-gray-800 text-gray-300 active:border-purple-500'}"
+              on:click={() => castDelayVote(suspect.id)}
+              disabled={!!myDelayVote}
+            >
+              <div class="flex items-center justify-between">
+                <p class="font-semibold">{suspect.name}</p>
+                <div class="text-right">
+                  <p class="text-xs {suspect.maxAcceptMs >= slowThresholdMs ? 'text-red-400' : 'text-gray-500'}">
+                    avg {(suspect.avgAcceptMs / 1000).toFixed(1)}s
+                  </p>
+                  {#if suspect.maxAcceptMs >= slowThresholdMs}
+                    <p class="text-xs text-red-400 font-bold">
+                      max {(suspect.maxAcceptMs / 1000).toFixed(1)}s
+                    </p>
+                  {/if}
+                </div>
+              </div>
+            </button>
+          {/each}
+        </div>
+
+        <p class="text-xs text-gray-600 text-center">
+          Penalty: -{DELAY_PENALTY_POINTS} pts for the most-voted player
+        </p>
+      {/if}
+    </div>
+
+  {:else if subPhase === "delay_result"}
+    <!-- Delay penalty result -->
+    <div class="w-full max-w-sm space-y-5 text-center">
+      <div class="text-5xl">🐢</div>
+      <h2 class="text-xl font-black text-purple-400">Delay Penalty!</h2>
+      <div class="bg-purple-900/40 border border-purple-600 rounded-xl p-4">
+        <p class="text-2xl font-black text-purple-200">{delayPenalizedName}</p>
+        <p class="text-red-400 font-bold text-lg mt-2">-{delayPenaltyPoints} pts</p>
+        <p class="text-sm text-gray-400 mt-1">
+          {delayVoteCount} vote{delayVoteCount !== 1 ? "s" : ""} for unfair delay
+        </p>
+      </div>
+      {#if delayPenalizedId === me?.id}
+        <p class="text-red-300 text-sm">That was you! Accept faster next time.</p>
+      {/if}
+    </div>
+
   {:else if subPhase === "results"}
     <!-- Results -->
     <div class="w-full max-w-sm space-y-4 text-center">
@@ -450,6 +619,15 @@
           <p class="text-xs text-gray-500">
             Most passes: <span class="text-orange-400 font-bold">{passLeader.name}</span>
             ({passLeader.count} passes, +25 bonus)
+          </p>
+        </div>
+      {/if}
+
+      {#if resultDelayPenalty && resultDelayPenalty.penalizedId}
+        <div class="bg-purple-900/30 border border-purple-600 rounded-xl p-3">
+          <p class="text-xs text-purple-400">
+            Delay penalty: <span class="text-purple-300 font-bold">{resultDelayPenalty.penalizedName}</span>
+            <span class="text-red-400 font-bold">-{resultDelayPenalty.penaltyPoints}</span>
           </p>
         </div>
       {/if}

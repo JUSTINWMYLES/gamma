@@ -10,57 +10,59 @@
 
   // ── Stage / phase state ───────────────────────────────────────────────────
   type FireStage = "strike" | "blow" | "shake" | "extinguish";
-  type GamePhase = "waiting" | "active" | "stage_complete" | "round_success" | "round_done";
+  type GamePhase = "waiting" | "active" | "finished" | "round_end";
 
   let phase: GamePhase = "waiting";
-  let currentStage: FireStage = "strike";
-  let stageIndex = 0;
+  let myStageIndex = 0;
+  let myStage: FireStage = "strike";
   let totalStages = 4;
 
-  // Progress
-  let target = 0;
-  let current = 0;
-  let fireLevel = 0;
-  let invertedProgress = false;
+  // My individual progress
+  let myCurrent = 0;
+  let myTarget = 0;
+  let myFinished = false;
+  let myTotalContribution = 0;
+
+  // Timer (total game time)
   let timeLeft = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
   let roundEndAt = 0;
 
-  // Standings
-  let standings: { playerId: string; playerName: string; contribution: number }[] = [];
-
   // ── Campfire intensity (drives the visual) ────────────────────────────────
-  // Maps the stage progression to a fire intensity:
-  //   strike: 0 -> ~0.15  (dim flicker when match is lit)
-  //   blow:   0.15 -> ~0.45  (growing)
-  //   shake:  0.45 -> ~0.85  (roaring)
-  //   extinguish: 0.85 -> 0 (dying down)
   const STAGE_INTENSITY: Record<FireStage, [number, number]> = {
-    strike:     [0.0,  0.15],
-    blow:       [0.15, 0.45],
-    shake:      [0.45, 0.85],
-    extinguish: [0.85, 0.0],
+    strike:     [0.0,  0.25],
+    blow:       [0.25, 0.60],
+    shake:      [0.60, 1.0],
+    extinguish: [1.0,  0.0],
   };
   let fireIntensity = 0;
 
   $: {
-    const [from, to] = STAGE_INTENSITY[currentStage] ?? [0, 0];
-    const pct = target > 0
-      ? invertedProgress
-        ? 1 - fireLevel / target
-        : current / target
-      : 0;
-    const clampedPct = Math.max(0, Math.min(1, pct));
-    fireIntensity = from + (to - from) * clampedPct;
+    if (myFinished) {
+      fireIntensity = 0;
+    } else {
+      const [from, to] = STAGE_INTENSITY[myStage] ?? [0, 0];
+      const pct = myTarget > 0 ? Math.min(1, myCurrent / myTarget) : 0;
+      fireIntensity = from + (to - from) * pct;
+    }
   }
 
   // ── Strike (tap) state ────────────────────────────────────────────────────
   let strikeTaps = 0;
 
+  /** Prevent click from firing after touchstart already handled the event. */
+  let lastTouchAt = 0;
+  function wasTouch(): boolean {
+    return Date.now() - lastTouchAt < 400;
+  }
+
   function sendStrike() {
     strikeTaps++;
     room.send("game_input", { action: "fire_strike" });
   }
+
+  function onStrikeTouch() { lastTouchAt = Date.now(); sendStrike(); }
+  function onStrikeClick() { if (!wasTouch()) sendStrike(); }
 
   // ── Blow (microphone) state ───────────────────────────────────────────────
   let micActive = false;
@@ -87,16 +89,13 @@
       micActive = true;
       micMsg = "Listening for blowing...";
 
-      // Poll amplitude
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       micCheckTimer = setInterval(() => {
-        if (!analyser || currentStage !== "blow" || phase !== "active") return;
+        if (!analyser || myStage !== "blow" || phase !== "active" || myFinished) return;
         analyser.getByteFrequencyData(dataArray);
-        // Compute average amplitude (0-255)
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
         const avg = sum / dataArray.length;
-        // Blow threshold: ~40+ out of 255 means actively blowing
         if (avg > 35) {
           const amplitude = Math.min(3, avg / 60);
           room.send("game_input", { action: "fire_blow", amplitude });
@@ -115,10 +114,11 @@
     micActive = false;
   }
 
-  // Fallback manual blow button
   function sendBlowManual() {
     room.send("game_input", { action: "fire_blow", amplitude: 1 });
   }
+  function onBlowTouch() { lastTouchAt = Date.now(); sendBlowManual(); }
+  function onBlowClick() { if (!wasTouch()) sendBlowManual(); }
 
   // ── Shake (accelerometer) state ───────────────────────────────────────────
   let motionEnabled = false;
@@ -126,7 +126,7 @@
   let lastShakeAt = 0;
 
   function onMotion(e: DeviceMotionEvent) {
-    if (!motionEnabled || currentStage !== "shake" || phase !== "active") return;
+    if (!motionEnabled || myStage !== "shake" || phase !== "active" || myFinished) return;
     const ax = e.accelerationIncludingGravity?.x ?? 0;
     const ay = e.accelerationIncludingGravity?.y ?? 0;
     const az = e.accelerationIncludingGravity?.z ?? 0;
@@ -161,10 +161,11 @@
     motionMsg = "Shake detection enabled!";
   }
 
-  // Fallback manual shake button
   function sendShakeManual() {
     room.send("game_input", { action: "fire_shake", magnitude: 1.2 });
   }
+  function onShakeTouch() { lastTouchAt = Date.now(); sendShakeManual(); }
+  function onShakeClick() { if (!wasTouch()) sendShakeManual(); }
 
   // ── Extinguish (tap) state ────────────────────────────────────────────────
   let extinguishTaps = 0;
@@ -173,10 +174,12 @@
     extinguishTaps++;
     room.send("game_input", { action: "fire_tap" });
   }
+  function onExtinguishTouch() { lastTouchAt = Date.now(); sendExtinguish(); }
+  function onExtinguishClick() { if (!wasTouch()) sendExtinguish(); }
 
   // ── Timer ─────────────────────────────────────────────────────────────────
-  function startTimer(durationMs: number, serverTimestamp: number) {
-    roundEndAt = serverTimestamp + durationMs;
+  function startTimer(totalDurationMs: number, serverTimestamp: number) {
+    roundEndAt = serverTimestamp + totalDurationMs;
     if (timer) clearInterval(timer);
     timer = setInterval(() => {
       timeLeft = Math.max(0, (roundEndAt - Date.now()) / 1000);
@@ -203,73 +206,70 @@
 
   // ── Colyseus message handlers ─────────────────────────────────────────────
   onMount(() => {
-    room.onMessage("fire_round_start", () => {
-      phase = "waiting";
-      strikeTaps = 0;
-      extinguishTaps = 0;
-      fireIntensity = 0;
-    });
-
-    room.onMessage("fire_stage_start", (d: {
-      stage: FireStage;
-      stageIndex: number;
+    room.onMessage("fire_round_start", (d: {
       totalStages: number;
-      target: number;
-      durationMs: number;
+      totalDurationMs: number;
       serverTimestamp: number;
-      invertedProgress: boolean;
+      players: { playerId: string; stageIndex: number; stage: string; current: number; target: number; finished: boolean }[];
     }) => {
       phase = "active";
-      currentStage = d.stage;
-      stageIndex = d.stageIndex;
       totalStages = d.totalStages;
-      target = d.target;
-      current = 0;
-      fireLevel = d.invertedProgress ? d.target : 0;
-      invertedProgress = d.invertedProgress;
-      standings = [];
-      startTimer(d.durationMs, d.serverTimestamp);
+      strikeTaps = 0;
+      extinguishTaps = 0;
+      myFinished = false;
+      myTotalContribution = 0;
 
-      // Auto-start mic for blow stage
-      if (d.stage === "blow" && !micActive) {
-        startMic();
+      // Find my initial state.
+      const myState = d.players.find((p) => p.playerId === me?.id);
+      if (myState) {
+        myStageIndex = myState.stageIndex;
+        myStage = myState.stage as FireStage;
+        myCurrent = myState.current;
+        myTarget = myState.target;
+      } else {
+        myStageIndex = 0;
+        myStage = "strike";
+        myCurrent = 0;
+        myTarget = 0;
+      }
+
+      startTimer(d.totalDurationMs, d.serverTimestamp);
+    });
+
+    room.onMessage("fire_update", (d: {
+      timeLeftMs: number;
+      players: { playerId: string; stageIndex: number; stage: string | null; current: number; target: number; totalContribution: number; finished: boolean; invertedProgress: boolean }[];
+    }) => {
+      timeLeft = Math.max(0, d.timeLeftMs / 1000);
+
+      // Update my own progress from server state.
+      const myState = d.players.find((p) => p.playerId === me?.id);
+      if (myState) {
+        myStageIndex = myState.stageIndex;
+        if (myState.stage) myStage = myState.stage as FireStage;
+        myCurrent = myState.current;
+        myTarget = myState.target;
+        myTotalContribution = myState.totalContribution;
+        myFinished = myState.finished;
       }
     });
 
-    room.onMessage("fire_stage_update", (d: {
-      stage: FireStage;
-      current: number;
-      target: number;
-      fireLevel: number;
-      timeLeftMs: number;
-      standings: { playerId: string; playerName: string; contribution: number }[];
-      invertedProgress: boolean;
-    }) => {
-      current = d.current;
-      target = d.target;
-      fireLevel = d.fireLevel;
-      invertedProgress = d.invertedProgress;
-      timeLeft = Math.max(0, d.timeLeftMs / 1000);
-      standings = d.standings;
-    });
-
-    room.onMessage("fire_stage_end", (d: { stage: FireStage; success: boolean }) => {
-      phase = "stage_complete";
-      clearTimerInterval();
-      // Stop mic when blow stage ends
+    room.onMessage("fire_player_stage_complete", (d: { stage: string; stageIndex: number }) => {
+      // My stage was completed; the server already advanced me.
+      // Reset local tap counters.
       if (d.stage === "blow") {
         stopMic();
       }
     });
 
-    room.onMessage("fire_round_success", () => {
-      phase = "round_success";
-      clearTimerInterval();
+    room.onMessage("fire_player_finished", () => {
+      myFinished = true;
+      phase = "finished";
       stopMic();
     });
 
-    room.onMessage("fire_round_done", () => {
-      phase = "round_done";
+    room.onMessage("fire_round_end", () => {
+      phase = "round_end";
       clearTimerInterval();
       stopMic();
     });
@@ -284,16 +284,10 @@
   });
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  $: percent = target > 0
-    ? invertedProgress
-      ? Math.min(100, (1 - fireLevel / target) * 100)
-      : Math.min(100, (current / target) * 100)
-    : 0;
-  $: myContribution = standings.find((s) => s.playerId === me?.id)?.contribution ?? 0;
-  $: stageLabel = STAGE_LABELS[currentStage] ?? "";
-  $: stageInstruction = STAGE_INSTRUCTIONS[currentStage] ?? "";
+  $: percent = myTarget > 0 ? Math.min(100, (myCurrent / myTarget) * 100) : 0;
+  $: stageLabel = STAGE_LABELS[myStage] ?? "";
+  $: stageInstruction = STAGE_INSTRUCTIONS[myStage] ?? "";
 
-  // Stage progress dots
   const stageNames: FireStage[] = ["strike", "blow", "shake", "extinguish"];
 </script>
 
@@ -301,26 +295,31 @@
   <!-- Header -->
   <h2 class="text-xl font-black text-orange-400">Camp Fire</h2>
 
-  <!-- Stage progress dots -->
+  <!-- Stage progress dots (MY progress) -->
   <div class="flex items-center gap-2">
     {#each stageNames as sn, i}
       <div class="flex items-center gap-1">
-        <div class="w-3 h-3 rounded-full transition-all {i < stageIndex ? 'bg-green-400' : i === stageIndex && phase === 'active' ? 'bg-orange-400 animate-pulse' : 'bg-gray-600'}"></div>
+        <div class="w-3 h-3 rounded-full transition-all {i < myStageIndex ? 'bg-green-400' : i === myStageIndex && phase === 'active' && !myFinished ? 'bg-orange-400 animate-pulse' : myFinished ? 'bg-green-400' : 'bg-gray-600'}"></div>
         <span class="text-[10px] text-gray-400 uppercase tracking-wide">{sn}</span>
       </div>
       {#if i < stageNames.length - 1}
-        <div class="w-4 h-px {i < stageIndex ? 'bg-green-400' : 'bg-gray-700'}"></div>
+        <div class="w-4 h-px {i < myStageIndex ? 'bg-green-400' : 'bg-gray-700'}"></div>
       {/if}
     {/each}
   </div>
 
+  <!-- Total timer -->
+  <p class="text-center font-mono font-bold text-lg {timeLeft < 10 ? 'text-red-400' : 'text-white'}">
+    {Math.ceil(timeLeft)}s
+  </p>
+
   <!-- Campfire animation -->
   <div class="flex-shrink-0">
-    <CampfireCanvas intensity={fireIntensity} width={200} height={220} />
+    <CampfireCanvas intensity={fireIntensity} width={180} height={200} />
   </div>
 
   <!-- Stage info + progress bar -->
-  {#if phase === "active"}
+  {#if phase === "active" && !myFinished}
     <div class="w-full max-w-sm space-y-2">
       <p class="text-center text-lg font-black text-yellow-300">{stageLabel}</p>
       <p class="text-center text-xs text-gray-400">{stageInstruction}</p>
@@ -328,27 +327,29 @@
       <!-- Progress bar -->
       <div class="h-3 bg-gray-700 rounded-full overflow-hidden">
         <div
-          class="h-full transition-all duration-150 rounded-full {invertedProgress ? 'bg-gradient-to-r from-red-500 to-orange-400' : 'bg-gradient-to-r from-orange-500 to-yellow-400'}"
+          class="h-full transition-all duration-150 rounded-full bg-gradient-to-r from-orange-500 to-yellow-400"
           style="width:{percent}%"
         ></div>
       </div>
       <div class="flex justify-between text-xs text-gray-500">
         <span>{Math.round(percent)}%</span>
-        <span class="font-mono font-bold {timeLeft < 5 ? 'text-red-400' : 'text-white'}">{Math.ceil(timeLeft)}s</span>
+        <span>Stage {myStageIndex + 1}/{totalStages}</span>
       </div>
     </div>
 
     <!-- Stage-specific controls -->
     <div class="w-full max-w-sm">
-      {#if currentStage === "strike"}
+      {#if myStage === "strike"}
         <button
           class="w-full py-5 rounded-xl bg-amber-600 text-white font-black text-xl active:scale-95 active:bg-amber-500 transition-all select-none"
-          on:click={sendStrike}
+          style="touch-action:manipulation"
+          on:touchstart|preventDefault={onStrikeTouch}
+          on:click={onStrikeClick}
         >
           STRIKE! ({strikeTaps})
         </button>
 
-      {:else if currentStage === "blow"}
+      {:else if myStage === "blow"}
         <div class="space-y-2">
           {#if !micActive}
             <button
@@ -360,7 +361,9 @@
           {/if}
           <button
             class="w-full py-5 rounded-xl bg-orange-600 text-white font-black text-xl active:scale-95 active:bg-orange-500 transition-all select-none"
-            on:click={sendBlowManual}
+            style="touch-action:manipulation"
+            on:touchstart|preventDefault={onBlowTouch}
+            on:click={onBlowClick}
           >
             BLOW
           </button>
@@ -369,7 +372,7 @@
           {/if}
         </div>
 
-      {:else if currentStage === "shake"}
+      {:else if myStage === "shake"}
         <div class="space-y-2">
           {#if !motionEnabled}
             <button
@@ -381,7 +384,9 @@
           {/if}
           <button
             class="w-full py-5 rounded-xl bg-sky-600 text-white font-black text-xl active:scale-95 active:bg-sky-500 transition-all select-none"
-            on:click={sendShakeManual}
+            style="touch-action:manipulation"
+            on:touchstart|preventDefault={onShakeTouch}
+            on:click={onShakeClick}
           >
             SHAKE
           </button>
@@ -390,32 +395,36 @@
           {/if}
         </div>
 
-      {:else if currentStage === "extinguish"}
+      {:else if myStage === "extinguish"}
         <button
           class="w-full py-5 rounded-xl bg-red-600 text-white font-black text-xl active:scale-95 active:bg-red-500 transition-all select-none"
-          on:click={sendExtinguish}
+          style="touch-action:manipulation"
+          on:touchstart|preventDefault={onExtinguishTouch}
+          on:click={onExtinguishClick}
         >
           TAP TO EXTINGUISH! ({extinguishTaps})
         </button>
       {/if}
     </div>
 
-  {:else if phase === "stage_complete"}
-    <div class="text-center space-y-1">
-      <p class="text-lg font-black text-green-400">Stage complete!</p>
-      <p class="text-sm text-gray-400">Next stage starting...</p>
+  {:else if phase === "finished" || myFinished}
+    <div class="text-center space-y-2">
+      <p class="text-2xl font-black text-green-400">All stages complete!</p>
+      <p class="text-sm text-gray-400">Waiting for other players...</p>
     </div>
 
-  {:else if phase === "round_success"}
-    <p class="text-2xl font-black text-green-400">All stages cleared!</p>
-
-  {:else if phase === "round_done"}
-    <p class="text-2xl font-black text-red-400">Round over!</p>
+  {:else if phase === "round_end"}
+    <div class="text-center space-y-1">
+      <p class="text-2xl font-black {myFinished ? 'text-green-400' : 'text-red-400'}">
+        {myFinished ? 'Round complete!' : "Time's up!"}
+      </p>
+      <p class="text-sm text-gray-400">Stages completed: {Math.min(myStageIndex, totalStages)}/{totalStages}</p>
+    </div>
 
   {:else}
     <p class="text-gray-400">Waiting for round...</p>
   {/if}
 
   <!-- Contribution -->
-  <p class="text-sm text-gray-400">Your contribution: <span class="text-white font-bold">{myContribution}</span></p>
+  <p class="text-sm text-gray-400">Your effort: <span class="text-white font-bold">{myTotalContribution}</span></p>
 </div>

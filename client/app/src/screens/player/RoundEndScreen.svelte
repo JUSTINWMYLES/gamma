@@ -16,7 +16,7 @@
     if (g.includes("dont-get-caught")) return "You evaded the guards!";
     if (g.includes("shave-the-yak")) return "Nice shaving!";
     if (g.includes("odd-one-out")) return "You survived the vote!";
-    if (g.includes("evil-laugh")) return "Round complete!";
+    if (g.includes("audio-overlay")) return "Round complete!";
     if (g.includes("lowball")) return "Bids are in!";
     return "Round complete!";
   }

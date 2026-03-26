@@ -1,11 +1,54 @@
 Audio attribution (CC BY 4.0)
 
+cloud_dancer.mp3
 "Cloud Dancer" Kevin MacLeod (incompetech.com)
 Licensed under Creative Commons: By Attribution 4.0 License
 https://creativecommons.org/licenses/by/4.0/
 
+farting_around.mp3
 "Farting Around" Kevin MacLeod (incompetech.com)
 Licensed under Creative Commons: By Attribution 4.0 License
 https://creativecommons.org/licenses/by/4.0/
+
+cash_register.mp3
+Cash Register by kiddpark -- https://freesound.org/s/201159/ -- License: Attribution 4.0
+
+whip_crack.wav
+Whip Crack 01.wav by CGEffex -- https://freesound.org/s/93100/ -- License: Attribution 4.0
+
+men_shouting_hey.wav
+Men Shouting Hey.wav by Jace -- https://freesound.org/s/57204/ -- License: Creative Commons 0
+hey.wav by UncleSigmund -- https://freesound.org/s/30989/ -- License: Attribution 4.0
+
+car_crash.wav
+Car Crash by squareal -- https://freesound.org/s/237375/ -- License: Creative Commons 0
+
+zazie.mp3
+"Zazie" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
+
+disco_clap.wav
+Disco Clap by NenadSimic -- https://freesound.org/s/169085/ -- License: Creative Commons 0
+
+pixelland.mp3
+"Pixelland" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
+
+vivacity.mp3
+"Vivacity" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
+
+le_grand_chase.mp3
+"Le Grand Chase" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
+
+thinking_music.mp3
+"Thinking Music" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
 
 See /ATTRIBUTIONS.md for usage locations in this project.

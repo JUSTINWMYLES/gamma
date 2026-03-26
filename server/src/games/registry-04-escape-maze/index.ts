@@ -22,6 +22,10 @@
  * Maze Generation
  * ───────────────
  * - Recursive backtracker (DFS) algorithm, seeded for determinism.
+ * - After the perfect maze is generated, a fraction of interior walls
+ *   are removed to create loops and multiple routes from start to exit.
+ *   This makes the maze feel more complex and gives players strategic
+ *   choices about which way to go (WALL_REMOVAL_RATIO controls density).
  * - Maze is stored as a flat array of tiles (0 = wall, 1 = path, 2 = exit).
  * - Serialized to RoomState.mapTiles as JSON string.
  * - Start is always top-left area; exit is always bottom-right area.
@@ -34,6 +38,8 @@
 
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { buildBracket, advanceBracket, resolveHeat } from "../../utils/bracket";
+import { Heat } from "../../schema/BracketState";
 
 // ── Tile constants ────────────────────────────────────────────────────────────
 
@@ -45,9 +51,17 @@ const TILE_START = 3;
 // ── Maze dimensions ───────────────────────────────────────────────────────────
 
 /** Maze grid width (in cells — actual tile map is 2*W+1 wide). */
-const MAZE_CELLS_W = 12;
+const MAZE_CELLS_W = 14;
 /** Maze grid height (in cells — actual tile map is 2*H+1 tall). */
-const MAZE_CELLS_H = 8;
+const MAZE_CELLS_H = 10;
+
+/**
+ * Fraction of interior walls to remove after DFS generation (0–1).
+ * This creates loops / multiple routes through the maze, making it
+ * feel less linear. ~0.15 gives noticeable alternative paths without
+ * making the maze trivially open.
+ */
+const WALL_REMOVAL_RATIO = 0.15;
 
 /** Actual tile dimensions. */
 const MAP_W = MAZE_CELLS_W * 2 + 1;
@@ -130,7 +144,7 @@ interface MazeInput {
 
 export default class EscapeMazeGame extends BaseGame {
   static override requiresTV = false;
-  static override supportsBracket = false;
+  static override supportsBracket = true;
   static override defaultRoundCount = 2;
   static override minRounds = 1;
   static override maxRounds = 5;
@@ -180,6 +194,9 @@ export default class EscapeMazeGame extends BaseGame {
   /** Seed for maze generation. */
   private mazeSeed = 0;
 
+  /** Seed for bracket randomization. */
+  private bracketSeed = 0;
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
@@ -191,19 +208,146 @@ export default class EscapeMazeGame extends BaseGame {
     }
 
     this.mazeSeed = Date.now();
+    this.bracketSeed = Date.now();
 
-    // Determine game mode based on player count
-    const playerCount = this._activePlayers().length;
-    if (playerCount >= 4 && playerCount % 4 === 0) {
-      this.gameMode = "team";
-    } else {
+    const isBracket = this.room.state.gameConfig.matchMode === "1v1_bracket";
+
+    // Bracket mode forces individual mode (no teams)
+    if (isBracket) {
       this.gameMode = "individual";
+
+      const playerIds = this._activePlayers().map((p) => p.id);
+      const heatSize = playerIds.length <= 6 ? 2 : 3;
+      const bracket = buildBracket(playerIds, this.bracketSeed, { heatSize, advanceCount: 1 });
+      this.room.state.bracket = bracket;
+    } else {
+      // Determine game mode based on player count
+      const playerCount = this._activePlayers().length;
+      if (playerCount >= 4 && playerCount % 4 === 0) {
+        this.gameMode = "team";
+      } else {
+        this.gameMode = "individual";
+      }
     }
 
     this.broadcast("maze_mode", {
       mode: this.gameMode,
-      playerCount,
+      playerCount: this._activePlayers().length,
     });
+  }
+
+  /**
+   * Override runRounds for bracket mode.
+   * Each bracket round plays a maze round; escape order determines heat ranking.
+   * Bracket forces individual mode.
+   */
+  protected override async runRounds(): Promise<void> {
+    if (this.room.state.gameConfig.matchMode !== "1v1_bracket") {
+      return super.runRounds();
+    }
+
+    const bracket = this.room.state.bracket;
+
+    this.broadcast("bracket_init", {
+      totalPlayers: this._activePlayers().length,
+      heatSize: bracket.heatSize,
+    });
+
+    let bracketRoundNum = 0;
+
+    while (true) {
+      const currentBracketRound = bracket.rounds[bracket.currentRound];
+      if (!currentBracketRound) break;
+
+      const pendingHeats = currentBracketRound.heats.filter(
+        (h: Heat) => h.status !== "complete",
+      );
+
+      if (pendingHeats.length === 0) {
+        const advancers: string[] = [];
+        for (const h of currentBracketRound.heats) {
+          for (const aid of h.advancingIds) {
+            if (aid) advancers.push(aid);
+          }
+        }
+
+        if (advancers.length <= 1) break;
+
+        for (const p of this.room.state.players.values()) {
+          if (!p.isEliminated && !advancers.includes(p.id)) {
+            p.isEliminated = true;
+          }
+        }
+
+        advanceBracket(bracket, this.bracketSeed);
+
+        this.broadcast("bracket_round_advance", {
+          newRound: bracket.currentRound + 1,
+          remainingPlayers: advancers.length,
+        });
+
+        await this.delay(3000);
+        continue;
+      }
+
+      bracketRoundNum++;
+      this.room.state.currentRound = bracketRoundNum;
+
+      this.broadcast("bracket_heat_round", {
+        bracketRound: bracket.currentRound + 1,
+        heats: ([...currentBracketRound.heats] as Heat[]).map((h) => ({
+          id: h.id,
+          playerIds: [...h.playerIds],
+          status: h.status,
+        })),
+      });
+
+      for (const h of pendingHeats) {
+        h.status = "in_progress";
+      }
+
+      this.setPhase("countdown");
+      await this.delay(3000);
+
+      this.setPhase("in_round");
+      this.room.state.phaseStartedAt = Date.now();
+      await this.delay(500);
+
+      await this.runRound(bracketRoundNum);
+      this.scoreRound(bracketRoundNum);
+
+      // Resolve heats: rank by escape order, then distance to exit for non-escapers
+      for (const heat of pendingHeats) {
+        const heatPlayerIds = [...heat.playerIds].filter((id): id is string => !!id);
+        const ranked = this._rankPlayersForBracket(heatPlayerIds);
+
+        if (ranked.length > 0) {
+          const advanceCount = bracket.advanceCount;
+          const advancing = ranked.slice(0, advanceCount).map((r) => r.playerId);
+          resolveHeat(heat, advancing);
+        } else {
+          heat.status = "complete";
+        }
+      }
+
+      this.setPhase("round_end");
+      await this.delay(4000);
+    }
+
+    const finalRound = bracket.rounds[bracket.currentRound];
+    if (finalRound) {
+      const champion = finalRound.heats[0]?.advancingIds[0];
+      if (champion) {
+        const champPlayer = this.room.state.players.get(champion);
+        this.broadcast("bracket_champion", {
+          championId: champion,
+          championName: champPlayer?.name ?? "Unknown",
+        });
+      }
+    }
+
+    this.setPhase("scoreboard");
+    await this.delay(6000);
   }
 
   protected override async runRound(round: number): Promise<void> {
@@ -330,6 +474,12 @@ export default class EscapeMazeGame extends BaseGame {
       }
     }
 
+    // ── Create loops by removing interior walls ──────────────────
+    // A perfect DFS maze has exactly one path between any two cells.
+    // Removing some interior walls creates loops / alternative routes,
+    // making the maze feel more complex and giving players choices.
+    this._removeExtraWalls(rng, w, h);
+
     // Set start position (top-left cell center)
     this.startPos = { x: 1, y: 1 };
     this.mazeTiles[this.startPos.y * MAP_W + this.startPos.x] = TILE_START;
@@ -354,6 +504,58 @@ export default class EscapeMazeGame extends BaseGame {
     const tileX = cellX * 2 + 1;
     const tileY = cellY * 2 + 1;
     this.mazeTiles[tileY * MAP_W + tileX] = TILE_PATH;
+  }
+
+  /**
+   * Remove a fraction of interior walls to create loops.
+   *
+   * We identify all interior wall tiles that sit between two path cells
+   * (horizontally or vertically). These are candidate walls whose removal
+   * creates an alternative route. We shuffle them and remove
+   * WALL_REMOVAL_RATIO of them, converting them to TILE_PATH.
+   */
+  private _removeExtraWalls(rng: () => number, w: number, h: number): void {
+    // Collect candidate walls: interior wall tiles between two carved cells.
+    // In the tile map, cell centers are at odd coordinates (2*cx+1, 2*cy+1).
+    // Walls between horizontally adjacent cells are at (2*cx+2, 2*cy+1).
+    // Walls between vertically adjacent cells are at (2*cx+1, 2*cy+2).
+    const candidates: number[] = []; // flat indices into mazeTiles
+
+    // Horizontal walls: between cell (cx, cy) and (cx+1, cy)
+    for (let cy = 0; cy < h; cy++) {
+      for (let cx = 0; cx < w - 1; cx++) {
+        const wallTileX = cx * 2 + 2;
+        const wallTileY = cy * 2 + 1;
+        const idx = wallTileY * MAP_W + wallTileX;
+        if (this.mazeTiles[idx] === TILE_WALL) {
+          candidates.push(idx);
+        }
+      }
+    }
+
+    // Vertical walls: between cell (cx, cy) and (cx, cy+1)
+    for (let cy = 0; cy < h - 1; cy++) {
+      for (let cx = 0; cx < w; cx++) {
+        const wallTileX = cx * 2 + 1;
+        const wallTileY = cy * 2 + 2;
+        const idx = wallTileY * MAP_W + wallTileX;
+        if (this.mazeTiles[idx] === TILE_WALL) {
+          candidates.push(idx);
+        }
+      }
+    }
+
+    // Fisher-Yates shuffle using the seeded RNG
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+
+    // Remove a fraction of the candidate walls
+    const removeCount = Math.floor(candidates.length * WALL_REMOVAL_RATIO);
+    for (let i = 0; i < removeCount; i++) {
+      this.mazeTiles[candidates[i]] = TILE_PATH;
+    }
   }
 
   // ── Individual mode ───────────────────────────────────────────────────────
@@ -421,7 +623,10 @@ export default class EscapeMazeGame extends BaseGame {
 
     // Wall check
     const tile = this.mazeTiles[newY * MAP_W + newX];
-    if (tile === TILE_WALL) return;
+    if (tile === TILE_WALL) {
+      this.send(sessionId, "maze_wall_bump", { direction });
+      return;
+    }
 
     // Apply movement
     pos.x = newX;
@@ -747,6 +952,37 @@ export default class EscapeMazeGame extends BaseGame {
     return [...this.room.state.players.values()].filter(
       (p) => p.isConnected && !p.isEliminated,
     );
+  }
+
+  /**
+   * Rank players within a heat by maze performance.
+   * Escaped players rank first (by escape order), then non-escaped players
+   * by distance to exit (closer = better rank).
+   */
+  private _rankPlayersForBracket(
+    playerIds: string[],
+  ): { playerId: string; rank: number }[] {
+    const results = playerIds.map((pid) => {
+      const pos = this.playerPositions.get(pid);
+      const dx = (pos?.x ?? 0) - this.exitPos.x;
+      const dy = (pos?.y ?? 0) - this.exitPos.y;
+      return {
+        playerId: pid,
+        escaped: pos?.escaped ?? false,
+        escapeOrder: pos?.escapeOrder ?? Infinity,
+        distToExit: Math.sqrt(dx * dx + dy * dy),
+      };
+    });
+
+    results.sort((a, b) => {
+      // Escaped players first, by escape order
+      if (a.escaped !== b.escaped) return a.escaped ? -1 : 1;
+      if (a.escaped && b.escaped) return a.escapeOrder - b.escapeOrder;
+      // Non-escaped: closer to exit is better
+      return a.distToExit - b.distToExit;
+    });
+
+    return results.map((r, i) => ({ playerId: r.playerId, rank: i + 1 }));
   }
 
   private _clearIntervals(): void {

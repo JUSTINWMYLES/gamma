@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RoomState, PlayerState } from "../../../shared/types";
+  import PlayerIcon from "../components/PlayerIcon.svelte";
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 </script>
@@ -13,6 +14,7 @@
           {i === 0 ? 'bg-indigo-700 scale-105 shadow-xl' : 'bg-gray-800'}"
       >
         <span class="text-3xl">{['🥇','🥈','🥉'][i] ?? `#${i+1}`}</span>
+        <PlayerIcon player={p} size={36} />
         <span class="flex-1 font-bold text-lg">{p.name}</span>
         <span class="font-mono text-2xl">{p.score}</span>
       </div>

@@ -3,6 +3,7 @@
    * Phone join screen — room code entry + name.
    */
   import { createEventDispatcher } from "svelte";
+  import GammaLogo from "../components/GammaLogo.svelte";
 
   export let error: string = "";
 
@@ -34,7 +35,10 @@
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="join-screen">
-  <h1 class="text-4xl font-black text-indigo-400">gamma</h1>
+  <div class="flex flex-col items-center gap-2">
+    <GammaLogo size="64px" />
+    <h1 class="text-3xl font-black tracking-tight text-indigo-400">GAMMA</h1>
+  </div>
 
   <div class="w-full max-w-xs space-y-4">
     <input
