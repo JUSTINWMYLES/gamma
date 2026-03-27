@@ -19,6 +19,7 @@
   import TapSpeed from "../../games/player/TapSpeed.svelte";
   import SoundReplication from "../../games/player/SoundReplication.svelte";
   import EscapeMaze from "../../games/player/EscapeMaze.svelte";
+  import PaintMatch from "../../games/player/PaintMatch.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -35,6 +36,7 @@
   $: isTapSpeed = state.selectedGame === "registry-03-tap-speed";
   $: isSoundReplication = state.selectedGame === "registry-06-sound-replication";
   $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
+  $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -198,7 +200,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -263,7 +265,10 @@
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isTapSpeed}
+{#if isPaintMatch}
+  <!-- ── Registry-40: Paint Match ────────────────────────────────── -->
+  <PaintMatch {room} {state} {me} />
+{:else if isTapSpeed}
   <!-- ── Registry-03: Tap Speed ──────────────────────────────────── -->
   <TapSpeed {room} {state} {me} />
 {:else if isSoundReplication}

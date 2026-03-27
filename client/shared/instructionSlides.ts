@@ -119,6 +119,45 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
   ],
 
+  "registry-40-paint-match": [
+    {
+      heading: "Paint Match",
+      body: "Can you mix the perfect colour?",
+      bgClass: "bg-gradient-to-br from-rose-900 via-pink-900 to-fuchsia-900",
+      headingColor: "text-rose-300",
+      bodyColor: "text-rose-100",
+      fontClass: "font-black",
+      icon: "\u{1F3A8}",
+    },
+    {
+      heading: "Five Paints",
+      body: "You have red, yellow, blue, white, and black paint buckets. Adjust the sliders to mix your colour!",
+      bgClass: "bg-gradient-to-br from-amber-900 via-orange-900 to-red-900",
+      headingColor: "text-amber-300",
+      bodyColor: "text-amber-100",
+      fontClass: "font-bold",
+      icon: "\u{1FAA3}",
+    },
+    {
+      heading: "Match the Target",
+      body: "The mystery colour is on the TV. Blend your paints to get as close as possible!",
+      bgClass: "bg-gradient-to-br from-cyan-900 via-teal-900 to-emerald-900",
+      headingColor: "text-cyan-300",
+      bodyColor: "text-cyan-100",
+      fontClass: "font-bold",
+      icon: "\u{1F4FA}",
+    },
+    {
+      heading: "Submit & Score",
+      body: "Lock in your mix before time runs out. Closest colour match wins the most points!",
+      bgClass: "bg-gradient-to-br from-violet-900 via-purple-900 to-indigo-900",
+      headingColor: "text-violet-300",
+      bodyColor: "text-violet-100",
+      fontClass: "font-black",
+      icon: "\u{1F3C6}",
+    },
+  ],
+
   "registry-26-audio-overlay": [
     {
       heading: "Audio Overlay",

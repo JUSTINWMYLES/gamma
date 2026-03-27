@@ -12,12 +12,14 @@
   import type { RoomState } from "../../../shared/types";
   import { TILE_SIZE_PX, TILE } from "../../../shared/types";
   import OddOneOutTV from "../games/OddOneOutTV.svelte";
+  import PaintMatchTV from "../games/PaintMatchTV.svelte";
 
   export let room: Room;
   export let state: RoomState;
 
   // ── Game routing ──────────────────────────────────────────────────
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
+  $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -32,7 +34,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut) return; // OddOneOutTV handles its own setup
+    if (isOddOneOut || isPaintMatch) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -170,7 +172,9 @@
   }
 </script>
 
-{#if isOddOneOut}
+{#if isPaintMatch}
+  <PaintMatchTV {room} {state} />
+{:else if isOddOneOut}
   <OddOneOutTV {room} {state} />
 {:else}
 <div class="flex-1 flex" data-testid="game-screen">
