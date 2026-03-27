@@ -12,6 +12,7 @@
   import type { RoomState, PlayerState } from "../../../shared/types";
   import ShaveYak from "../games/ShaveYak.svelte";
   import OddOneOut from "../games/OddOneOut.svelte";
+  import PaintMatch from "../games/PaintMatch.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -21,6 +22,7 @@
   // ── Game routing ──────────────────────────────────────────────────
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
+  $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -140,7 +142,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isPaintMatch) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -194,7 +196,10 @@
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isOddOneOut}
+{#if isPaintMatch}
+  <!-- ── Registry-40: Paint Match ────────────────────────────────── -->
+  <PaintMatch {room} {state} {me} />
+{:else if isOddOneOut}
   <!-- ── Registry-20: Odd One Out ──────────────────────────────────── -->
   <OddOneOut {room} {state} {me} />
 {:else if isShaveYak}

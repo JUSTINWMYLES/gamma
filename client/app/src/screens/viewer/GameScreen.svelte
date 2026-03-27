@@ -22,6 +22,7 @@
   import TapSpeedTV from "../../games/viewer/TapSpeedTV.svelte";
   import SoundReplicationTV from "../../games/viewer/SoundReplicationTV.svelte";
   import EscapeMazeTV from "../../games/viewer/EscapeMazeTV.svelte";
+  import PaintMatchTV from "../../games/viewer/PaintMatchTV.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
@@ -37,6 +38,7 @@
   $: isTapSpeed = state.selectedGame === "registry-03-tap-speed";
   $: isSoundReplication = state.selectedGame === "registry-06-sound-replication";
   $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
+  $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -51,7 +53,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -222,7 +224,9 @@
   }
 </script>
 
-{#if isTapSpeed}
+{#if isPaintMatch}
+  <PaintMatchTV {room} {state} />
+{:else if isTapSpeed}
   <TapSpeedTV {room} {state} />
 {:else if isSoundReplication}
   <SoundReplicationTV {room} {state} />

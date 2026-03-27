@@ -122,6 +122,7 @@
     "registry-17-fire-match-blow-shake": "vivacity",
     "registry-14-dont-get-caught":       "le_grand_chase",
     "registry-20-odd-one-out":           "thinking",
+    "registry-40-paint-match":           "thinking",
   };
 
   function desiredTrack(): TrackId | null {
