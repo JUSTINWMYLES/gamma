@@ -1,0 +1,15 @@
+- The sky looks pretty white during the daytime, make it more blue
+- I like the building placement, but the road placement needs some work, there are roads going through a lot of the buildings, and the skyscraper building has a lot of roads going through it
+- Some of the big buildings are just white, give them some fun color. Feel free to remove some of them as well if they are causing other scenes to be placed too close together. 
+- The radio station and the garden maze are a bit too close
+- The green colors of the grass and the city trees can be a bit more green, right now they are a bit too light
+- Feel free to add some fun floating clouds in the sky
+- Can you make the river look a little better, right now it's just a blue straight strip, give it textures and make it look better and maybe even like water is running through
+- Can you make it so that the skyscraper is only 2 game cards wide, and from a top down that it would be a square rather than a rectangle. 
+- I want the cards on the building to be the literal cards from the `cards` view within
+- Instead of buttons for city view and tower view, I want the user to be able to just zoom in and zoom out, when they zoom in, it should zoom all the way to the close view without allowing them to go to the in between zones. Then when they zoom out it should force them to the further zoomed out position
+- The painting area, can you make that so the canvases are looking towards the river water
+- Can you add some street lights 
+- Dark mode on my phone is basically pitch black, can you make the lights from the street lights brighter and maybe just make the whole thing a dot lighter
+- There are some light posts inside of trees, can you make sure that isn't happening?
+- Can you add a way to actually start a game from the city view once they pan over to it? Maybe add a start button or something

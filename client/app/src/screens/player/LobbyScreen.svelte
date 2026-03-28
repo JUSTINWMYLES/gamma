@@ -8,6 +8,8 @@
   import GameDetailView from "../../components/GameDetailView.svelte";
   import PlayerCustomizer from "../../components/PlayerCustomizer.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
+  import CityScene from "../../components/CityScene.svelte";
+  import { isDark } from "../../stores/theme";
 
   export let room: Room;
   export let state: RoomState;
@@ -96,8 +98,30 @@
   }
 
   // ── View mode for game picker ────────────────────────────────────────────
-  type GameView = "cards" | "shelf" | "list";
+  type GameView = "cards" | "shelf" | "list" | "city";
   let gameView: GameView = "cards";
+
+  // ── Color map for CityScene game windows ─────────────────────────────────
+  const CITY_GAME_COLORS: Record<string, { color: string; accent: string }> = {
+    "registry-03-tap-speed":            { color: "#ff6020", accent: "#ffb080" },
+    "registry-04-escape-maze":          { color: "#70e870", accent: "#b0ffb0" },
+    "registry-06-sound-replication":    { color: "#d080ff", accent: "#e8c0ff" },
+    "registry-07-hot-potato":           { color: "#ff9050", accent: "#ffc0a0" },
+    "registry-14-dont-get-caught":      { color: "#c8c8c8", accent: "#e8e8e8" },
+    "registry-17-fire-match-blow-shake":{ color: "#f0c040", accent: "#ffe080" },
+    "registry-19-shave-the-yak":        { color: "#40f0a0", accent: "#90ffc8" },
+    "registry-20-odd-one-out":          { color: "#f060a0", accent: "#ffa0c8" },
+    "registry-25-lowball-marketplace":  { color: "#f0c040", accent: "#ffe080" },
+    "registry-40-paint-match":          { color: "#60b8ff", accent: "#a0d8ff" },
+    "registry-26-audio-overlay":        { color: "#80a8ff", accent: "#b0c8ff" },
+  };
+
+  $: cityGames = GAME_REGISTRY.map((g) => ({
+    id: g.id,
+    label: g.label,
+    color: CITY_GAME_COLORS[g.id]?.color ?? "#c8c8c8",
+    accent: CITY_GAME_COLORS[g.id]?.accent ?? "#e8e8e8",
+  }));
 
   // ── Game detail overlay ─────────────────────────────────────────────────
   let detailGameId: string | null = null;
@@ -544,6 +568,11 @@
               {gameView === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
             on:click={() => (gameView = "list")}
           >List</button>
+          <button
+            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
+              {gameView === 'city' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
+            on:click={() => (gameView = "city")}
+          >City</button>
         </div>
 
         {#if gameView === "cards"}
@@ -553,6 +582,18 @@
         {:else if gameView === "shelf"}
           <div class="w-full overflow-x-auto px-2">
             <GameShelf {state} on:select={(e) => selectGame(e.detail.gameId)} />
+          </div>
+        {:else if gameView === "city"}
+          <div class="w-full" style="height: 60vh; min-height: 360px;">
+            <CityScene
+              dark={$isDark}
+              games={cityGames}
+              selectedId={state.selectedGame ?? ""}
+              readonly={false}
+              on:select={(e) => selectGame(e.detail.gameId)}
+              on:detail={(e) => openDetail(e.detail.gameId)}
+              on:startGame={(e) => { selectGame(e.detail.gameId); start(); }}
+            />
           </div>
         {:else}
           <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
@@ -676,6 +717,11 @@
               {gameView === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
             on:click={() => (gameView = "list")}
           >List</button>
+          <button
+            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
+              {gameView === 'city' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
+            on:click={() => (gameView = "city")}
+          >City</button>
         </div>
         {#if gameView === "cards"}
           <div class="w-full overflow-x-auto px-2">
@@ -684,6 +730,16 @@
         {:else if gameView === "shelf"}
           <div class="w-full overflow-x-auto px-2">
             <GameShelf {state} readonly={true} />
+          </div>
+        {:else if gameView === "city"}
+          <div class="w-full" style="height: 60vh; min-height: 360px;">
+            <CityScene
+              dark={$isDark}
+              games={cityGames}
+              selectedId={state.selectedGame ?? ""}
+              readonly={true}
+              on:detail={(e) => openDetail(e.detail.gameId)}
+            />
           </div>
         {:else}
           <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
