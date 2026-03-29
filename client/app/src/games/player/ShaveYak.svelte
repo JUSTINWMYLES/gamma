@@ -50,11 +50,16 @@
   let furCanvas: HTMLCanvasElement;
   let furCtx: CanvasRenderingContext2D;
   let furTexture: THREE.CanvasTexture;
+  let headFurMesh: THREE.Mesh;
+  let headFurCanvas: HTMLCanvasElement;
+  let headFurCtx: CanvasRenderingContext2D;
+  let headFurTexture: THREE.CanvasTexture;
   let raycaster: THREE.Raycaster;
   let animFrameId: number;
 
   // Swipe tracking
   let swiping = false;
+  let swipingHead = false; // tracks whether the current swipe is on the head
   let lastUV: { u: number; v: number } | null = null;
   let lastPt: { x: number; y: number } | null = null; // in YAK_W/YAK_H space for server
 
@@ -101,18 +106,18 @@
     return c;
   }
 
-  /** Erase circles along a line on the fur canvas (UV space mapped to pixels). */
-  function eraseSwipeLine(u1: number, v1: number, u2: number, v2: number) {
-    if (!furCtx) return;
+  /** Erase circles along a line on a fur canvas (UV space mapped to pixels). */
+  function eraseSwipeLine(u1: number, v1: number, u2: number, v2: number, ctx: CanvasRenderingContext2D, texture: THREE.CanvasTexture) {
+    if (!ctx) return;
     // UV to pixel coords
     const x1 = u1 * YAK_W;
     const y1 = (1 - v1) * YAK_H; // V is flipped in Three.js
     const x2 = u2 * YAK_W;
     const y2 = (1 - v2) * YAK_H;
 
-    furCtx.save();
-    furCtx.globalCompositeOperation = "destination-out";
-    furCtx.fillStyle = "rgba(0,0,0,1)";
+    ctx.save();
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "rgba(0,0,0,1)";
 
     const dx = x2 - x1;
     const dy = y2 - y1;
@@ -121,13 +126,13 @@
 
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
-      furCtx.beginPath();
-      furCtx.arc(x1 + dx * t, y1 + dy * t, SHAVE_RADIUS, 0, Math.PI * 2);
-      furCtx.fill();
+      ctx.beginPath();
+      ctx.arc(x1 + dx * t, y1 + dy * t, SHAVE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    furCtx.restore();
-    furTexture.needsUpdate = true;
+    ctx.restore();
+    texture.needsUpdate = true;
   }
 
   // ── Build the 3D yak model ────────────────────────────────────────────
@@ -177,16 +182,22 @@
     group.add(head);
 
     // Head fur
+    headFurCanvas = createFurCanvas();
+    headFurCtx = headFurCanvas.getContext("2d")!;
+    headFurTexture = new THREE.CanvasTexture(headFurCanvas);
+    headFurTexture.wrapS = THREE.RepeatWrapping;
+    headFurTexture.wrapT = THREE.RepeatWrapping;
+
     const headFurGeom = new THREE.SphereGeometry(0.57, 24, 20);
     headFurGeom.scale(1.0, 0.92, 0.92);
     const headFurMat = new THREE.MeshStandardMaterial({
-      map: furTexture,
+      map: headFurTexture,
       transparent: true,
       roughness: 0.9,
     });
-    const headFur = new THREE.Mesh(headFurGeom, headFurMat);
-    headFur.position.set(0, 0.95, 0.8);
-    group.add(headFur);
+    headFurMesh = new THREE.Mesh(headFurGeom, headFurMat);
+    headFurMesh.position.set(0, 0.95, 0.8);
+    group.add(headFurMesh);
 
     // Snout
     const snoutGeom = new THREE.SphereGeometry(0.22, 16, 12);
@@ -344,7 +355,7 @@
   }
 
   // ── Hit-test / raycast ────────────────────────────────────────────────
-  function getUVFromPointer(clientX: number, clientY: number): { uv: THREE.Vector2; point: THREE.Vector3 } | null {
+  function getUVFromPointer(clientX: number, clientY: number): { uv: THREE.Vector2; point: THREE.Vector3; isHead: boolean } | null {
     if (!containerEl || !furMesh) return null;
     const rect = containerEl.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -357,7 +368,8 @@
     const intersects = raycaster.intersectObjects(yakGroup.children, false);
     for (const hit of intersects) {
       if (hit.uv) {
-        return { uv: hit.uv, point: hit.point };
+        const isHead = hit.object === headFurMesh;
+        return { uv: hit.uv, point: hit.point, isHead };
       }
     }
     return null;
@@ -376,6 +388,7 @@
     const hit = getUVFromPointer(e.clientX, e.clientY);
     if (hit) {
       swiping = true;
+      swipingHead = hit.isHead;
       lastUV = { u: hit.uv.x, v: hit.uv.y };
       lastPt = uvToYakCoords(hit.uv);
       controls.enabled = false; // disable orbit while shaving
@@ -399,8 +412,10 @@
       onTarget,
     });
 
-    // Erase fur on the texture
-    eraseSwipeLine(lastUV.u, lastUV.v, hit.uv.x, hit.uv.y);
+    // Erase fur on the correct texture (body or head)
+    const ctx = swipingHead ? headFurCtx : furCtx;
+    const tex = swipingHead ? headFurTexture : furTexture;
+    eraseSwipeLine(lastUV.u, lastUV.v, hit.uv.x, hit.uv.y, ctx, tex);
     spawn3DParticles(hit.point);
 
     lastUV = { u: hit.uv.x, v: hit.uv.y };
@@ -410,6 +425,7 @@
   function onPointerUp(_e: PointerEvent) {
     if (swiping) {
       swiping = false;
+      swipingHead = false;
       lastUV = null;
       lastPt = null;
       controls.enabled = true; // re-enable orbit
@@ -434,6 +450,7 @@
         onTarget: false,
       });
       swiping = false;
+      swipingHead = false;
       lastUV = null;
       lastPt = null;
       controls.enabled = true;
@@ -583,6 +600,8 @@
   onDestroy(() => {
     cancelAnimationFrame(animFrameId);
     clearInterval(timerInterval);
+    if (furTexture) furTexture.dispose();
+    if (headFurTexture) headFurTexture.dispose();
     if (renderer) {
       renderer.dispose();
     }
