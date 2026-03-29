@@ -292,67 +292,86 @@
       <div class="w-full max-w-sm">
         {#if setupStep === 1}
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">Are you all in the same room?</h2>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-3">
             <button
-              class="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectLocation("same")}
             >
               <span class="text-4xl">🏠</span>
-              <span class="font-bold">Together</span>
-              <span class="text-xs text-gray-400">Same room</span>
+              <div class="text-left">
+                <span class="font-bold block">Together</span>
+                <span class="text-xs text-gray-400">Everyone is in the same physical room</span>
+              </div>
             </button>
             <button
-              class="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectLocation("remote")}
             >
               <span class="text-4xl">🌍</span>
-              <span class="font-bold">Remote</span>
-              <span class="text-xs text-gray-400">Different locations</span>
+              <div class="text-left">
+                <span class="font-bold block">Remote</span>
+                <span class="text-xs text-gray-400">Players are in different locations</span>
+              </div>
             </button>
           </div>
 
         {:else if setupStep === 2}
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">How active?</h2>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="space-y-3">
             <button
-              class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectActivity("none")}
             >
               <span class="text-3xl">🛋️</span>
-              <span class="text-sm font-bold">None</span>
+              <div class="text-left">
+                <span class="text-sm font-bold block">None</span>
+                <span class="text-xs text-gray-400">Stay seated — all phone-based games</span>
+              </div>
             </button>
             <button
-              class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectActivity("some")}
             >
               <span class="text-3xl">🚶</span>
-              <span class="text-sm font-bold">Some</span>
+              <div class="text-left">
+                <span class="text-sm font-bold block">Some</span>
+                <span class="text-xs text-gray-400">Light movement — passing phones, standing up</span>
+              </div>
             </button>
             <button
-              class="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectActivity("full")}
             >
               <span class="text-3xl">🏃</span>
-              <span class="text-sm font-bold">Full</span>
+              <div class="text-left">
+                <span class="text-sm font-bold block">Full</span>
+                <span class="text-xs text-gray-400">Running, shaking, physical challenges</span>
+              </div>
             </button>
           </div>
 
         {:else if setupStep === 3}
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">Using a shared screen?</h2>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="space-y-3">
             <button
-              class="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectDisplay(true)}
             >
               <span class="text-4xl">📺</span>
-              <span class="font-bold">Yes</span>
+              <div class="text-left">
+                <span class="font-bold block">Yes</span>
+                <span class="text-xs text-gray-400">TV, laptop, or projector as a shared display</span>
+              </div>
             </button>
             <button
-              class="flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 transition-colors"
+              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectDisplay(false)}
             >
               <span class="text-4xl">📱</span>
-              <span class="font-bold">Phone only</span>
+              <div class="text-left">
+                <span class="font-bold block">Phone only</span>
+                <span class="text-xs text-gray-400">Everyone plays on their own phone — no shared screen</span>
+              </div>
             </button>
           </div>
         {/if}

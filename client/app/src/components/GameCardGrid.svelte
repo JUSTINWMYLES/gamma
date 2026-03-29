@@ -204,6 +204,14 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.3);
   }
 
+  /* Suppress hover lift on touch devices to prevent random pop during scroll */
+  @media (hover: none) {
+    .card:not(.unavailable):not(.readonly):hover {
+      transform: none;
+      box-shadow: none;
+    }
+  }
+
   .card:not(.unavailable):not(.readonly):active {
     transform: scale(0.97);
   }
@@ -345,6 +353,12 @@
 
   :global(.light) .card:not(.unavailable):not(.readonly):hover {
     box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  }
+
+  @media (hover: none) {
+    :global(.light) .card:not(.unavailable):not(.readonly):hover {
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
   }
 
   :global(.light) .card-art {

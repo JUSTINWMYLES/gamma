@@ -12,6 +12,9 @@
  * Override with the PORT environment variable.
  */
 
+// Load .env file before anything else reads process.env
+import "dotenv/config";
+
 import { initTelemetry } from "./telemetry";
 import express from "express";
 import cors from "cors";
@@ -53,6 +56,7 @@ async function main() {
   httpServer.listen(PORT, () => {
     console.log(`[gamma] server listening on http://localhost:${PORT}`);
     console.log(`[gamma] WebSocket endpoint  ws://localhost:${PORT}`);
+    console.log(`[gamma] KLIPY_API_KEY: ${process.env.KLIPY_API_KEY ? "configured" : "NOT SET — GIF search will not work"}`);
   });
 
   // Graceful shutdown on SIGTERM (Kubernetes pod termination)

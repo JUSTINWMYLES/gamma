@@ -238,7 +238,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     detailDescription: "The server generates a random target color displayed on the TV. Each player's phone shows a color-mixing canvas with five virtual paint buckets: red, yellow, blue, white, and black. Adjust the amounts to blend a custom color in real time. Submit your mix when ready — the server computes perceptual color distance (CIE deltaE) to rank players from closest to farthest. Supports bracket matchmaking for tournament play.",
     activityLevel: "none",
     requiresSameRoom: false,
-    requiresSecondaryDisplay: false,
+    requiresSecondaryDisplay: true,
     minPlayers: 2,
     maxPlayers: 16,
     tags: ["creative", "color", "competitive"],
@@ -265,13 +265,17 @@ export const GAME_REGISTRY: GameMeta[] = [
  */
 export function getGameUnavailableReason(
   game: GameMeta,
-  state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay" | "players">,
+  state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay" | "viewScreenConnected" | "players">,
 ): string | null {
   if (game.requiresSameRoom && state.locationMode === "remote") {
     return "Requires same-room play";
   }
   if (game.requiresSecondaryDisplay && !state.hasSecondaryDisplay) {
     return "Requires a TV / secondary display";
+  }
+  // If host selected shared display and game requires it, block until display actually joins
+  if (game.requiresSecondaryDisplay && state.hasSecondaryDisplay && !state.viewScreenConnected) {
+    return "Waiting for display to connect";
   }
   if (state.activityLevel !== "" && game.activityLevel !== state.activityLevel) {
     // Allow same or less activity than selected

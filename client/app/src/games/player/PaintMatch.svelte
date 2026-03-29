@@ -305,7 +305,7 @@
               max="100"
               value={Math.round(getBucketValue(bucket.key) * 100)}
               on:input={(e) => setBucketValue(bucket.key, parseInt(e.currentTarget.value) / 100)}
-              class="flex-1 h-8 rounded-full appearance-none cursor-pointer"
+              class="paint-slider flex-1 h-10 rounded-full appearance-none cursor-pointer"
               style="background: linear-gradient(to right, {bucket.trackColor}, {bucket.color})"
               disabled={submitted}
               data-testid="slider-{bucket.key}"
@@ -336,3 +336,33 @@
     </div>
   {/if}
 </div>
+
+<style>
+  /* Larger touch targets for paint sliders on mobile */
+  .paint-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid #6366f1;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    touch-action: pan-x;
+  }
+  .paint-slider::-moz-range-thumb {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #fff;
+    border: 3px solid #6366f1;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    touch-action: pan-x;
+  }
+  /* Prevent vertical touch interference */
+  .paint-slider {
+    touch-action: pan-x;
+  }
+</style>
