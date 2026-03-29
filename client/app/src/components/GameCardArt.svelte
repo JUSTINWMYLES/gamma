@@ -82,7 +82,7 @@
     <path d="M138 20 Q148 37, 138 54" fill="none" stroke="{accent}" stroke-width="0.6" opacity="0.2" class="wave-r3"/>
     <!-- Waveform bar visualization at bottom -->
     {#each [30,40,50,60,70,80,90,100,110,120,130,140,150,160,170] as bx, i}
-      {@const h = 4 + Math.sin(i * 0.9) * 6 + Math.cos(i * 1.7) * 4}
+      {@const h = Math.max(2, 4 + Math.sin(i * 0.9) * 6 + Math.cos(i * 1.7) * 4)}
       <rect x={bx - 1.5} y={88 - h} width="3" height={h} rx="1.5" fill="{accent}" opacity={0.2 + (i % 3) * 0.1} class="eq-bar" style="animation-delay: {i * 80}ms"/>
     {/each}
   </svg>

@@ -1,14 +1,16 @@
 /**
  * server/src/games/registry-26-audio-overlay/index.ts
  *
- * "Audio Overlay" — A random player picks a CATEGORY, everyone browses
- * GIFs from that category, picks one, gets assigned someone else's pick,
+ * "Audio Overlay" — A random player picks a CATEGORY, everyone searches
+ * for GIFs using the Klipy API, picks one, gets assigned someone else's pick,
  * records audio over it, then everyone votes for the best.
  *
  * Game flow (single round = full session):
  * ─────────────────────────────────────────
  *   0. CATEGORY_SELECTION (30s) — Random player picks a GIF category.
- *   1. GIF_SELECTION  (120s) — All players browse the category's GIF pool and pick one.
+ *   1. GIF_SELECTION  (120s) — All players search for GIFs via Klipy API and pick one.
+ *      The chosen category's search term is used for the initial auto-search.
+ *      Players can also search for any term they want.
  *   2. REDISTRIBUTION        — Server shuffles selections and assigns each
  *                              player a *different* player's GIF.
  *   3. RECORDING     (60s/player) — One player at a time records audio over
@@ -19,14 +21,15 @@
  *
  * GIF sourcing
  * ────────────
- * Uses curated URL pools per category. Designed so swapping to a Giphy/Tenor
- * API is a one-function change: replace `getGifPool()` with an async fetch.
+ * All GIFs come from the Klipy GIF Search API (requires KLIPY_API_KEY).
+ * There are no hardcoded fallback pools.
  *
  * Server messages → clients:
  *   "category_selection_start" { chooserId, chooserName, categories, durationMs, serverTimestamp }
  *   "category_chosen"          { category, chooserName }
- *   "gif_selection_start"      { gifs, category, durationMs, serverTimestamp }
+ *   "gif_selection_start"      { gifs, category, searchTerm, durationMs, serverTimestamp }
  *   "gif_selection_update"     { submitted, total }
+ *   "gif_search_results"       { gifs, query }
  *   "gif_assigned"             { gifUrl, gifLabel, originalPicker, durationMs, serverTimestamp }
  *   "recording_turn"           { playerId, playerName, durationMs, serverTimestamp }
  *   "recording_submitted"      { playerId }
@@ -39,7 +42,8 @@
  *
  * Client messages ← players:
  *   { action: "select_category", category }
- *   { action: "select_gif", gifUrl }
+ *   { action: "select_gif", gifUrl, gifLabel }
+ *   { action: "search_gifs", query }
  *   { action: "submit_recording", audioBase64 }
  *   { action: "vote", targetId }
  */
@@ -106,177 +110,130 @@ const CATEGORIES: CategoryInfo[] = [
   { id: "any", name: "Anything Goes", icon: "shuffle", description: "A wild mix from every category" },
 ];
 
+/** Search terms mapped to each category for the Klipy GIF API. */
+const CATEGORY_SEARCH_TERMS: Record<GifCategory, string> = {
+  evil_laughs: "evil laugh villain",
+  animals: "funny animals",
+  vehicles: "cars trucks vehicles",
+  yells: "yelling screaming reaction",
+  dance: "dancing funny moves",
+  sports: "sports highlights epic",
+  any: "funny reactions",
+};
+
+/** Klipy API base URL (v1 — key is a path segment). */
+const KLIPY_API_BASE = "https://api.klipy.com/api/v1";
+
+/** How many GIFs to request per page (Klipy accepts 8-50, default 24). */
+const KLIPY_PER_PAGE = 30;
+
+/** Timeout for Klipy API requests (ms). */
+const KLIPY_FETCH_TIMEOUT_MS = 5_000;
+
 /**
- * Returns the pool of GIFs for a given category.
+ * Klipy v1 response shape (from https://docs.klipy.com/gifs-api/gifs-search-api).
  *
- * **Swap point**: To integrate Giphy/Tenor, change this function to
- * `async getGifPool(category): Promise<GifEntry[]>` and fetch from the API.
- * The rest of the game code only needs GifEntry[].
+ *   { "result": true, "data": { "data": [ ... ] } }
+ *
+ * Each item in data.data[] has:
+ *   id, slug, title, file.{sm|md|hd}.{gif|webp|jpg|mp4|webm}.url
  */
-function getGifPool(category: GifCategory): GifEntry[] {
-  if (category === "any") {
-    const all: GifEntry[] = [];
-    for (const [cat, gifs] of Object.entries(CATEGORY_GIF_POOLS)) {
-      if (cat !== "any") all.push(...gifs);
-    }
-    // Shuffle and cap at 30
-    for (let i = all.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [all[i], all[j]] = [all[j], all[i]];
-    }
-    return all.slice(0, 30);
-  }
-  return CATEGORY_GIF_POOLS[category] ?? CATEGORY_GIF_POOLS["evil_laughs"];
+interface KlipyGifItem {
+  id?: number;
+  slug?: string;
+  title?: string;
+  file?: {
+    sm?: { gif?: { url?: string }; webp?: { url?: string } };
+    md?: { gif?: { url?: string }; webp?: { url?: string } };
+    hd?: { gif?: { url?: string }; webp?: { url?: string } };
+  };
+}
+
+interface KlipySearchResponse {
+  result?: boolean;
+  errors?: { message?: string[] };
+  data?: {
+    data?: KlipyGifItem[];
+  };
 }
 
 /**
- * Curated GIF pools organized by category.
- * Using media.giphy.com direct links for reliability.
+ * Fetch GIFs from the Klipy search API.
+ * Returns an empty array on any failure (no hardcoded fallback).
  */
-const CATEGORY_GIF_POOLS: Record<string, GifEntry[]> = {
-  evil_laughs: [
-    { url: "https://media.giphy.com/media/Vuw9m5wXviFIQ/giphy.gif", label: "Evil Laugh" },
-    { url: "https://media.giphy.com/media/cEYFeDKVPTmRgIG9fmo/giphy.gif", label: "Villainous Smile" },
-    { url: "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif", label: "Scheming" },
-    { url: "https://media.giphy.com/media/11JbaLzOXsg6Fq/giphy.gif", label: "Maniacal" },
-    { url: "https://media.giphy.com/media/l0MYB8Jtk0TWnGfjW/giphy.gif", label: "Finger Tapping" },
-    { url: "https://media.giphy.com/media/YAlhwn67KT76E/giphy.gif", label: "Evil Genius" },
-    { url: "https://media.giphy.com/media/3o7btNhMBytxAM6YBa/giphy.gif", label: "Thunder Clap" },
-    { url: "https://media.giphy.com/media/l41YtZOb9EUABnuqA/giphy.gif", label: "Dramatic" },
-    { url: "https://media.giphy.com/media/fDzM81OYrNjJC/giphy.gif", label: "Spooky" },
-    { url: "https://media.giphy.com/media/xTiTnBMEz7zAKs57LG/giphy.gif", label: "Dark Lord" },
-    { url: "https://media.giphy.com/media/Lopx9eUi34rbq/giphy.gif", label: "World Domination" },
-    { url: "https://media.giphy.com/media/3oEjI80DSa1grNPTDq/giphy.gif", label: "Wicked" },
-    { url: "https://media.giphy.com/media/10FHR5A4cXqVrO/giphy.gif", label: "Cackling" },
-    { url: "https://media.giphy.com/media/fcK30LKXjG6Tm/giphy.gif", label: "Sinister" },
-    { url: "https://media.giphy.com/media/UO5elnTqo4vSg/giphy.gif", label: "Mischief" },
-    { url: "https://media.giphy.com/media/xUPGcJGy8I928hIlWE/giphy.gif", label: "Master Plan" },
-    { url: "https://media.giphy.com/media/3oEjHGr1Fhz0kyv8Ig/giphy.gif", label: "Dramatic Reveal" },
-    { url: "https://media.giphy.com/media/3orieKZ9ax8nsJnSs8/giphy.gif", label: "Plotting" },
-    { url: "https://media.giphy.com/media/LRVnPYqM8DLag/giphy.gif", label: "Mad Scientist" },
-    { url: "https://media.giphy.com/media/3o85xIO33l7RlmLR4I/giphy.gif", label: "Chaos" },
-    { url: "https://media.giphy.com/media/l4FATJpd4LWgeruTK/giphy.gif", label: "Shadows" },
-    { url: "https://media.giphy.com/media/l0MYH8Q83CXvKzXyM/giphy.gif", label: "Fire" },
-    { url: "https://media.giphy.com/media/l0HlFZ3c4NENSLQRi/giphy.gif", label: "Storm" },
-    { url: "https://media.giphy.com/media/3oEjI1erPMTMBFmNHi/giphy.gif", label: "Evil Eye" },
-    { url: "https://media.giphy.com/media/14ceV8wMLIGO6Q/giphy.gif", label: "Dark Side" },
-    { url: "https://media.giphy.com/media/3o6Zt481isNVuQI1l6/giphy.gif", label: "Menacing" },
-    { url: "https://media.giphy.com/media/xUA7aM09ByyR1w5YWc/giphy.gif", label: "Creepy" },
-    { url: "https://media.giphy.com/media/l2JdU7bLgARF0PyKY/giphy.gif", label: "Power" },
-    { url: "https://media.giphy.com/media/3o7btUg31OCi0NXdkY/giphy.gif", label: "Haunted" },
-    { url: "https://media.giphy.com/media/J2xkAW1E8kvyE/giphy.gif", label: "Diabolical" },
-  ],
-  animals: [
-    { url: "https://media.giphy.com/media/JIX9t2j0ZTN9S/giphy.gif", label: "Cat Surprise" },
-    { url: "https://media.giphy.com/media/mlvseq9yvZhba/giphy.gif", label: "Angry Cat" },
-    { url: "https://media.giphy.com/media/VbnUQpnihPSIgIXuZv/giphy.gif", label: "Cat Stare" },
-    { url: "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif", label: "Dog Tilting Head" },
-    { url: "https://media.giphy.com/media/4Zo41lhzKt6iZ8xff9/giphy.gif", label: "Puppy Eyes" },
-    { url: "https://media.giphy.com/media/oYtVHSxngR3lC/giphy.gif", label: "Parrot Dancing" },
-    { url: "https://media.giphy.com/media/l0HlNQ03J5JR3nkqY/giphy.gif", label: "Owl Stare" },
-    { url: "https://media.giphy.com/media/kLLvH1EOtCwQ8/giphy.gif", label: "Penguin Waddle" },
-    { url: "https://media.giphy.com/media/3oEdv6sy3ulljPMGdy/giphy.gif", label: "Bear Scratch" },
-    { url: "https://media.giphy.com/media/14bhmZtBNhVnIk/giphy.gif", label: "Monkey See" },
-    { url: "https://media.giphy.com/media/cfuL5gqFDreXxkWQ4o/giphy.gif", label: "Fox Pounce" },
-    { url: "https://media.giphy.com/media/xTiTnHvXHHxOTcdmxO/giphy.gif", label: "Horse Gallop" },
-    { url: "https://media.giphy.com/media/3oriO0OEd9QIDdllqo/giphy.gif", label: "Elephant Walk" },
-    { url: "https://media.giphy.com/media/YGIpIZjgxL8Yg/giphy.gif", label: "Fish Swim" },
-    { url: "https://media.giphy.com/media/WQ5S4vJqXFEd2/giphy.gif", label: "Hamster Eating" },
-    { url: "https://media.giphy.com/media/l0MYGb1LuZ3n7dRnO/giphy.gif", label: "Bunny Hop" },
-    { url: "https://media.giphy.com/media/3o7aCRloybJlXpNjSU/giphy.gif", label: "Duck Walk" },
-    { url: "https://media.giphy.com/media/hStvd5LiWCFzYNyxR4/giphy.gif", label: "Sloth Chill" },
-    { url: "https://media.giphy.com/media/l396GilBxTFeOcE0g/giphy.gif", label: "Frog Jump" },
-    { url: "https://media.giphy.com/media/3oKIPnAiaMCj8dQCWk/giphy.gif", label: "Squirrel Run" },
-  ],
-  vehicles: [
-    { url: "https://media.giphy.com/media/l2JhIUyUs8KDCCf3W/giphy.gif", label: "Race Car" },
-    { url: "https://media.giphy.com/media/26BRzozg4TCBXv6QU/giphy.gif", label: "Monster Truck" },
-    { url: "https://media.giphy.com/media/lqNBMrcOoNs8Nt9qDr/giphy.gif", label: "Motorcycle Jump" },
-    { url: "https://media.giphy.com/media/3o85xGocUH8RYoDKKs/giphy.gif", label: "Rocket Launch" },
-    { url: "https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif", label: "Helicopter" },
-    { url: "https://media.giphy.com/media/xT0xeMA62E1XIlqVb2/giphy.gif", label: "Train Chug" },
-    { url: "https://media.giphy.com/media/l3vR16pONsV8cKkWk/giphy.gif", label: "Boat Speed" },
-    { url: "https://media.giphy.com/media/3oEjHGnY8oB4BHVTP2/giphy.gif", label: "Plane Takeoff" },
-    { url: "https://media.giphy.com/media/l46CDHTqbmnGZyxKo/giphy.gif", label: "Drift" },
-    { url: "https://media.giphy.com/media/26xBwu0ZZVWbG7gA0/giphy.gif", label: "Fire Truck" },
-    { url: "https://media.giphy.com/media/3o7WTqUVS1qbFaHC7e/giphy.gif", label: "Bicycle" },
-    { url: "https://media.giphy.com/media/3oriO7A7bt1wsEP4cw/giphy.gif", label: "Skateboard" },
-    { url: "https://media.giphy.com/media/l378bu6ZYsXcOzEhG/giphy.gif", label: "Submarine" },
-    { url: "https://media.giphy.com/media/3oz8xSqxKSBh3AOGEQ/giphy.gif", label: "Go-Kart" },
-    { url: "https://media.giphy.com/media/3oKIPiqfaSfMn2mYhy/giphy.gif", label: "Bulldozer" },
-    { url: "https://media.giphy.com/media/l0MYEqEzwMWFCg8rm/giphy.gif", label: "Hot Air Balloon" },
-    { url: "https://media.giphy.com/media/xT39DfGMbMkh3NLiPC/giphy.gif", label: "Bumper Cars" },
-    { url: "https://media.giphy.com/media/3oEjHV0z8S7WM4MwnK/giphy.gif", label: "Tank Roll" },
-    { url: "https://media.giphy.com/media/l2JJu8U8SoHhQEnoQ/giphy.gif", label: "ATV Jump" },
-    { url: "https://media.giphy.com/media/l0HlFZ3c4NENSLQRi/giphy.gif", label: "Storm Chase" },
-  ],
-  yells: [
-    { url: "https://media.giphy.com/media/l1J9u3TZfpmeDLkD6/giphy.gif", label: "Shocked Yell" },
-    { url: "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif", label: "Dramatic Gasp" },
-    { url: "https://media.giphy.com/media/3oEdv22bKDUluFKkxi/giphy.gif", label: "Battle Cry" },
-    { url: "https://media.giphy.com/media/3oEjI67Egb8G9jqs6c/giphy.gif", label: "Frustrated Yell" },
-    { url: "https://media.giphy.com/media/26BRrSvJUa0crqw4E/giphy.gif", label: "Victory Roar" },
-    { url: "https://media.giphy.com/media/xT5LMzIK1COlOVi4bm/giphy.gif", label: "Surprise" },
-    { url: "https://media.giphy.com/media/26xBI73gWquCBBCDe/giphy.gif", label: "Mind Blown" },
-    { url: "https://media.giphy.com/media/l3q2K5jinAlChoCLS/giphy.gif", label: "Rage" },
-    { url: "https://media.giphy.com/media/l0HlvtIPdijJi/giphy.gif", label: "Freakout" },
-    { url: "https://media.giphy.com/media/10FHR5A4cXqVrO/giphy.gif", label: "Scream" },
-    { url: "https://media.giphy.com/media/l4FATJpd4LWgeruTK/giphy.gif", label: "Shadow Scream" },
-    { url: "https://media.giphy.com/media/3o7btUg31OCi0NXdkY/giphy.gif", label: "Haunted Scream" },
-    { url: "https://media.giphy.com/media/xUA7aM09ByyR1w5YWc/giphy.gif", label: "Creepy Yell" },
-    { url: "https://media.giphy.com/media/fDzM81OYrNjJC/giphy.gif", label: "Horror" },
-    { url: "https://media.giphy.com/media/3o7btNhMBytxAM6YBa/giphy.gif", label: "Thunder Scream" },
-    { url: "https://media.giphy.com/media/3oEjHGr1Fhz0kyv8Ig/giphy.gif", label: "Big Reveal" },
-    { url: "https://media.giphy.com/media/xUPGcJGy8I928hIlWE/giphy.gif", label: "Evil Plan Yell" },
-    { url: "https://media.giphy.com/media/l2JdU7bLgARF0PyKY/giphy.gif", label: "Power Scream" },
-    { url: "https://media.giphy.com/media/Lopx9eUi34rbq/giphy.gif", label: "Maniacal Shout" },
-    { url: "https://media.giphy.com/media/l0MYB8Jtk0TWnGfjW/giphy.gif", label: "Tantrum" },
-  ],
-  dance: [
-    { url: "https://media.giphy.com/media/l0MYC0LajbaPoEADu/giphy.gif", label: "Disco Moves" },
-    { url: "https://media.giphy.com/media/3o7qDEq2bMbcbPRQ2c/giphy.gif", label: "Robot Dance" },
-    { url: "https://media.giphy.com/media/l3q2zbskZp2j8wniE/giphy.gif", label: "Happy Dance" },
-    { url: "https://media.giphy.com/media/l46Cy1rHbQ92uuLXa/giphy.gif", label: "Moonwalk" },
-    { url: "https://media.giphy.com/media/blSTtZehjAZ8I/giphy.gif", label: "Headbang" },
-    { url: "https://media.giphy.com/media/3oKIPjzfv0sI2p7fDW/giphy.gif", label: "Ballerina" },
-    { url: "https://media.giphy.com/media/5xaOcLDE64VMF4LqqrK/giphy.gif", label: "Groove" },
-    { url: "https://media.giphy.com/media/l46CimW38a7DCvGhq/giphy.gif", label: "Air Guitar" },
-    { url: "https://media.giphy.com/media/oYtVHSxngR3lC/giphy.gif", label: "Bird Dance" },
-    { url: "https://media.giphy.com/media/14bhmZtBNhVnIk/giphy.gif", label: "Monkey Groove" },
-    { url: "https://media.giphy.com/media/11JbaLzOXsg6Fq/giphy.gif", label: "Wild Moves" },
-    { url: "https://media.giphy.com/media/3oEjI1erPMTMBFmNHi/giphy.gif", label: "Eye Dance" },
-    { url: "https://media.giphy.com/media/3o85xIO33l7RlmLR4I/giphy.gif", label: "Chaos Dance" },
-    { url: "https://media.giphy.com/media/YAlhwn67KT76E/giphy.gif", label: "Smart Dance" },
-    { url: "https://media.giphy.com/media/l46CDHTqbmnGZyxKo/giphy.gif", label: "Drift Dance" },
-    { url: "https://media.giphy.com/media/26BRzozg4TCBXv6QU/giphy.gif", label: "Monster Jam" },
-    { url: "https://media.giphy.com/media/3oEjHGnY8oB4BHVTP2/giphy.gif", label: "Sky Dance" },
-    { url: "https://media.giphy.com/media/l3vR16pONsV8cKkWk/giphy.gif", label: "Boat Groove" },
-    { url: "https://media.giphy.com/media/xT39DfGMbMkh3NLiPC/giphy.gif", label: "Bump & Groove" },
-    { url: "https://media.giphy.com/media/l0MYH8Q83CXvKzXyM/giphy.gif", label: "Fire Dance" },
-  ],
-  sports: [
-    { url: "https://media.giphy.com/media/l0K4mbH4lKBhAPFU4/giphy.gif", label: "Slam Dunk" },
-    { url: "https://media.giphy.com/media/3o7TKSjRrfIPjeiVyM/giphy.gif", label: "Aerial Move" },
-    { url: "https://media.giphy.com/media/xT0xeMA62E1XIlqVb2/giphy.gif", label: "Power Run" },
-    { url: "https://media.giphy.com/media/26xBI73gWquCBBCDe/giphy.gif", label: "Goal!" },
-    { url: "https://media.giphy.com/media/26BRrSvJUa0crqw4E/giphy.gif", label: "Champion" },
-    { url: "https://media.giphy.com/media/3oEjI67Egb8G9jqs6c/giphy.gif", label: "Foul Play" },
-    { url: "https://media.giphy.com/media/lqNBMrcOoNs8Nt9qDr/giphy.gif", label: "Extreme Jump" },
-    { url: "https://media.giphy.com/media/3oriO7A7bt1wsEP4cw/giphy.gif", label: "Trick Shot" },
-    { url: "https://media.giphy.com/media/26ufdipQqU2lhNA4g/giphy.gif", label: "Crowd Goes Wild" },
-    { url: "https://media.giphy.com/media/xT5LMzIK1COlOVi4bm/giphy.gif", label: "Surprise Win" },
-    { url: "https://media.giphy.com/media/3o7WTqUVS1qbFaHC7e/giphy.gif", label: "Cycling Sprint" },
-    { url: "https://media.giphy.com/media/3oEdv22bKDUluFKkxi/giphy.gif", label: "Touchdown" },
-    { url: "https://media.giphy.com/media/l2JhIUyUs8KDCCf3W/giphy.gif", label: "Speed Race" },
-    { url: "https://media.giphy.com/media/3oz8xSqxKSBh3AOGEQ/giphy.gif", label: "Kart Race" },
-    { url: "https://media.giphy.com/media/cfuL5gqFDreXxkWQ4o/giphy.gif", label: "Pounce Play" },
-    { url: "https://media.giphy.com/media/xTiTnHvXHHxOTcdmxO/giphy.gif", label: "Horse Race" },
-    { url: "https://media.giphy.com/media/l2JJu8U8SoHhQEnoQ/giphy.gif", label: "Off-Road" },
-    { url: "https://media.giphy.com/media/3oEjHV0z8S7WM4MwnK/giphy.gif", label: "Tank Push" },
-    { url: "https://media.giphy.com/media/3oKIPiqfaSfMn2mYhy/giphy.gif", label: "Heavy Lift" },
-    { url: "https://media.giphy.com/media/l3q2K5jinAlChoCLS/giphy.gif", label: "Rage Quit" },
-  ],
-};
+async function fetchKlipyGifs(query: string): Promise<GifEntry[]> {
+  const apiKey = process.env.KLIPY_API_KEY;
+  if (!apiKey) {
+    console.warn(`[AudioOverlay] KLIPY_API_KEY is not set — cannot search GIFs`);
+    return [];
+  }
+
+  try {
+    // Klipy v1: key goes in the URL path, customer_id is required
+    const url =
+      `${KLIPY_API_BASE}/${encodeURIComponent(apiKey)}/gifs/search` +
+      `?q=${encodeURIComponent(query)}` +
+      `&per_page=${KLIPY_PER_PAGE}` +
+      `&customer_id=gamma-game`;
+
+    console.log(`[AudioOverlay] Klipy search: query="${query}" per_page=${KLIPY_PER_PAGE}`);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), KLIPY_FETCH_TIMEOUT_MS);
+
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    console.log(`[AudioOverlay] Klipy response: status=${res.status} for query="${query}"`);
+
+    if (!res.ok || res.status === 204) {
+      console.warn(`[AudioOverlay] Klipy API returned ${res.status} for query "${query}"`);
+      return [];
+    }
+
+    const text = await res.text();
+    if (!text || text.trim().length === 0) {
+      console.warn(`[AudioOverlay] Klipy API returned empty body for query "${query}"`);
+      return [];
+    }
+
+    const json = JSON.parse(text) as KlipySearchResponse;
+
+    // { result: false, errors: ... } = auth/request failure
+    if (json.result === false) {
+      const msg = json.errors?.message?.[0] ?? "unknown error";
+      console.warn(`[AudioOverlay] Klipy API error for query "${query}": ${msg}`);
+      return [];
+    }
+
+    const items = json.data?.data;
+    if (!items || !Array.isArray(items)) {
+      console.warn(`[AudioOverlay] Klipy API returned no data.data[] for query "${query}"`);
+      return [];
+    }
+
+    const gifs: GifEntry[] = [];
+    for (const item of items) {
+      // Prefer small GIF for fast loading; fall back to medium, then webp variants
+      const gifUrl =
+        item.file?.sm?.gif?.url ??
+        item.file?.sm?.webp?.url ??
+        item.file?.md?.gif?.url ??
+        item.file?.md?.webp?.url;
+      if (!gifUrl) continue;
+      gifs.push({
+        url: gifUrl,
+        label: item.title ?? "GIF",
+      });
+    }
+
+    console.log(`[AudioOverlay] Klipy returned ${gifs.length} GIFs for query "${query}"`);
+    return gifs;
+  } catch (err) {
+    console.warn(`[AudioOverlay] Klipy API fetch failed for query "${query}":`, err);
+    return [];
+  }
+}
 
 // ── Per-session tracking ──────────────────────────────────────────────────────
 
@@ -306,6 +263,8 @@ interface SessionData {
   chosenCategory: GifCategory | null;
   /** Resolve function to unblock category selection wait. */
   categoryResolve: (() => void) | null;
+  /** All GIF URLs that have been shown to players (initial search + player searches). */
+  allowedGifUrls: Set<string>;
   /** Which GIF each player selected in phase 1. */
   selections: Map<string, GifSelection>;
   /** Shuffled assignments for recording. */
@@ -365,6 +324,7 @@ export default class AudioOverlayGame extends BaseGame {
       categoryChooserId: chooser.id,
       chosenCategory: null,
       categoryResolve: null,
+      allowedGifUrls: new Set(),
       selections: new Map(),
       assignments: new Map(),
       votes: new Map(),
@@ -383,6 +343,7 @@ export default class AudioOverlayGame extends BaseGame {
     });
 
     await this._waitForCategoryOrTimeout(CATEGORY_SELECTION_DURATION_MS);
+    if (!this.session) return; // Room disposed during wait
 
     // Auto-pick random category if chooser didn't pick
     if (!this.session.chosenCategory) {
@@ -403,12 +364,21 @@ export default class AudioOverlayGame extends BaseGame {
 
     // Brief reveal delay
     await this.delay(CATEGORY_REVEAL_DELAY_MS);
+    if (!this.session) return; // Room disposed during delay
 
     // ── Phase 1: GIF Selection ──────────────────────────────────────────
-    const gifPool = getGifPool(this.session.chosenCategory);
+    // Auto-search with the category's search term to give players initial results
+    const searchTerm = CATEGORY_SEARCH_TERMS[this.session.chosenCategory] ?? CATEGORY_SEARCH_TERMS["any"];
+    const initialGifs = await fetchKlipyGifs(searchTerm);
+    if (!this.session) return; // Room disposed during API call
+
+    // Track all initial GIF URLs as valid selections
+    for (const g of initialGifs) this.session.allowedGifUrls.add(g.url);
+
     this.broadcast("gif_selection_start", {
-      gifs: gifPool,
+      gifs: initialGifs,
       category: chosenCategoryInfo,
+      searchTerm,
       durationMs: GIF_SELECTION_DURATION_MS,
       serverTimestamp: Date.now(),
     });
@@ -419,26 +389,34 @@ export default class AudioOverlayGame extends BaseGame {
     }
 
     await this._waitForAllSelectionsOrTimeout(GIF_SELECTION_DURATION_MS);
+    if (!this.session) return; // Room disposed during wait
 
     // Auto-assign a random GIF to anyone who didn't pick
+    // Use all allowed GIF URLs (initial results + any search results)
+    const allAllowed = [...this.session.allowedGifUrls];
     for (const p of this._activePlayers()) {
       if (!this.session.selections.has(p.id)) {
-        const randomGif = gifPool[Math.floor(Math.random() * gifPool.length)];
-        this.session.selections.set(p.id, {
-          playerId: p.id,
-          playerName: p.name,
-          gifUrl: randomGif.url,
-          gifLabel: randomGif.label,
-        });
+        if (allAllowed.length > 0) {
+          const randomUrl = allAllowed[Math.floor(Math.random() * allAllowed.length)];
+          this.session.selections.set(p.id, {
+            playerId: p.id,
+            playerName: p.name,
+            gifUrl: randomUrl,
+            gifLabel: "GIF",
+          });
+        }
+        // If no GIFs were ever loaded (API completely down), player just gets skipped
       }
     }
 
     // ── Phase 2: Redistribution ─────────────────────────────────────────
     this._redistributeGifs();
+    if (!this.session) return;
 
     // ── Phase 3: Sequential Recording ───────────────────────────────────
     const order = this.session.recordingOrder;
     for (let i = 0; i < order.length; i++) {
+      if (!this.session) return; // Room disposed between recordings
       this.session.currentRecorderIndex = i;
       const playerId = order[i];
       const assignment = this.session.assignments.get(playerId);
@@ -465,12 +443,15 @@ export default class AudioOverlayGame extends BaseGame {
       await this._waitForRecordingOrTimeout(playerId, RECORDING_DURATION_MS);
     }
 
+    if (!this.session) return; // Room disposed during recordings
+
     // ── Phase 4: TV Playback ────────────────────────────────────────────
     const assignments = [...this.session.assignments.values()].filter(
       (a) => a.audioBase64.length > 0,
     );
 
     for (const entry of assignments) {
+      if (!this.session) return;
       this.broadcast("playback_entry", {
         playerId: entry.playerId,
         playerName: entry.playerName,
@@ -480,6 +461,7 @@ export default class AudioOverlayGame extends BaseGame {
       });
       await this.delay(PLAYBACK_ENTRY_DISPLAY_MS);
     }
+    if (!this.session) return;
     this.broadcast("playback_done", {});
 
     // ── Phase 5: Voting ─────────────────────────────────────────────────
@@ -495,6 +477,8 @@ export default class AudioOverlayGame extends BaseGame {
 
       await this._waitForAllVotesOrTimeout(VOTING_DURATION_MS);
     }
+
+    if (!this.session) return;
 
     // ── Phase 6: Results ────────────────────────────────────────────────
     const results = this._computeResults();
@@ -517,9 +501,11 @@ export default class AudioOverlayGame extends BaseGame {
     const input = data as {
       action?: string;
       gifUrl?: string;
+      gifLabel?: string;
       audioBase64?: string;
       targetId?: string;
       category?: string;
+      query?: string;
     };
     if (!input || !input.action) return;
 
@@ -528,7 +514,10 @@ export default class AudioOverlayGame extends BaseGame {
         this._handleCategorySelection(client, input.category);
         break;
       case "select_gif":
-        this._handleGifSelection(client, input.gifUrl);
+        this._handleGifSelection(client, input.gifUrl, input.gifLabel);
+        break;
+      case "search_gifs":
+        this._handleGifSearch(client, input.query);
         break;
       case "submit_recording":
         this._handleRecordingSubmission(client, input.audioBase64);
@@ -572,32 +561,51 @@ export default class AudioOverlayGame extends BaseGame {
     }
   }
 
-  private _handleGifSelection(client: Client, gifUrl?: string): void {
+  private _handleGifSelection(client: Client, gifUrl?: string, gifLabel?: string): void {
     if (!this.session || !gifUrl) return;
     const player = this.room.state.players.get(client.sessionId);
     if (!player) return;
 
-    // Validate that the GIF is from the current category pool
-    const pool = getGifPool(this.session.chosenCategory ?? "any");
-    const match = pool.find((g) => g.url === gifUrl);
-    if (!match) return;
+    // Validate that the GIF was shown to this player (initial search or player searches)
+    if (!this.session.allowedGifUrls.has(gifUrl)) return;
+
+    const label = gifLabel ?? "GIF";
 
     // Already selected? Overwrite (let them change their mind)
     this.session.selections.set(client.sessionId, {
       playerId: client.sessionId,
       playerName: player.name,
-      gifUrl: match.url,
-      gifLabel: match.label,
+      gifUrl,
+      gifLabel: label,
     });
     player.isReady = true;
 
-    this.send(client.sessionId, "gif_selection_confirmed", { gifUrl: match.url });
+    this.send(client.sessionId, "gif_selection_confirmed", { gifUrl });
 
     // Broadcast progress
     this.broadcast("gif_selection_update", {
       submitted: this.session.selections.size,
       total: this._activePlayers().length,
     });
+  }
+
+  /**
+   * Handle a player's GIF search request. Queries the Klipy API and sends
+   * results back to only the requesting player. Also adds the returned URLs
+   * to allowedGifUrls so they can be selected.
+   */
+  private async _handleGifSearch(client: Client, query?: string): Promise<void> {
+    if (!this.session || !query) return;
+    // Sanitize: trim, cap length, must have content
+    const q = query.trim().slice(0, 80);
+    if (q.length < 2) return;
+
+    const results = await fetchKlipyGifs(q);
+    if (!this.session) return; // Room may have disposed during fetch
+
+    // Register these URLs as valid selections
+    for (const g of results) this.session.allowedGifUrls.add(g.url);
+    this.send(client.sessionId, "gif_search_results", { gifs: results, query: q });
   }
 
   private _handleRecordingSubmission(client: Client, audioBase64?: string): void {

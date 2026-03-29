@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import GammaLogo from "../../components/GammaLogo.svelte";
+  import GammaTitle from "../../components/GammaTitle.svelte";
   const dispatch = createEventDispatcher<{ host: { name: string }; back: void }>();
 
   let name = "";
@@ -17,8 +17,7 @@
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="host-screen">
   <div class="flex flex-col items-center gap-2">
-    <GammaLogo size="64px" />
-    <h1 class="text-3xl font-black tracking-tight text-indigo-400">GAMMA</h1>
+    <GammaTitle subtitle="" size="sm" />
   </div>
   <p class="text-gray-400 text-center">Create a room — share the code with friends.</p>
   <div class="w-full max-w-xs space-y-4">
