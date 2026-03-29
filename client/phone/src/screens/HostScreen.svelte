@@ -3,7 +3,7 @@
    * Phone host screen — name entry to create a new room.
    */
   import { createEventDispatcher } from "svelte";
-  import GammaLogo from "../components/GammaLogo.svelte";
+  import GammaTitle from "../components/GammaTitle.svelte";
 
   const dispatch = createEventDispatcher<{ host: { name: string }; back: void }>();
 
@@ -24,8 +24,7 @@
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="host-screen">
   <div class="flex flex-col items-center gap-2">
-    <GammaLogo size="64px" />
-    <h1 class="text-3xl font-black tracking-tight text-indigo-400">GAMMA</h1>
+    <GammaTitle subtitle="" size="sm" />
   </div>
   <p class="text-gray-400 text-center">Create a room — share the code with friends.</p>
 

@@ -79,6 +79,7 @@
 
   let gifPool: GifEntry[] = [];
   let selectedGifUrl = "";
+  let selectedGifLabel = "";
   let gifSelectionTimeLeft = 0;
   let gifSelectionEndTime = 0;
   let gifSelectionTimer: ReturnType<typeof setInterval> | null = null;
@@ -86,6 +87,12 @@
   let selectionsSubmitted = 0;
   let selectionsTotal = 0;
   let gifCategoryInfo: CategoryInfo | null = null;
+
+  // ── GIF Search ──────────────────────────────────────────────────
+
+  let searchQuery = "";
+  let isSearching = false;
+  let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Recording ───────────────────────────────────────────────────
 
@@ -239,13 +246,31 @@
     room.send("game_input", { action: "select_category", category: categoryId });
   }
 
-  function selectGif(url: string) {
+  function selectGif(url: string, label?: string) {
     selectedGifUrl = url;
+    selectedGifLabel = label ?? "GIF";
   }
 
   function confirmGifSelection() {
     if (!selectedGifUrl) return;
-    room.send("game_input", { action: "select_gif", gifUrl: selectedGifUrl });
+    room.send("game_input", { action: "select_gif", gifUrl: selectedGifUrl, gifLabel: selectedGifLabel });
+  }
+
+  function searchGifs() {
+    const q = searchQuery.trim();
+    if (q.length < 2) return;
+    isSearching = true;
+    room.send("game_input", { action: "search_gifs", query: q });
+  }
+
+  function onSearchInput() {
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      return;
+    }
+    // Debounce 500ms so we don't spam the server on every keystroke
+    searchDebounceTimer = setTimeout(() => searchGifs(), 500);
   }
 
   function submitRecording() {
@@ -306,6 +331,7 @@
   function onGifSelectionStart(data: {
     gifs: GifEntry[];
     category: CategoryInfo;
+    searchTerm?: string;
     durationMs: number;
     serverTimestamp: number;
   }) {
@@ -313,8 +339,12 @@
     gifPool = data.gifs;
     gifCategoryInfo = data.category;
     selectedGifUrl = "";
+    selectedGifLabel = "";
     gifSelectionConfirmed = false;
-    categoryRevealing = false;
+    // Pre-populate search with the category's search term
+    searchQuery = data.searchTerm ?? "";
+    isSearching = false;
+
     gifSelectionEndTime = data.serverTimestamp + data.durationMs;
     gifSelectionTimeLeft = Math.max(0, (gifSelectionEndTime - Date.now()) / 1000);
 
@@ -332,6 +362,12 @@
   function onGifSelectionUpdate(data: { submitted: number; total: number }) {
     selectionsSubmitted = data.submitted;
     selectionsTotal = data.total;
+  }
+
+  function onGifSearchResults(data: { gifs: GifEntry[]; query: string }) {
+    isSearching = false;
+    // Replace the displayed GIFs with the new search results
+    gifPool = data.gifs;
   }
 
   function onRecordingTurn(data: {
@@ -456,6 +492,7 @@
     room.onMessage("gif_selection_start", onGifSelectionStart);
     room.onMessage("gif_selection_confirmed", onGifSelectionConfirmed);
     room.onMessage("gif_selection_update", onGifSelectionUpdate);
+    room.onMessage("gif_search_results", onGifSearchResults);
     room.onMessage("gif_assigned", onGifAssigned);
     room.onMessage("recording_turn", onRecordingTurn);
     room.onMessage("recording_submitted", onRecordingSubmitted);
@@ -470,6 +507,7 @@
 
   onDestroy(() => {
     clearAllTimers();
+    if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
     }
@@ -558,7 +596,7 @@
     </div>
 
   {:else if subPhase === "gif_browsing"}
-    <!-- GIF Selection Phase -->
+    <!-- GIF Selection Phase — Search-based -->
     <div class="w-full max-w-sm space-y-4 overflow-y-auto max-h-[85vh]">
       <div class="text-center sticky top-0 bg-gray-900 pb-2 z-10">
         <h2 class="text-xl font-black text-purple-400">Pick a GIF!</h2>
@@ -573,30 +611,63 @@
             <span class="ml-1 text-gray-500">({selectionsSubmitted}/{selectionsTotal} picked)</span>
           {/if}
         </p>
+
+        <!-- Search input — always visible -->
+        <div class="mt-2 flex gap-2">
+          <input
+            type="text"
+            bind:value={searchQuery}
+            on:input={onSearchInput}
+            placeholder="Search for GIFs..."
+            class="flex-1 px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm
+              placeholder-gray-500 focus:border-purple-500 focus:outline-none"
+          />
+          <button
+            class="px-3 py-2 rounded-lg text-sm font-bold transition-colors
+              {searchQuery.trim().length >= 2
+                ? 'bg-purple-600 text-white active:bg-purple-500'
+                : 'bg-gray-700 text-gray-500 cursor-not-allowed'}"
+            disabled={searchQuery.trim().length < 2 || isSearching}
+            on:click={searchGifs}
+          >
+            {isSearching ? '...' : 'Go'}
+          </button>
+        </div>
       </div>
 
       <!-- GIF grid -->
-      <div class="grid grid-cols-2 gap-2">
-        {#each gifPool as gif}
-          <button
-            class="relative rounded-lg overflow-hidden border-2 transition-all active:scale-95
-              {selectedGifUrl === gif.url
-                ? 'border-purple-500 ring-2 ring-purple-400'
-                : 'border-gray-700 active:border-purple-500'}"
-            on:click={() => selectGif(gif.url)}
-          >
-            <img
-              src={gif.url}
-              alt={gif.label}
-              class="w-full h-24 object-cover"
-              loading="lazy"
-            />
-            <span class="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white text-center py-0.5 truncate px-1">
-              {gif.label}
-            </span>
-          </button>
-        {/each}
-      </div>
+      {#if isSearching}
+        <div class="text-center py-8">
+          <p class="text-gray-400">Searching...</p>
+        </div>
+      {:else if gifPool.length === 0}
+        <div class="text-center py-8 space-y-2">
+          <p class="text-gray-400">No GIFs found</p>
+          <p class="text-gray-500 text-sm">Try searching for something else</p>
+        </div>
+      {:else}
+        <div class="grid grid-cols-2 gap-2">
+          {#each gifPool as gif}
+            <button
+              class="relative rounded-lg overflow-hidden border-2 transition-all active:scale-95
+                {selectedGifUrl === gif.url
+                  ? 'border-purple-500 ring-2 ring-purple-400'
+                  : 'border-gray-700 active:border-purple-500'}"
+              on:click={() => selectGif(gif.url, gif.label)}
+            >
+              <img
+                src={gif.url}
+                alt={gif.label}
+                class="w-full h-24 object-cover"
+                loading="lazy"
+              />
+              <span class="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white text-center py-0.5 truncate px-1">
+                {gif.label}
+              </span>
+            </button>
+          {/each}
+        </div>
+      {/if}
 
       <!-- Confirm button -->
       <div class="sticky bottom-0 bg-gray-900 pt-2">

@@ -1,0 +1,1 @@
+A person is trying to balance on top of the point of a skyscraper

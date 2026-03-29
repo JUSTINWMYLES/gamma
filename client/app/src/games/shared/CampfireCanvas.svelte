@@ -16,6 +16,11 @@
   export let width: number = 280;
   export let height: number = 320;
 
+  /** Extra canvas padding to prevent glow clipping at edges. */
+  const PAD = 80;
+  $: canvasW = width + PAD * 2;
+  $: canvasH = height + PAD * 2;
+
   let canvas: HTMLCanvasElement;
   let animFrame: number;
 
@@ -140,14 +145,14 @@
 
     const w = width;
     const h = height;
-    const cx = w / 2;
-    const baseY = h * 0.72; // where fire sits
+    const cx = w / 2 + PAD;
+    const baseY = h * 0.72 + PAD; // where fire sits
     const t = Date.now() / 1000;
 
     // Clamp intensity
     const inten = Math.max(0, Math.min(1, intensity));
 
-    ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, canvasW, canvasH);
 
     // Ground shadow
     ctx.beginPath();
@@ -271,8 +276,8 @@
 
 <canvas
   bind:this={canvas}
-  {width}
-  {height}
+  width={canvasW}
+  height={canvasH}
   class="block mx-auto"
-  style="image-rendering: auto;"
+  style="image-rendering: auto; margin: -{PAD}px auto; width: {canvasW}px; height: {canvasH}px;"
 ></canvas>
