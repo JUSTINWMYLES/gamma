@@ -497,6 +497,54 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
   ],
 
+  "registry-27-word-build": [
+    {
+      heading: "Word Build",
+      body: "Arrange your phones to spell the hidden word!",
+      bgClass: "bg-gradient-to-br from-cyan-900 via-blue-900 to-indigo-900",
+      headingColor: "text-cyan-300",
+      bodyColor: "text-cyan-100",
+      fontClass: "font-black",
+      icon: "🔤",
+    },
+    {
+      heading: "Teams!",
+      body: "You'll be split into two teams. Each phone shows part of the word.",
+      bgClass: "bg-gradient-to-br from-amber-900 via-orange-900 to-red-900",
+      headingColor: "text-amber-300",
+      bodyColor: "text-amber-100",
+      fontClass: "font-bold",
+      icon: "👥",
+    },
+    {
+      heading: "Arrange & Build",
+      body: "Physically place your phones in order to spell the word. Only move YOUR phone!",
+      bgClass: "bg-gradient-to-br from-green-900 via-emerald-900 to-teal-900",
+      headingColor: "text-green-300",
+      bodyColor: "text-green-100",
+      fontClass: "font-bold",
+      icon: "📱",
+    },
+    {
+      heading: "Lock It In!",
+      body: "One teammate has the Done button. Press it when your team has the word!",
+      bgClass: "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+      headingColor: "text-violet-300",
+      bodyColor: "text-violet-100",
+      fontClass: "font-black",
+      icon: "✅",
+    },
+    {
+      heading: "Fastest Wins!",
+      body: "The first team to correctly spell the word wins the round. 60 seconds on the clock!",
+      bgClass: "bg-gradient-to-br from-rose-900 via-red-900 to-orange-900",
+      headingColor: "text-rose-300",
+      bodyColor: "text-rose-100",
+      fontClass: "font-bold",
+      icon: "⏱️",
+    },
+  ],
+
   "registry-10-grid-tap-colors": [
     {
       heading: "Grid Tap Colors",
