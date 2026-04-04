@@ -280,3 +280,37 @@ export function buildPlayerGroups(
   }
   return groups;
 }
+
+// ── Grid layout patterns ─────────────────────────────────────────────────────
+
+export interface GridLayout {
+  /** Number of columns in the grid. */
+  cols: number;
+  /** Number of rows in the grid. */
+  rows: number;
+}
+
+/**
+ * Determine the optimal grid layout (rows × cols) for a given number of phones.
+ *
+ * Acceptable patterns for every player count:
+ *   2 → 2×1    3 → 3×1     4 → 2×2     5 → 3×2 (one empty)
+ *   6 → 3×2    7 → 4×2     8 → 4×2     9 → 3×3
+ *  10 → 4×3   11 → 4×3    12 → 4×3    13 → 4×4
+ *  14 → 4×4   15 → 4×4    16 → 4×4    17–20 → 5×4
+ *  21–25 → 5×5  26–30 → 6×5  31–32 → 8×4
+ */
+export function getGridLayout(phoneCount: number): GridLayout {
+  if (phoneCount <= 2) return { cols: 2, rows: 1 };
+  if (phoneCount <= 3) return { cols: 3, rows: 1 };
+  if (phoneCount <= 4) return { cols: 2, rows: 2 };
+  if (phoneCount <= 6) return { cols: 3, rows: 2 };
+  if (phoneCount <= 8) return { cols: 4, rows: 2 };
+  if (phoneCount <= 9) return { cols: 3, rows: 3 };
+  if (phoneCount <= 12) return { cols: 4, rows: 3 };
+  if (phoneCount <= 16) return { cols: 4, rows: 4 };
+  if (phoneCount <= 20) return { cols: 5, rows: 4 };
+  if (phoneCount <= 25) return { cols: 5, rows: 5 };
+  if (phoneCount <= 30) return { cols: 6, rows: 5 };
+  return { cols: 8, rows: 4 };
+}
