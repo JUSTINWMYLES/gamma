@@ -592,6 +592,54 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
       icon: "🏁",
     },
   ],
+
+  "registry-11-tier-ranking": [
+    {
+      heading: "S-Tier Ranking",
+      body: "Predict the group's verdict — earn points when you match the consensus!",
+      bgClass: "bg-gradient-to-br from-yellow-900 via-orange-900 to-red-900",
+      headingColor: "text-yellow-300",
+      bodyColor: "text-yellow-100",
+      fontClass: "font-black",
+      icon: "🏆",
+    },
+    {
+      heading: "Pick a Category",
+      body: "One random player chooses the category. Everyone else waits — you could be next!",
+      bgClass: "bg-gradient-to-br from-indigo-900 via-violet-900 to-purple-900",
+      headingColor: "text-indigo-300",
+      bodyColor: "text-indigo-100",
+      fontClass: "font-bold",
+      icon: "🎲",
+    },
+    {
+      heading: "Submit Your Entry",
+      body: "Everyone submits one item for the category. No duplicates allowed — be creative!",
+      bgClass: "bg-gradient-to-br from-teal-900 via-emerald-900 to-green-900",
+      headingColor: "text-teal-300",
+      bodyColor: "text-teal-100",
+      fontClass: "font-bold",
+      icon: "✏️",
+    },
+    {
+      heading: "Tier Rank Everything",
+      body: "Place each entry into S, A, B, C, or D tier. You have 90 seconds — think fast!",
+      bgClass: "bg-gradient-to-br from-rose-900 via-pink-900 to-fuchsia-900",
+      headingColor: "text-rose-300",
+      bodyColor: "text-rose-100",
+      fontClass: "font-black",
+      icon: "📊",
+    },
+    {
+      heading: "Consensus Wins!",
+      body: "The most-voted tier for each entry is its final rank. Match the group and score big — S tier is worth the most!",
+      bgClass: "bg-gradient-to-br from-amber-900 via-yellow-900 to-lime-900",
+      headingColor: "text-amber-300",
+      bodyColor: "text-amber-100",
+      fontClass: "font-bold",
+      icon: "⭐",
+    },
+  ],
 };
 
 /**
