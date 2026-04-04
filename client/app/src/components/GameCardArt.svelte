@@ -280,6 +280,35 @@
     <text x="165" y="86" fill="{accent}" font-size="7" opacity="0.12" class="dollar-float" style="animation-delay: 1s">$</text>
   </svg>
 
+{:else if gameId === "registry-27-word-build"}
+  <!-- Word Build: phones with letters arranged in a row -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <!-- Phone 1 -->
+    <rect x="20" y="25" width="28" height="42" rx="4" fill="rgba(80,200,255,0.08)" stroke="{accent}" stroke-width="1"/>
+    <text x="34" y="52" text-anchor="middle" fill="{accent}" font-size="16" font-weight="bold" opacity="0.7" class="wb-letter-1">W</text>
+    <!-- Phone 2 -->
+    <rect x="56" y="25" width="28" height="42" rx="4" fill="rgba(80,200,255,0.08)" stroke="{accent}" stroke-width="1"/>
+    <text x="70" y="52" text-anchor="middle" fill="{accent}" font-size="16" font-weight="bold" opacity="0.7" class="wb-letter-2">OR</text>
+    <!-- Phone 3 -->
+    <rect x="92" y="25" width="28" height="42" rx="4" fill="rgba(80,200,255,0.08)" stroke="{accent}" stroke-width="1"/>
+    <text x="106" y="52" text-anchor="middle" fill="{accent}" font-size="16" font-weight="bold" opacity="0.7" class="wb-letter-3">D</text>
+    <!-- Phone 4 (with Done button) -->
+    <rect x="128" y="25" width="28" height="42" rx="4" fill="rgba(80,200,255,0.08)" stroke="{accent}" stroke-width="1"/>
+    <text x="142" y="48" text-anchor="middle" fill="{accent}" font-size="16" font-weight="bold" opacity="0.7" class="wb-letter-4">S</text>
+    <rect x="133" y="55" width="18" height="7" rx="3" fill="{accent}" opacity="0.3" class="wb-done-btn"/>
+    <!-- Connecting arrows between phones -->
+    <line x1="50" y1="46" x2="54" y2="46" stroke="{accent}" stroke-width="0.8" opacity="0.2" stroke-dasharray="2 1"/>
+    <line x1="86" y1="46" x2="90" y2="46" stroke="{accent}" stroke-width="0.8" opacity="0.2" stroke-dasharray="2 1"/>
+    <line x1="122" y1="46" x2="126" y2="46" stroke="{accent}" stroke-width="0.8" opacity="0.2" stroke-dasharray="2 1"/>
+    <!-- Team labels at bottom -->
+    <rect x="30" y="78" width="40" height="12" rx="6" fill="{accent}" fill-opacity="0.1" stroke="{accent}" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="50" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.4">Team A</text>
+    <rect x="130" y="78" width="40" height="12" rx="6" fill="{accent}" fill-opacity="0.1" stroke="{accent}" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="150" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.4">Team B</text>
+    <!-- Timer at top -->
+    <text x="100" y="16" text-anchor="middle" fill="{accent}" font-size="8" font-weight="bold" opacity="0.3">⏱ 60s</text>
+  </svg>
+
 {:else if gameId === "registry-26-audio-overlay"}
   <!-- Audio Overlay: GIF frame + microphone + sound waves -->
   <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
@@ -553,4 +582,19 @@
 
   /* ── Audio Overlay animations ── */
   /* wave-r1, wave-r2 reuse Sound Replication wave-pulse */
+
+  /* ── Word Build animations ── */
+  .wb-letter-1 { animation: wb-pop 1.5s ease-in-out infinite; }
+  .wb-letter-2 { animation: wb-pop 1.5s ease-in-out 0.2s infinite; }
+  .wb-letter-3 { animation: wb-pop 1.5s ease-in-out 0.4s infinite; }
+  .wb-letter-4 { animation: wb-pop 1.5s ease-in-out 0.6s infinite; }
+  .wb-done-btn { animation: wb-btn-glow 2s ease-in-out infinite alternate; }
+  @keyframes wb-pop {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.9; }
+  }
+  @keyframes wb-btn-glow {
+    from { opacity: 0.2; }
+    to { opacity: 0.5; }
+  }
 </style>
