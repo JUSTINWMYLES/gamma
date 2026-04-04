@@ -283,6 +283,19 @@ export const GAME_REGISTRY: GameMeta[] = [
     tags: ["audio", "creative", "voting"],
     estimatedMinutes: 10,
   },
+  {
+    id: "registry-11-tier-ranking",
+    label: "S-Tier Ranking",
+    description: "One player picks a category, everyone submits an entry, then tier-rank them all!",
+    detailDescription: "A random player picks a category (or types their own). Everyone — including the chooser — submits one unique entry for that category. Then the full list is revealed and each player has 90 seconds to assign every entry to a tier: S, A, B, C, or D. The consensus tier for each entry is determined by majority vote. Players who predicted the group's verdict earn points — S-tier correct votes score the most!",
+    activityLevel: "none",
+    requiresSameRoom: false,
+    requiresSecondaryDisplay: false,
+    minPlayers: 2,
+    maxPlayers: 16,
+    tags: ["social", "voting", "creative", "party"],
+    estimatedMinutes: 8,
+  },
 ];
 
 /**
