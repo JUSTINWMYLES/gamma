@@ -184,6 +184,7 @@
         });
       }
     }
+    // Re-assign to trigger Svelte reactivity (Maps are not natively reactive)
     playerProgressMap = playerProgressMap;
     sequencePlayerMap = sequencePlayerMap;
     subPhase = "playing";
