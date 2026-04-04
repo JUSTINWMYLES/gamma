@@ -496,6 +496,54 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
       icon: "❌",
     },
   ],
+
+  "registry-10-grid-tap-colors": [
+    {
+      heading: "Grid Tap Colors",
+      body: "Lay your phones on the ground to form a grid — then race to tap!",
+      bgClass: "bg-gradient-to-br from-cyan-900 via-blue-900 to-indigo-900",
+      headingColor: "text-cyan-300",
+      bodyColor: "text-cyan-100",
+      fontClass: "font-black",
+      icon: "📱",
+    },
+    {
+      heading: "Set Up the Grid",
+      body: "Each phone shows a number. Place them face-up in order following the pattern shown on TV.",
+      bgClass: "bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900",
+      headingColor: "text-amber-400",
+      bodyColor: "text-gray-200",
+      fontClass: "font-bold",
+      icon: "🔢",
+    },
+    {
+      heading: "Speed Tap Mode",
+      body: "One phone lights up with a color — race to tap it! The next phone lights up instantly. You have 20 seconds!",
+      bgClass: "bg-gradient-to-br from-red-900 via-orange-900 to-amber-900",
+      headingColor: "text-orange-300",
+      bodyColor: "text-orange-100",
+      fontClass: "font-black",
+      icon: "⚡",
+    },
+    {
+      heading: "Take Turns",
+      body: "Each player gets announced on screen with 10 seconds to get in position. Watch for your name!",
+      bgClass: "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+      headingColor: "text-emerald-300",
+      bodyColor: "text-emerald-100",
+      fontClass: "font-bold",
+      icon: "👆",
+    },
+    {
+      heading: "Ready?",
+      body: "The host will confirm once all phones are placed. Then the tapping begins!",
+      bgClass: "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+      headingColor: "text-violet-300",
+      bodyColor: "text-violet-100",
+      fontClass: "font-black",
+      icon: "🏁",
+    },
+  ],
 };
 
 /**

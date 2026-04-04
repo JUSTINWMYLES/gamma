@@ -45,6 +45,7 @@ import {
   scoreColorSequenceRound,
   countSequenceErrors,
   buildPlayerGroups,
+  getGridLayout,
   GRID_COLORS,
   type PhoneAssignment,
   type ColorSequenceStep,
@@ -78,6 +79,9 @@ const MODE2_INPUT_TIMEOUT_MS = 30_000;
 /** Maximum time to wait for a Mode 1 tap before auto-advancing (ms). */
 const MODE1_TAP_TIMEOUT_MS = 10_000;
 
+/** Maximum total duration for a Speed Tap round per player (ms). */
+const MODE1_ROUND_CAP_MS = 20_000;
+
 /** Delay to show results after a group finishes (ms). */
 const RESULT_DISPLAY_MS = 4_000;
 
@@ -87,10 +91,13 @@ const DEFAULT_SEQUENCE_LENGTH = 5;
 /** Music track placeholder identifier. */
 const MUSIC_TRACK_PLACEHOLDER = "grid-tap-colors-bgm-placeholder";
 
+/** Time for the player to get in position before their turn (ms). */
+const PLAYER_READY_DELAY_MS = 10_000;
+
 // ── Input types ──────────────────────────────────────────────────────────────
 
 interface GridTapInput {
-  action: "tap" | "submit_sequence";
+  action: "tap" | "submit_sequence" | "admin_grid_ready";
   /** Phone index tapped (Mode 1 & 2). */
   phoneIndex?: number;
 }
@@ -168,7 +175,10 @@ export default class GridTapColorsGame extends BaseGame {
   private sequenceLength: number = DEFAULT_SEQUENCE_LENGTH;
 
   /** Resolve function for the current tap wait. */
-  private tapResolve: ((value?: unknown) => void) | null = null;
+  private tapResolve: (() => void) | null = null;
+
+  /** Resolve function for admin grid ready. */
+  private gridReadyResolve: (() => void) | null = null;
 
   /** Extra timers. */
   private _extraTimers: ReturnType<typeof setTimeout>[] = [];
@@ -208,13 +218,25 @@ export default class GridTapColorsGame extends BaseGame {
     // Build player groups
     this.playerGroups = buildPlayerGroups(playerIds, this.concurrentPlayers);
 
-    // Broadcast setup info to all clients
+    // Compute grid layout for the TV display
+    const gridLayout = getGridLayout(playerIds.length);
+
+    // Broadcast setup info to all clients (including grid layout)
     this.broadcast("grid_setup", {
       phoneAssignments: this.phoneAssignments,
       concurrentPlayers: this.concurrentPlayers,
       gameMode: this.gameMode,
       totalTaps: this.totalTaps,
       musicTrack: MUSIC_TRACK_PLACEHOLDER,
+      gridLayout,
+      playerGroups: this.playerGroups.map((group, gi) => ({
+        groupIndex: gi,
+        playerIds: group,
+        playerNames: group.map((id) => {
+          const p = this.room.state.players.get(id);
+          return p?.name ?? "Unknown";
+        }),
+      })),
     });
 
     // Show phone placement numbers on devices
@@ -224,17 +246,18 @@ export default class GridTapColorsGame extends BaseGame {
         color: assignment.color,
         groupIndex: assignment.groupIndex,
         totalGroups: this.concurrentPlayers > 1 ? this.concurrentPlayers : 1,
+        gridLayout,
       });
     }
 
-    // Wait for players to place phones and ready up
-    await this.delay(3000);
+    // Wait for admin (host) to confirm phones are placed in the grid
+    await this._waitForAdminGridReady();
   }
 
   // ── Round logic ──────────────────────────────────────────────────
 
   protected override async runRound(round: number): Promise<void> {
-    // Broadcast round start
+    // Broadcast round start — all phones go white
     this.broadcast("grid_round_start", {
       round,
       gameMode: this.gameMode,
@@ -268,6 +291,17 @@ export default class GridTapColorsGame extends BaseGame {
     const input = data as GridTapInput;
     if (!input) return;
 
+    if (input.action === "admin_grid_ready") {
+      // Only the host can confirm grid ready
+      if (client.sessionId === this.room.state.hostSessionId) {
+        if (this.gridReadyResolve) {
+          this.gridReadyResolve();
+          this.gridReadyResolve = null;
+        }
+      }
+      return;
+    }
+
     if (input.action === "tap" && input.phoneIndex !== undefined) {
       if (this.gameMode === "speed_tap") {
         this._handleSpeedTap(client.sessionId, input.phoneIndex);
@@ -286,25 +320,43 @@ export default class GridTapColorsGame extends BaseGame {
     this.activeSpeedTaps.clear();
     this.activeSequences.clear();
     this.tapResolve = null;
+    this.gridReadyResolve = null;
   }
 
   // ── Mode 1: Speed Tap ──────────────────────────────────────────
 
   private async _runSpeedTapRound(round: number): Promise<void> {
     const allResults: SpeedTapPlayerResult[] = [];
+    const gridLayout = getGridLayout(this.phoneAssignments.length);
 
     for (let gi = 0; gi < this.playerGroups.length; gi++) {
       const group = this.playerGroups[gi];
+      const playerNames = group.map((id) => {
+        const p = this.room.state.players.get(id);
+        return p?.name ?? "Unknown";
+      });
 
-      // Announce which group is playing
+      // Announce which player/group is next with get-in-position time
+      this.broadcast("grid_player_announce", {
+        round,
+        groupIndex: gi,
+        totalGroups: this.playerGroups.length,
+        playerIds: group,
+        playerNames,
+        readyDurationMs: PLAYER_READY_DELAY_MS,
+        gridLayout,
+        concurrentPlayers: this.concurrentPlayers,
+      });
+
+      // Give the player(s) time to get in position
+      await this.delay(PLAYER_READY_DELAY_MS);
+
+      // Announce group starting (countdown)
       this.broadcast("grid_group_start", {
         round,
         groupIndex: gi,
         playerIds: group,
-        playerNames: group.map((id) => {
-          const p = this.room.state.players.get(id);
-          return p?.name ?? "Unknown";
-        }),
+        playerNames,
       });
 
       await this.delay(2000);
@@ -509,11 +561,25 @@ export default class GridTapColorsGame extends BaseGame {
     return new Promise<void>((resolve) => {
       this.tapResolve = resolve;
 
-      // Timeout: if not all players finish, resolve anyway
+      // Cap the entire round at 20 seconds (MODE1_ROUND_CAP_MS)
       const timeout = setTimeout(() => {
+        // Mark uncompleted players
+        for (const pid of playerIds) {
+          const state = this.activeSpeedTaps.get(pid);
+          if (state && !state.completed) {
+            state.completed = true;
+            this.broadcast("grid_player_complete", {
+              playerId: pid,
+              playerName:
+                this.room.state.players.get(pid)?.name ?? "Unknown",
+              completionTimeMs: Date.now() - state.startedAt,
+              timedOut: true,
+            });
+          }
+        }
         this.tapResolve = null;
         resolve();
-      }, this.totalTaps * MODE1_TAP_TIMEOUT_MS);
+      }, MODE1_ROUND_CAP_MS);
       this._extraTimers.push(timeout);
 
       // Check if already done
@@ -537,9 +603,14 @@ export default class GridTapColorsGame extends BaseGame {
     const allResults: ColorSequencePlayerResult[] = [];
     // Increase sequence length each round
     const seqLen = this.sequenceLength + (round - 1);
+    const gridLayout = getGridLayout(this.phoneAssignments.length);
 
     for (let gi = 0; gi < this.playerGroups.length; gi++) {
       const group = this.playerGroups[gi];
+      const playerNames = group.map((id) => {
+        const p = this.room.state.players.get(id);
+        return p?.name ?? "Unknown";
+      });
 
       // Generate a color sequence
       const sequence = generateColorSequence(
@@ -547,15 +618,27 @@ export default class GridTapColorsGame extends BaseGame {
         seqLen,
       );
 
-      // Announce group
+      // Announce which player/group is next with get-in-position time
+      this.broadcast("grid_player_announce", {
+        round,
+        groupIndex: gi,
+        totalGroups: this.playerGroups.length,
+        playerIds: group,
+        playerNames,
+        readyDurationMs: PLAYER_READY_DELAY_MS,
+        gridLayout,
+        concurrentPlayers: this.concurrentPlayers,
+      });
+
+      // Give the player(s) time to get in position
+      await this.delay(PLAYER_READY_DELAY_MS);
+
+      // Announce group starting
       this.broadcast("grid_group_start", {
         round,
         groupIndex: gi,
         playerIds: group,
-        playerNames: group.map((id) => {
-          const p = this.room.state.players.get(id);
-          return p?.name ?? "Unknown";
-        }),
+        playerNames,
       });
 
       await this.delay(2000);
@@ -794,5 +877,27 @@ export default class GridTapColorsGame extends BaseGame {
     return [...this.room.state.players.values()].filter(
       (p) => p.isConnected && !p.isEliminated,
     );
+  }
+
+  /**
+   * Wait for the admin (host) to confirm phones are placed in the grid.
+   * Times out after 120 seconds to prevent indefinite stalling.
+   */
+  private _waitForAdminGridReady(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.gridReadyResolve = resolve;
+
+      // Broadcast that we're waiting for admin confirmation
+      this.broadcast("grid_waiting_for_admin", {
+        message: "Waiting for host to confirm phone placement",
+      });
+
+      // Timeout after 2 minutes
+      const timeout = setTimeout(() => {
+        this.gridReadyResolve = null;
+        resolve();
+      }, 120_000);
+      this._extraTimers.push(timeout);
+    });
   }
 }
