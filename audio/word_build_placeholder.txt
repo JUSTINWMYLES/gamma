@@ -1,0 +1,11 @@
+Word Build – Game Music Placeholder
+====================================
+This is a placeholder file for the Word Build (registry-27) game music.
+
+Replace this file with actual audio assets:
+  - word_build_lobby.mp3      — Background music during team formation
+  - word_build_countdown.mp3  — Countdown timer tension music
+  - word_build_playing.mp3    — Upbeat music during the arrangement phase
+  - word_build_reveal.mp3     — Dramatic reveal sound effect
+  - word_build_victory.mp3    — Victory fanfare for the winning team
+  - word_build_tick.mp3       — Ticking sound for final 10 seconds
