@@ -119,8 +119,8 @@ export default class WordBuildGame extends BaseGame {
   protected override async runRound(roundNum: number): Promise<void> {
     const players = this._activePlayers();
 
-    if (players.length < 4) {
-      this.broadcast("round_skipped", { reason: "Not enough connected players (need 4+)" });
+    if (players.length < 6) {
+      this.broadcast("round_skipped", { reason: "Not enough connected players (need 6+)" });
       return;
     }
 
