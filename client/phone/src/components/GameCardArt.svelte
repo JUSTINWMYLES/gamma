@@ -315,6 +315,44 @@
     <text x="158" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.3">evil laughs</text>
   </svg>
 
+{:else if gameId === "registry-10-grid-tap-colors"}
+  <!-- Grid Tap Colors: phone grid with colored cells and tap ripple -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <!-- Grid of phones -->
+    <rect x="35" y="15" width="24" height="32" rx="3" fill="rgba(239,68,68,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="65" y="15" width="24" height="32" rx="3" fill="rgba(59,130,246,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="95" y="15" width="24" height="32" rx="3" fill="rgba(34,197,94,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="125" y="15" width="24" height="32" rx="3" fill="rgba(168,85,247,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="35" y="53" width="24" height="32" rx="3" fill="rgba(245,158,11,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="65" y="53" width="24" height="32" rx="3" fill="rgba(236,72,153,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="95" y="53" width="24" height="32" rx="3" fill="rgba(20,184,166,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <rect x="125" y="53" width="24" height="32" rx="3" fill="rgba(249,115,22,0.15)" stroke="{accent}" stroke-width="1" opacity="0.6"/>
+    <!-- Active lit phone (one glowing) -->
+    <rect x="65" y="15" width="24" height="32" rx="3" fill="{accent}" fill-opacity="0.35" class="grid-glow"/>
+    <!-- Tap ripple on active phone -->
+    <circle cx="77" cy="31" r="5" fill="none" stroke="{accent}" stroke-width="0.8" opacity="0.7" class="grid-tap-ring-1"/>
+    <circle cx="77" cy="31" r="9" fill="none" stroke="{accent}" stroke-width="0.5" opacity="0.3" class="grid-tap-ring-2"/>
+    <!-- Finger tapping -->
+    <ellipse cx="77" cy="28" rx="5" ry="6" fill="{accent}" opacity="0.5" class="grid-finger"/>
+    <!-- Color sequence hint (bottom) -->
+    <circle cx="155" cy="25" r="5" fill="#ef4444" opacity="0.3"/>
+    <circle cx="155" cy="38" r="5" fill="#3b82f6" opacity="0.3"/>
+    <circle cx="155" cy="51" r="5" fill="#22c55e" opacity="0.3"/>
+    <circle cx="155" cy="64" r="5" fill="#a855f7" opacity="0.3"/>
+    <circle cx="155" cy="77" r="5" fill="#f59e0b" opacity="0.3"/>
+    <!-- Arrow from sequence to grid -->
+    <path d="M163 50 L175 50" fill="none" stroke="{accent}" stroke-width="0.8" opacity="0.2" stroke-dasharray="2 2"/>
+    <polygon points="175,47 175,53 180,50" fill="{accent}" opacity="0.2"/>
+    <!-- Number labels on phones -->
+    <text x="47" y="35" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">1</text>
+    <text x="107" y="35" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">3</text>
+    <text x="137" y="35" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">4</text>
+    <text x="47" y="73" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">5</text>
+    <text x="77" y="73" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">6</text>
+    <text x="107" y="73" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">7</text>
+    <text x="137" y="73" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.3">8</text>
+  </svg>
+
 {:else}
   <!-- Fallback: generic gamepad icon -->
   <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
@@ -553,4 +591,18 @@
 
   /* ── Audio Overlay animations ── */
   /* wave-r1, wave-r2 reuse Sound Replication wave-pulse */
+
+  /* ── Grid Tap Colors animations ── */
+  .grid-glow {
+    animation: grid-glow-pulse 1.5s ease-in-out infinite alternate;
+  }
+  .grid-finger {
+    animation: tap-bounce 0.6s ease-in-out infinite alternate;
+  }
+  .grid-tap-ring-1 { animation: ring-expand 1.2s ease-out infinite; }
+  .grid-tap-ring-2 { animation: ring-expand 1.2s ease-out 0.3s infinite; }
+  @keyframes grid-glow-pulse {
+    0% { fill-opacity: 0.15; }
+    100% { fill-opacity: 0.45; }
+  }
 </style>
