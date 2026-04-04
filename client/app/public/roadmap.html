@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en" style="background: #030712;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamma — Roadmap</title>
+    <script>
+      // Match the main app's FOUC-prevention: read localStorage, fall back to system pref
+      (function() {
+        var t = localStorage.getItem("gamma-theme");
+        if (!t) t = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        if (t === "light") {
+          document.documentElement.classList.add("light");
+          document.documentElement.style.background = "#f9fafb";
+        }
+      })();
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap');
+
+        /* ── Dark theme (default) ── */
+        :root {
+            --bg: #030712;
+            --surface: #111827;
+            --border: #374151;
+            --lavender: #818cf8;
+            --lavender2: #6366f1;
+            --cyan: #7ee8e8;
+            --muted: #9ca3af;
+            --text: #ffffff;
+            --text-dim: #9ca3af;
+            --shipped-glow: rgba(99, 102, 241, 0.18);
+            --track-w: 3px;
+            --card-shipped-bg: linear-gradient(135deg, #111827 0%, #1e1b4b 100%);
+            --toggle-bg: #1f2937;
+            --toggle-border: #374151;
+            --noise-opacity: 0.5;
+        }
+
+        /* ── Light theme — triggered by .light class on <html> ── */
+        :root.light {
+            --bg: #f9fafb;
+            --surface: #ffffff;
+            --border: #e5e7eb;
+            --lavender: #4f46e5;
+            --lavender2: #6366f1;
+            --cyan: #1a9e9e;
+            --muted: #6b7280;
+            --text: #111827;
+            --text-dim: #6b7280;
+            --shipped-glow: rgba(99, 102, 241, 0.12);
+            --card-shipped-bg: linear-gradient(135deg, #ffffff 0%, #eef2ff 100%);
+            --toggle-bg: #f3f4f6;
+            --toggle-border: #d1d5db;
+            --noise-opacity: 0.15;
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'DM Mono', monospace;
+            min-height: 100vh;
+            padding: 60px 24px 100px;
+            overflow-x: hidden;
+            transition: background 0.25s ease, color 0.25s ease;
+        }
+
+        /* noise grain overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 0;
+            opacity: var(--noise-opacity);
+            transition: opacity 0.25s ease;
+        }
+
+        .page {
+            position: relative;
+            z-index: 1;
+            max-width: 680px;
+            margin: 0 auto;
+        }
+
+        /* ── Header ── */
+        header {
+            margin-bottom: 64px;
+        }
+
+        /* ── Wordmark (matches GammaTitle.svelte) ── */
+        .wordmark-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            overflow: hidden;
+        }
+
+        .wordmark-glow {
+            position: absolute;
+            inset: -20px -30px;
+            background: radial-gradient(ellipse at center, rgba(124,111,173,0.08) 0%, transparent 70%);
+            pointer-events: none;
+            animation: glowPulse 4s ease-in-out infinite;
+        }
+
+        @keyframes glowPulse {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        .wordmark {
+            position: relative;
+            font-family: 'Bebas Neue', sans-serif;
+            font-size: 72px;
+            letter-spacing: 0.1em;
+            line-height: 1;
+            user-select: none;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        .wordmark .layer {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            white-space: nowrap;
+        }
+
+        .wordmark .base {
+            position: relative;
+            color: #9b93b8;
+            z-index: 3;
+        }
+
+        .wordmark .mg {
+            color: #cc6ab5;
+            z-index: 2;
+            mix-blend-mode: multiply;
+            animation: wmMg 3.8s steps(1) infinite;
+        }
+
+        .wordmark .tl {
+            color: #5bbfb5;
+            z-index: 2;
+            mix-blend-mode: multiply;
+            animation: wmTl 3.8s steps(1) infinite;
+        }
+
+        .light .wordmark .mg { mix-blend-mode: screen; }
+        .light .wordmark .tl { mix-blend-mode: screen; }
+        .light .wordmark .base { color: #6b5f90; }
+        .light .wm-label { color: #6b5f90; }
+        .light .wordmark-glow {
+            background: radial-gradient(ellipse at center, rgba(124,111,173,0.12) 0%, transparent 70%);
+        }
+
+        @keyframes wmMg {
+            0%, 84%  { opacity: 0; clip-path: inset(100% 0 0 0); transform: translate(0); }
+            85%      { opacity: 1; clip-path: inset(12% 0 52% 0); transform: translate(-7px, 0); }
+            86%      { opacity: 0; }
+            90%      { opacity: 1; clip-path: inset(58% 0 8% 0); transform: translate(-5px, 1px); }
+            91%      { opacity: 0; }
+            95%      { opacity: 1; clip-path: inset(32% 0 38% 0); transform: translate(-4px, 0); }
+            96%      { opacity: 0; }
+            100%     { opacity: 0; }
+        }
+
+        @keyframes wmTl {
+            0%, 84%  { opacity: 0; clip-path: inset(100% 0 0 0); transform: translate(0); }
+            85%      { opacity: 1; clip-path: inset(52% 0 12% 0); transform: translate(7px, 0); }
+            86%      { opacity: 0; }
+            90%      { opacity: 1; clip-path: inset(8% 0 58% 0); transform: translate(5px, -1px); }
+            91%      { opacity: 0; }
+            95%      { opacity: 1; clip-path: inset(38% 0 32% 0); transform: translate(4px, 0); }
+            96%      { opacity: 0; }
+            100%     { opacity: 0; }
+        }
+
+        /* scan lines */
+        .wordmark-wrap::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(
+                180deg,
+                transparent 0px,
+                transparent 3px,
+                rgba(124, 111, 173, 0.05) 3px,
+                rgba(124, 111, 173, 0.05) 4px
+            );
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .wm-label {
+            font-family: 'Bebas Neue', sans-serif;
+            letter-spacing: 0.35em;
+            font-size: 13px;
+            color: #b0a8cc;
+            margin-top: -4px;
+        }
+
+        .subtitle {
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin-top: 12px;
+            transition: color 0.25s ease;
+        }
+
+        /* ── Back link ── */
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-decoration: none;
+            letter-spacing: 0.04em;
+            transition: color 0.2s ease;
+            margin-bottom: 24px;
+        }
+
+        .back-link:hover {
+            color: var(--lavender);
+        }
+
+        .back-link svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* ── Theme toggle (fixed, matches App.svelte placement) ── */
+        .theme-toggle {
+            position: fixed;
+            top: 0.75rem;
+            right: 0.75rem;
+            z-index: 50;
+            width: 2.5rem;
+            height: 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--toggle-bg);
+            border: 1px solid var(--toggle-border);
+            border-radius: 0.75rem;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            user-select: none;
+            color: var(--muted);
+        }
+
+        .theme-toggle:hover {
+            background: var(--surface);
+            border-color: var(--lavender2);
+            color: var(--text);
+        }
+
+        .theme-toggle svg {
+            width: 1.25rem;
+            height: 1.25rem;
+        }
+
+        /* ── Timeline ── */
+        .timeline {
+            position: relative;
+            padding-left: 36px;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 6px;
+            bottom: 0;
+            width: var(--track-w);
+            background: linear-gradient(to bottom, var(--lavender2) 0%, var(--border) 70%, transparent 100%);
+            transition: background 0.25s ease;
+        }
+
+        /* ── Milestone card ── */
+        .milestone {
+            position: relative;
+            margin-bottom: 40px;
+            animation: fadeUp 0.5s ease both;
+        }
+
+        .milestone:last-child {
+            margin-bottom: 0;
+        }
+
+        .milestone::before {
+            content: '';
+            position: absolute;
+            left: -31px;
+            top: 6px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--lavender2);
+            background: var(--bg);
+            transition: transform 0.2s ease, background 0.25s ease, border-color 0.25s ease;
+        }
+
+        .milestone[data-status="shipped"]::before {
+            background: var(--lavender);
+            border-color: var(--lavender);
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
+
+        .light .milestone[data-status="shipped"]::before {
+            box-shadow: 0 0 10px rgba(79, 70, 229, 0.35);
+        }
+
+        .milestone[data-status="upcoming"]::before {
+            border-color: var(--cyan);
+            box-shadow: 0 0 8px rgba(126, 232, 232, 0.4);
+        }
+
+        .light .milestone[data-status="upcoming"]::before {
+            box-shadow: 0 0 8px rgba(26, 158, 158, 0.35);
+        }
+
+        .milestone[data-status="future"]::before {
+            border-color: var(--border);
+            background: var(--border);
+        }
+
+        .milestone:hover::before {
+            transform: scale(1.4);
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px 22px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.25s ease;
+        }
+
+        .milestone[data-status="shipped"] .card {
+            background: var(--card-shipped-bg);
+        }
+
+        .milestone[data-status="shipped"] .card:hover {
+            border-color: var(--lavender2);
+            box-shadow: 0 0 24px var(--shipped-glow);
+        }
+
+        .milestone[data-status="upcoming"] .card:hover {
+            border-color: var(--cyan);
+            box-shadow: 0 0 20px rgba(126, 232, 232, 0.12);
+        }
+
+        .light .milestone[data-status="upcoming"] .card:hover {
+            box-shadow: 0 0 20px rgba(26, 158, 158, 0.12);
+        }
+
+        .milestone[data-status="future"] .card {
+            opacity: 0.55;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+
+        .card-date {
+            font-size: 0.68rem;
+            color: var(--muted);
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+            transition: color 0.25s ease;
+        }
+
+        .card-title {
+            font-family: 'DM Mono', monospace;
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--text);
+            letter-spacing: -0.01em;
+            transition: color 0.25s ease;
+        }
+
+        .milestone[data-status="shipped"] .card-title {
+            color: var(--lavender);
+        }
+
+        .milestone[data-status="upcoming"] .card-title {
+            color: var(--cyan);
+        }
+
+        .card-desc {
+            font-size: 0.76rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+            margin-bottom: 12px;
+            transition: color 0.25s ease;
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag {
+            font-size: 0.62rem;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            padding: 3px 8px;
+            border-radius: 3px;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            background: transparent;
+            transition: border-color 0.25s ease, color 0.25s ease;
+        }
+
+        .milestone[data-status="shipped"] .tag {
+            border-color: rgba(99, 102, 241, 0.25);
+            color: rgba(129, 140, 248, 0.8);
+        }
+
+        .light .milestone[data-status="shipped"] .tag {
+            border-color: rgba(79, 70, 229, 0.25);
+            color: rgba(79, 70, 229, 0.7);
+        }
+
+        .milestone[data-status="upcoming"] .tag {
+            border-color: rgba(126, 232, 232, 0.3);
+            color: rgba(126, 232, 232, 0.8);
+        }
+
+        .light .milestone[data-status="upcoming"] .tag {
+            border-color: rgba(26, 158, 158, 0.3);
+            color: rgba(26, 158, 158, 0.85);
+        }
+
+        .badge {
+            margin-left: auto;
+            font-size: 0.60rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+            border-radius: 3px;
+            white-space: nowrap;
+            transition: background 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+        }
+
+        .badge-shipped {
+            background: rgba(99, 102, 241, 0.12);
+            color: var(--lavender);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .badge-upcoming {
+            background: rgba(126, 232, 232, 0.08);
+            color: var(--cyan);
+            border: 1px solid rgba(126, 232, 232, 0.25);
+        }
+
+        .badge-future {
+            background: transparent;
+            color: var(--muted);
+            border: 1px solid var(--border);
+        }
+
+        .light .badge-shipped {
+            background: rgba(79, 70, 229, 0.08);
+            border-color: rgba(79, 70, 229, 0.25);
+        }
+
+        .light .badge-upcoming {
+            background: rgba(26, 158, 158, 0.08);
+            border-color: rgba(26, 158, 158, 0.25);
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(14px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Theme toggle — fixed top-right, always visible while scrolling -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <!-- Sun icon (shown in dark mode) -->
+        <svg id="iconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <!-- Moon icon (shown in light mode) -->
+        <svg id="iconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none;">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+    </button>
+
+    <div class="page">
+        <a href="/" class="back-link">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 01-.75.75H5.612l4.158 3.96a.75.75 0 11-1.04 1.08l-5.5-5.25a.75.75 0 010-1.08l5.5-5.25a.75.75 0 111.04 1.08L5.612 9.25H16.25A.75.75 0 0117 10z" clip-rule="evenodd"/></svg>
+            Back to Gamma
+        </a>
+
+        <header>
+            <div class="wordmark-wrap">
+                <div class="wordmark-glow"></div>
+                <div class="wordmark">
+                    <span class="layer mg" aria-hidden="true">GAMMA</span>
+                    <span class="layer tl" aria-hidden="true">GAMMA</span>
+                    <span class="base">GAMMA</span>
+                </div>
+            </div>
+            <div class="wm-label">Platform Roadmap</div>
+            <div class="subtitle">Project History &amp; Upcoming</div>
+        </header>
+
+        <div class="timeline" id="timeline"></div>
+    </div>
+
+    <script>
+        // Milestones data
+        const MILESTONES = [
+            {
+                date: "March 21, 2025",
+                title: "Gamma Created",
+                desc: "Project kicked off. Repo initialized, branding locked in.",
+                tags: ["origin", "branding"],
+                status: "shipped",
+            },
+            {
+                date: "March 30, 2025",
+                title: "First Launch - 11 Games",
+                desc: "Public launch with the founding game lineup. Lobby live.",
+                tags: ["launch", "11 games"],
+                status: "shipped",
+            },
+            {
+                date: "TBD",
+                title: "Major Lobby Revamp",
+                desc: "Full redesign of the lobby experience - layout, flow, and feel. Maybe some 3D too? We'll see.",
+                tags: ["lobby", "ux", "design"],
+                status: "upcoming",
+            },
+            {
+                date: "TBD",
+                title: "20 Game Milestone",
+                desc: "Platform reaches 20 playable games.",
+                tags: ["milestone", "20 games"],
+                status: "future",
+            },
+            {
+                date: "TBD",
+                title: "Nerd Stuff - Deployment Redesign",
+                desc: "Migrate to K8s Operator (as money permits) and change backend to use Redis for game rooms.",
+                tags: ["K8s", "redis"],
+                status: "future",
+            },
+        ];
+
+        // Render timeline
+        const timeline = document.getElementById('timeline');
+
+        MILESTONES.forEach((m, i) => {
+            const badgeLabel = m.status === 'shipped' ? 'Shipped'
+                : m.status === 'upcoming' ? 'Up next'
+                    : 'Future';
+
+            const tagsHTML = m.tags.map(t => `<span class="tag">${t}</span>`).join('');
+
+            const el = document.createElement('div');
+            el.className = 'milestone';
+            el.dataset.status = m.status;
+            el.style.animationDelay = `${i * 80}ms`;
+            el.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-date">${m.date}</span>
+          <span class="card-title">${m.title}</span>
+          <span class="badge badge-${m.status}">${badgeLabel}</span>
+        </div>
+        <p class="card-desc">${m.desc}</p>
+        <div class="tags">${tagsHTML}</div>
+      </div>
+    `;
+            timeline.appendChild(el);
+        });
+
+        // ── Theme toggle ──
+        // Uses the same system as the main Gamma app:
+        //   - "gamma-theme" localStorage key
+        //   - ".light" class on <html>
+        //   - Falls back to system prefers-color-scheme
+        const html = document.documentElement;
+        const toggleBtn = document.getElementById('themeToggle');
+        const iconSun = document.getElementById('iconSun');
+        const iconMoon = document.getElementById('iconMoon');
+
+        function applyTheme(theme) {
+            if (theme === 'light') {
+                html.classList.add('light');
+                html.style.background = '#f9fafb';
+                iconSun.style.display = 'none';
+                iconMoon.style.display = 'block';
+            } else {
+                html.classList.remove('light');
+                html.style.background = '#030712';
+                iconSun.style.display = 'block';
+                iconMoon.style.display = 'none';
+            }
+            localStorage.setItem('gamma-theme', theme);
+        }
+
+        // Initial theme was already set by the FOUC-prevention script;
+        // sync the icon state
+        const currentTheme = html.classList.contains('light') ? 'light' : 'dark';
+        applyTheme(currentTheme);
+
+        toggleBtn.addEventListener('click', () => {
+            const next = html.classList.contains('light') ? 'dark' : 'light';
+            applyTheme(next);
+        });
+    </script>
+</body>
+</html>
