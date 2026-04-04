@@ -363,11 +363,14 @@ describe("getGridLayout", () => {
 
   it("returns 4×3 for 10–12 players", () => {
     expect(getGridLayout(10)).toEqual({ cols: 4, rows: 3 });
+    expect(getGridLayout(11)).toEqual({ cols: 4, rows: 3 });
     expect(getGridLayout(12)).toEqual({ cols: 4, rows: 3 });
   });
 
   it("returns 4×4 for 13–16 players", () => {
     expect(getGridLayout(13)).toEqual({ cols: 4, rows: 4 });
+    expect(getGridLayout(14)).toEqual({ cols: 4, rows: 4 });
+    expect(getGridLayout(15)).toEqual({ cols: 4, rows: 4 });
     expect(getGridLayout(16)).toEqual({ cols: 4, rows: 4 });
   });
 
