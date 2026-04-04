@@ -149,10 +149,10 @@ One randomly chosen phone per team is given a "Done" button. When that player pr
 - **Expected model output:**
 ```json
 {
-  "word": "CHANGE",
-  "length": 6,
-  "fragments": ["CH", "AN", "GE"],
-  "validArrangements": ["CHANGE"],
+  "word": "CHANGING",
+  "length": 8,
+  "fragments": ["CH", "AN", "GI", "NG"],
+  "validArrangements": ["CHANGING"],
   "difficulty": "medium"
 }
 ```
