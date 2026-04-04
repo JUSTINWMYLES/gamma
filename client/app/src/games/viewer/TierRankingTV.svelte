@@ -181,6 +181,9 @@
 
   // ── Derived ──────────────────────────────────────────────────────
   $: timerDisplay = Math.ceil(timeLeft);
+  $: sortedPlayers = [...state.players.values()].sort(
+    (a, b) => (roundScores[b.id] ?? 0) - (roundScores[a.id] ?? 0),
+  );
 
   const TIER_BG: Record<string, string> = {
     S: "bg-yellow-500",
@@ -301,7 +304,7 @@
         <div class="mt-6">
           <p class="text-center text-lg text-gray-400 uppercase tracking-widest mb-3">Round Scores</p>
           <div class="flex flex-wrap gap-3 justify-center">
-            {#each [...state.players.values()].sort((a, b) => (roundScores[b.id] ?? 0) - (roundScores[a.id] ?? 0)) as p}
+            {#each sortedPlayers as p}
               <div class="bg-gray-800 rounded-xl px-4 py-2 text-center">
                 <p class="text-sm text-gray-400">{p.name}</p>
                 <p class="text-2xl font-black {(roundScores[p.id] ?? 0) > 0 ? 'text-yellow-400' : 'text-gray-500'}">
