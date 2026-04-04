@@ -8,6 +8,7 @@ import {
   scoreColorSequenceRound,
   countSequenceErrors,
   buildPlayerGroups,
+  getGridLayout,
   GRID_COLORS,
   type SpeedTapPlayerResult,
   type ColorSequencePlayerResult,
@@ -325,6 +326,76 @@ describe("scoreColorSequenceRound", () => {
     // No perfect bonus, but submitted → fastest bonus 200
     // Total = max(0, -90) + 200 = 200
     expect(scores.get("a")!).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ── getGridLayout ────────────────────────────────────────────────────────────
+
+describe("getGridLayout", () => {
+  it("returns 2×1 for 2 players", () => {
+    const layout = getGridLayout(2);
+    expect(layout).toEqual({ cols: 2, rows: 1 });
+  });
+
+  it("returns 3×1 for 3 players", () => {
+    const layout = getGridLayout(3);
+    expect(layout).toEqual({ cols: 3, rows: 1 });
+  });
+
+  it("returns 2×2 for 4 players", () => {
+    const layout = getGridLayout(4);
+    expect(layout).toEqual({ cols: 2, rows: 2 });
+  });
+
+  it("returns 3×2 for 5–6 players", () => {
+    expect(getGridLayout(5)).toEqual({ cols: 3, rows: 2 });
+    expect(getGridLayout(6)).toEqual({ cols: 3, rows: 2 });
+  });
+
+  it("returns 4×2 for 7–8 players", () => {
+    expect(getGridLayout(7)).toEqual({ cols: 4, rows: 2 });
+    expect(getGridLayout(8)).toEqual({ cols: 4, rows: 2 });
+  });
+
+  it("returns 3×3 for 9 players", () => {
+    expect(getGridLayout(9)).toEqual({ cols: 3, rows: 3 });
+  });
+
+  it("returns 4×3 for 10–12 players", () => {
+    expect(getGridLayout(10)).toEqual({ cols: 4, rows: 3 });
+    expect(getGridLayout(12)).toEqual({ cols: 4, rows: 3 });
+  });
+
+  it("returns 4×4 for 13–16 players", () => {
+    expect(getGridLayout(13)).toEqual({ cols: 4, rows: 4 });
+    expect(getGridLayout(16)).toEqual({ cols: 4, rows: 4 });
+  });
+
+  it("returns 5×4 for 17–20 players", () => {
+    expect(getGridLayout(17)).toEqual({ cols: 5, rows: 4 });
+    expect(getGridLayout(20)).toEqual({ cols: 5, rows: 4 });
+  });
+
+  it("returns 5×5 for 21–25 players", () => {
+    expect(getGridLayout(21)).toEqual({ cols: 5, rows: 5 });
+    expect(getGridLayout(25)).toEqual({ cols: 5, rows: 5 });
+  });
+
+  it("returns 6×5 for 26–30 players", () => {
+    expect(getGridLayout(26)).toEqual({ cols: 6, rows: 5 });
+    expect(getGridLayout(30)).toEqual({ cols: 6, rows: 5 });
+  });
+
+  it("returns 8×4 for 31–32 players", () => {
+    expect(getGridLayout(31)).toEqual({ cols: 8, rows: 4 });
+    expect(getGridLayout(32)).toEqual({ cols: 8, rows: 4 });
+  });
+
+  it("grid always has enough cells for all phones", () => {
+    for (let n = 2; n <= 32; n++) {
+      const layout = getGridLayout(n);
+      expect(layout.cols * layout.rows).toBeGreaterThanOrEqual(n);
+    }
   });
 });
 
