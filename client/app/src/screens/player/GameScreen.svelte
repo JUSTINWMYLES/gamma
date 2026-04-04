@@ -21,6 +21,7 @@
   import EscapeMaze from "../../games/player/EscapeMaze.svelte";
   import PaintMatch from "../../games/player/PaintMatch.svelte";
   import GridTapColors from "../../games/player/GridTapColors.svelte";
+  import WordBuild from "../../games/player/WordBuild.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -39,6 +40,7 @@
   $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
   $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
   $: isGridTapColors = state.selectedGame === "registry-10-grid-tap-colors";
+  $: isWordBuild = state.selectedGame === "registry-27-word-build";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -202,7 +204,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -267,7 +269,10 @@
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isGridTapColors}
+{#if isWordBuild}
+  <!-- ── Registry-27: Word Build ─────────────────────────────────── -->
+  <WordBuild {room} {state} {me} />
+{:else if isGridTapColors}
   <!-- ── Registry-10: Grid Tap Colors ────────────────────────────── -->
   <GridTapColors {room} {state} {me} />
 {:else if isPaintMatch}
