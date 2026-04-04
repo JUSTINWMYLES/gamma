@@ -12,6 +12,7 @@ import {
   CATEGORY_PICK_DURATION_SECS,
   ENTRY_SUBMIT_DURATION_SECS,
   TIER_RANK_DURATION_SECS,
+  RESULTS_DISPLAY_MS,
   MIN_PLAYERS,
   MAX_PLAYERS,
   type Tier,
@@ -296,6 +297,10 @@ describe("constants", () => {
 
   it("TIER_RANK_DURATION_SECS is 90", () => {
     expect(TIER_RANK_DURATION_SECS).toBe(90);
+  });
+
+  it("RESULTS_DISPLAY_MS is 10000", () => {
+    expect(RESULTS_DISPLAY_MS).toBe(10_000);
   });
 
   it("MIN_PLAYERS is 2", () => {
