@@ -329,6 +329,7 @@
     room.onMessage("grid_round_scores", onRoundScores);
     room.onMessage("grid_sequence_input_start", onSequenceInputStart);
     room.onMessage("grid_sequence_tap_confirmed", onSequenceTapConfirmed);
+    // grid_phone_color_hint is handled visually via myColor — no extra action needed
     room.onMessage("grid_phone_color_hint", () => {});
     room.onMessage("grid_player_sequence_complete", onPlayerSequenceComplete);
     room.onMessage("grid_music", onMusic);
