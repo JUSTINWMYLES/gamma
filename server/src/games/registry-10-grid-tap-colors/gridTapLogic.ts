@@ -242,7 +242,7 @@ export function scoreColorSequenceRound(
   for (const r of results) {
     const errors = countSequenceErrors(r.taps, r.correctSequence);
     const correctCount = r.correctSequence.length - errors;
-    let points = correctCount * 20 + errors * -30;
+    let points = correctCount * 20 - errors * 30;
     if (errors === 0 && r.submitted) points += 500;
     scores.set(r.playerId, Math.max(0, points));
   }
