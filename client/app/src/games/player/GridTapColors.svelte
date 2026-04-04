@@ -12,7 +12,8 @@
    *   grid_player_complete, grid_group_start, grid_group_results,
    *   grid_round_scores, grid_sequence_input_start,
    *   grid_sequence_tap_confirmed, grid_phone_color_hint,
-   *   grid_sequence_memorize, grid_player_sequence_complete, grid_music
+   *   grid_sequence_memorize, grid_player_sequence_complete,
+   *   grid_music, grid_player_announce, grid_waiting_for_admin
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -26,8 +27,11 @@
 
   type SubPhase =
     | "setup"           // Showing phone placement number
+    | "waiting_admin"   // Waiting for host to confirm placement
     | "waiting"         // Waiting for turn
+    | "player_announce" // Showing who is going next
     | "countdown"       // Group about to start
+    | "white_ready"     // All phones white before tapping
     | "speed_tap"       // Mode 1: tapping
     | "color_input"     // Mode 2: entering sequence
     | "group_results"   // Showing results for the group
@@ -44,11 +48,13 @@
   let gameMode: "speed_tap" | "color_sequence" = "speed_tap";
   let totalTaps = 10;
 
+  // ── Grid layout ────────────────────────────────────────────────
+  let gridLayout = { cols: 2, rows: 1 };
+
   // ── Phone state (is this phone lit?) ────────────────────────────
 
   let isLit = false;
   let litColor = "";
-  let litForPlayerId = "";
 
   // ── Speed Tap state ─────────────────────────────────────────────
 
@@ -59,8 +65,6 @@
 
   let sequenceLength = 0;
   let mySequenceTapCount = 0;
-  let sequenceTimeoutMs = 30000;
-  let colorHint = "";
   let sequenceSubmitted = false;
 
   // ── Group/round results ─────────────────────────────────────────
@@ -78,9 +82,16 @@
   let activeGroupPlayerNames: string[] = [];
   let isMyTurn = false;
 
+  // ── Player announce ─────────────────────────────────────────────
+  let announcePlayerNames: string[] = [];
+  let announceCountdown = 10;
+  let announceTimer: ReturnType<typeof setInterval> | null = null;
+
   // ── Music ───────────────────────────────────────────────────────
-  // Placeholder — no actual audio loaded yet
   let musicPlaying = false;
+
+  // ── Admin state ─────────────────────────────────────────────────
+  $: isHost = me?.id === state.hostSessionId;
 
   // ── Message handlers ────────────────────────────────────────────
 
@@ -95,9 +106,11 @@
     gameMode: string;
     totalTaps: number;
     musicTrack: string;
+    gridLayout?: { cols: number; rows: number };
   }) {
     gameMode = data.gameMode === "color_sequence" ? "color_sequence" : "speed_tap";
     totalTaps = data.totalTaps;
+    if (data.gridLayout) gridLayout = data.gridLayout;
     subPhase = "setup";
   }
 
@@ -106,12 +119,18 @@
     color: string;
     groupIndex: number;
     totalGroups: number;
+    gridLayout?: { cols: number; rows: number };
   }) {
     displayNumber = data.displayNumber;
     myColor = data.color;
     myGroupIndex = data.groupIndex;
     totalGroups = data.totalGroups;
+    if (data.gridLayout) gridLayout = data.gridLayout;
     subPhase = "setup";
+  }
+
+  function onWaitingForAdmin() {
+    subPhase = "waiting_admin";
   }
 
   function onRoundStart(data: {
@@ -125,7 +144,36 @@
     mySequenceTapCount = 0;
     sequenceSubmitted = false;
     isLit = false;
-    subPhase = "waiting";
+    // All phones go white when round starts
+    subPhase = "white_ready";
+  }
+
+  function onPlayerAnnounce(data: {
+    round: number;
+    groupIndex: number;
+    totalGroups: number;
+    playerIds: string[];
+    playerNames: string[];
+    readyDurationMs: number;
+    gridLayout?: { cols: number; rows: number };
+    concurrentPlayers: number;
+  }) {
+    announcePlayerNames = data.playerNames;
+    isMyTurn = data.playerIds.includes(me?.id ?? "");
+    if (data.gridLayout) gridLayout = data.gridLayout;
+
+    // Start countdown timer
+    announceCountdown = Math.ceil(data.readyDurationMs / 1000);
+    if (announceTimer) clearInterval(announceTimer);
+    announceTimer = setInterval(() => {
+      announceCountdown--;
+      if (announceCountdown <= 0) {
+        if (announceTimer) clearInterval(announceTimer);
+        announceTimer = null;
+      }
+    }, 1000);
+
+    subPhase = "player_announce";
   }
 
   function onGroupStart(data: {
@@ -137,11 +185,14 @@
     activeGroupPlayerIds = data.playerIds;
     activeGroupPlayerNames = data.playerNames;
     isMyTurn = data.playerIds.includes(me?.id ?? "");
+    if (announceTimer) { clearInterval(announceTimer); announceTimer = null; }
     if (isMyTurn) {
       subPhase = "countdown";
       myTapCount = 0;
       mySequenceTapCount = 0;
       sequenceSubmitted = false;
+    } else {
+      subPhase = "waiting";
     }
   }
 
@@ -151,10 +202,8 @@
     color: string;
     lit: boolean;
   }) {
-    // Only react if we're in speed tap mode and this phone (me) is being lit
     isLit = data.lit;
     litColor = data.color;
-    litForPlayerId = data.playerId;
 
     if (data.lit && isMyTurn && gameMode === "speed_tap") {
       subPhase = "speed_tap";
@@ -177,7 +226,6 @@
     playerName: string;
     completionTimeMs: number;
   }) {
-    // This player finished their speed tap run
     if (_data.playerId === me?.id) {
       subPhase = "waiting";
       isLit = false;
@@ -213,7 +261,6 @@
     timeoutMs: number;
   }) {
     sequenceLength = data.sequenceLength;
-    sequenceTimeoutMs = data.timeoutMs;
     mySequenceTapCount = 0;
     sequenceSubmitted = false;
     if (data.playerIds.includes(me?.id ?? "")) {
@@ -230,13 +277,6 @@
     sequenceLength = data.totalSteps;
   }
 
-  function onPhoneColorHint(data: {
-    color: string;
-    displayNumber: number;
-  }) {
-    colorHint = data.color;
-  }
-
   function onPlayerSequenceComplete(_data: {
     playerId: string;
     playerName: string;
@@ -251,14 +291,12 @@
 
   function onMusic(data: { action: string; track: string }) {
     musicPlaying = data.action === "play";
-    // TODO: Play actual game music when a track is selected
   }
 
   // ── Actions ─────────────────────────────────────────────────────
 
   function handlePhoneTap() {
     if (gameMode === "speed_tap" && isLit) {
-      // Find my phone index from display number
       room.send("game_input", {
         action: "tap",
         phoneIndex: displayNumber - 1,
@@ -269,6 +307,12 @@
         phoneIndex: displayNumber - 1,
       });
     }
+  }
+
+  function handleAdminGridReady() {
+    room.send("game_input", {
+      action: "admin_grid_ready",
+    });
   }
 
   // ── Lifecycle ───────────────────────────────────────────────────
@@ -285,13 +329,16 @@
     room.onMessage("grid_round_scores", onRoundScores);
     room.onMessage("grid_sequence_input_start", onSequenceInputStart);
     room.onMessage("grid_sequence_tap_confirmed", onSequenceTapConfirmed);
-    room.onMessage("grid_phone_color_hint", onPhoneColorHint);
+    // grid_phone_color_hint is handled visually via myColor — no extra action needed
+    room.onMessage("grid_phone_color_hint", () => {});
     room.onMessage("grid_player_sequence_complete", onPlayerSequenceComplete);
     room.onMessage("grid_music", onMusic);
+    room.onMessage("grid_player_announce", onPlayerAnnounce);
+    room.onMessage("grid_waiting_for_admin", onWaitingForAdmin);
   });
 
   onDestroy(() => {
-    // Cleanup handled by Colyseus
+    if (announceTimer) clearInterval(announceTimer);
   });
 
   // ── Derived ─────────────────────────────────────────────────────
@@ -304,14 +351,14 @@
 <div class="flex-1 flex flex-col items-center justify-center gap-4 p-4 select-none" data-testid="grid-tap-colors">
 
   {#if subPhase === "setup"}
-    <!-- Phone placement screen -->
+    <!-- Phone placement screen — shows large number so user knows where to place -->
     <div class="text-center space-y-4">
-      <p class="text-xs text-gray-500 uppercase tracking-widest">Place this phone</p>
+      <p class="text-xs text-gray-500 uppercase tracking-widest">Place this phone in the grid</p>
       <div
-        class="w-40 h-40 rounded-3xl flex items-center justify-center shadow-2xl border-4"
+        class="w-44 h-44 rounded-3xl flex items-center justify-center shadow-2xl border-4"
         style="background: {myColor}22; border-color: {myColor}"
       >
-        <p class="text-7xl font-black" style="color: {myColor}">
+        <p class="text-8xl font-black" style="color: {myColor}">
           {displayNumber || "?"}
         </p>
       </div>
@@ -324,11 +371,47 @@
         </div>
       {/if}
       <p class="text-gray-400 text-sm">
-        Place this phone face-up in position <strong>{displayNumber}</strong>
+        Position <strong style="color: {myColor}">{displayNumber}</strong> in the {gridLayout.cols}×{gridLayout.rows} grid
       </p>
       <p class="text-xs text-gray-600">
-        {gameMode === "speed_tap" ? "Mode: Speed Tap" : "Mode: Color Sequence"}
+        {gameMode === "speed_tap" ? "⚡ Speed Tap Mode" : "🎨 Color Sequence Mode"}
       </p>
+      <p class="text-xs text-gray-500 mt-2">
+        Look at the TV for the grid layout
+      </p>
+    </div>
+
+  {:else if subPhase === "waiting_admin"}
+    <!-- Waiting for admin to confirm grid placement -->
+    <div class="text-center space-y-4">
+      <div
+        class="w-32 h-32 rounded-3xl flex items-center justify-center shadow-lg border-4 mx-auto"
+        style="background: {myColor}22; border-color: {myColor}"
+      >
+        <p class="text-6xl font-black" style="color: {myColor}">
+          {displayNumber || "?"}
+        </p>
+      </div>
+      <p class="text-gray-400 text-sm">Phone placed in position <strong style="color: {myColor}">{displayNumber}</strong></p>
+      {#if isHost}
+        <div class="space-y-3 mt-4">
+          <p class="text-sm text-cyan-400 font-semibold">All phones in position?</p>
+          <button
+            class="px-8 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-bold text-lg transition-colors shadow-lg"
+            on:click={handleAdminGridReady}
+          >
+            Phones Are Ready ✓
+          </button>
+        </div>
+      {:else}
+        <p class="text-gray-500 text-sm animate-pulse">Waiting for host to confirm...</p>
+      {/if}
+    </div>
+
+  {:else if subPhase === "white_ready"}
+    <!-- All phones go white when round starts -->
+    <div class="w-full h-full flex-1 flex flex-col items-center justify-center bg-white rounded-2xl">
+      <p class="text-gray-800 text-sm font-medium animate-pulse">Get Ready...</p>
     </div>
 
   {:else if subPhase === "waiting"}
@@ -341,6 +424,24 @@
       {/if}
       {#if musicPlaying}
         <p class="text-xs text-gray-600">♪ Music playing...</p>
+      {/if}
+    </div>
+
+  {:else if subPhase === "player_announce"}
+    <!-- Showing who is going next with countdown -->
+    <div class="text-center space-y-4">
+      {#if isMyTurn}
+        <p class="text-xs text-cyan-400 uppercase tracking-widest font-bold">Your Turn Next!</p>
+        <p class="text-5xl font-black text-cyan-400">{announceCountdown}s</p>
+        <p class="text-gray-400 text-sm">Get in position at the grid</p>
+      {:else}
+        <p class="text-xs text-gray-500 uppercase tracking-widest">Up Next</p>
+        <div class="flex flex-col gap-2 items-center">
+          {#each announcePlayerNames as name}
+            <span class="px-4 py-2 rounded-full bg-gray-800 text-lg font-bold text-white">{name}</span>
+          {/each}
+        </div>
+        <p class="text-2xl font-bold text-gray-400">{announceCountdown}s</p>
       {/if}
     </div>
 
@@ -362,7 +463,7 @@
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="w-full h-full flex-1 flex flex-col items-center justify-center rounded-2xl transition-colors duration-100"
-      style="background: {isLit ? litColor + '40' : 'transparent'}"
+      style="background: {isLit ? litColor : 'transparent'}"
       on:touchstart|preventDefault={handlePhoneTap}
       on:mousedown={handlePhoneTap}
     >
@@ -371,7 +472,7 @@
           <!-- Pulsing ring -->
           <div
             class="w-32 h-32 rounded-full mx-auto flex items-center justify-center animate-pulse"
-            style="background: {litColor}; box-shadow: 0 0 40px {litColor}88"
+            style="background: {litColor}; box-shadow: 0 0 60px {litColor}"
           >
             <p class="text-5xl font-black text-white">TAP!</p>
           </div>
@@ -380,13 +481,13 @@
             <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
               <div
                 class="h-full rounded-full transition-all duration-150"
-                style="width: {tapProgressPct}%; background: {litColor}"
+                style="width: {tapProgressPct}%; background: white"
               ></div>
             </div>
-            <p class="text-sm text-gray-400 mt-1">{myTapCount} / {totalTaps}</p>
+            <p class="text-sm text-white mt-1">{myTapCount} / {totalTaps}</p>
           </div>
           {#if lastTapTimeMs > 0}
-            <p class="text-xs text-gray-500">{lastTapTimeMs}ms</p>
+            <p class="text-xs text-white opacity-70">{lastTapTimeMs}ms</p>
           {/if}
         </div>
       {:else}

@@ -11,7 +11,8 @@
    *   grid_group_results, grid_round_scores,
    *   grid_sequence_show, grid_sequence_memorize,
    *   grid_sequence_input_start, grid_sequence_tap_progress,
-   *   grid_player_sequence_complete, grid_music
+   *   grid_player_sequence_complete, grid_music,
+   *   grid_player_announce, grid_waiting_for_admin
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -24,7 +25,9 @@
 
   type SubPhase =
     | "setup"
+    | "waiting_admin"
     | "waiting"
+    | "player_announce"
     | "playing"
     | "showing_sequence"
     | "memorize"
@@ -50,12 +53,29 @@
   let gameMode: "speed_tap" | "color_sequence" = "speed_tap";
   let totalTaps = 10;
 
+  // ── Grid layout ────────────────────────────────────────────────
+  let gridLayout = { cols: 2, rows: 1 };
+
   // ── Active group ────────────────────────────────────────────────
 
   let activePlayerIds: string[] = [];
   let activePlayerNames: string[] = [];
   let currentRound = 0;
   let currentGroupIndex = 0;
+
+  // ── Player announce ─────────────────────────────────────────────
+  let announcePlayerNames: string[] = [];
+  let announceCountdown = 10;
+  let announceTimer: ReturnType<typeof setInterval> | null = null;
+  let announceTotalGroups = 1;
+  let announceGroupIndex = 0;
+
+  // ── Player groups info ──────────────────────────────────────────
+  let playerGroups: Array<{
+    groupIndex: number;
+    playerIds: string[];
+    playerNames: string[];
+  }> = [];
 
   // ── Player progress (Mode 1) ────────────────────────────────────
 
@@ -120,6 +140,12 @@
     gameMode: string;
     totalTaps: number;
     musicTrack: string;
+    gridLayout?: { cols: number; rows: number };
+    playerGroups?: Array<{
+      groupIndex: number;
+      playerIds: string[];
+      playerNames: string[];
+    }>;
   }) {
     phones = data.phoneAssignments.map((a) => ({
       ...a,
@@ -129,7 +155,13 @@
     concurrentPlayers = data.concurrentPlayers;
     gameMode = data.gameMode === "color_sequence" ? "color_sequence" : "speed_tap";
     totalTaps = data.totalTaps;
+    if (data.gridLayout) gridLayout = data.gridLayout;
+    if (data.playerGroups) playerGroups = data.playerGroups;
     subPhase = "setup";
+  }
+
+  function onWaitingForAdmin() {
+    subPhase = "waiting_admin";
   }
 
   function onRoundStart(data: {
@@ -149,6 +181,35 @@
     subPhase = "waiting";
   }
 
+  function onPlayerAnnounce(data: {
+    round: number;
+    groupIndex: number;
+    totalGroups: number;
+    playerIds: string[];
+    playerNames: string[];
+    readyDurationMs: number;
+    gridLayout?: { cols: number; rows: number };
+    concurrentPlayers: number;
+  }) {
+    announcePlayerNames = data.playerNames;
+    announceGroupIndex = data.groupIndex;
+    announceTotalGroups = data.totalGroups;
+    if (data.gridLayout) gridLayout = data.gridLayout;
+
+    // Start countdown
+    announceCountdown = Math.ceil(data.readyDurationMs / 1000);
+    if (announceTimer) clearInterval(announceTimer);
+    announceTimer = setInterval(() => {
+      announceCountdown--;
+      if (announceCountdown <= 0) {
+        if (announceTimer) clearInterval(announceTimer);
+        announceTimer = null;
+      }
+    }, 1000);
+
+    subPhase = "player_announce";
+  }
+
   function onGroupStart(data: {
     round: number;
     groupIndex: number;
@@ -160,6 +221,7 @@
     activePlayerNames = data.playerNames;
     playerProgressMap.clear();
     sequencePlayerMap.clear();
+    if (announceTimer) { clearInterval(announceTimer); announceTimer = null; }
 
     // Initialize progress for each player
     for (let i = 0; i < data.playerIds.length; i++) {
@@ -184,7 +246,6 @@
         });
       }
     }
-    // Re-assign to trigger Svelte reactivity (Maps are not natively reactive)
     playerProgressMap = playerProgressMap;
     sequencePlayerMap = sequencePlayerMap;
     subPhase = "playing";
@@ -199,7 +260,7 @@
     if (data.phoneIndex >= 0 && data.phoneIndex < phones.length) {
       phones[data.phoneIndex].lit = data.lit;
       phones[data.phoneIndex].litColor = data.color;
-      phones = phones; // trigger reactivity
+      phones = phones;
     }
   }
 
@@ -215,7 +276,7 @@
       existing.tapCount = data.tapNumber;
       existing.totalTaps = data.totalTaps;
       existing.lastTapTimeMs = data.tapTimeMs;
-      playerProgressMap = playerProgressMap; // trigger reactivity
+      playerProgressMap = playerProgressMap;
     }
   }
 
@@ -265,7 +326,6 @@
     currentSequenceIndex = -1;
     subPhase = "showing_sequence";
 
-    // Animate sequence display
     let idx = 0;
     if (sequenceDisplayInterval) clearInterval(sequenceDisplayInterval);
     sequenceDisplayInterval = setInterval(() => {
@@ -355,15 +415,18 @@
     room.onMessage("grid_sequence_tap_progress", onSequenceTapProgress);
     room.onMessage("grid_player_sequence_complete", onPlayerSequenceComplete);
     room.onMessage("grid_music", onMusic);
+    room.onMessage("grid_player_announce", onPlayerAnnounce);
+    room.onMessage("grid_waiting_for_admin", onWaitingForAdmin);
   });
 
   onDestroy(() => {
     if (sequenceDisplayInterval) clearInterval(sequenceDisplayInterval);
+    if (announceTimer) clearInterval(announceTimer);
   });
 
   // ── Derived ─────────────────────────────────────────────────────
 
-  $: gridCols = phones.length <= 4 ? 2 : phones.length <= 9 ? 3 : 4;
+  $: gridCols = gridLayout.cols;
   $: progressEntries = [...playerProgressMap.values()];
   $: sequenceProgressEntries = [...sequencePlayerMap.values()];
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
@@ -376,7 +439,7 @@
     <div>
       <h1 class="text-2xl font-black text-cyan-400">Grid Tap Colors</h1>
       <p class="text-sm text-gray-500">
-        {gameMode === "speed_tap" ? "Mode: Speed Tap" : "Mode: Color Sequence"}
+        {gameMode === "speed_tap" ? "⚡ Speed Tap" : "🎨 Color Sequence"}
         {#if currentRound > 0}
           — Round {currentRound}
         {/if}
@@ -390,17 +453,24 @@
   <div class="flex-1 flex gap-6">
     <!-- Left: Phone Grid Visualization -->
     <div class="flex-1 flex items-center justify-center">
-      {#if subPhase === "setup"}
+      {#if subPhase === "setup" || subPhase === "waiting_admin"}
+        <!-- Setup phase: show the grid layout with phone numbers -->
         <div class="text-center space-y-6">
-          <h2 class="text-3xl font-black text-white">Place Your Phones</h2>
-          <p class="text-gray-400">Each phone is showing a number — place them in the grid</p>
+          <h2 class="text-3xl font-black text-white">
+            {subPhase === "waiting_admin" ? "Arrange Phones in This Grid" : "Place Your Phones"}
+          </h2>
+          <p class="text-gray-400">
+            {gridLayout.cols} × {gridLayout.rows} grid — each phone shows its number
+          </p>
+
+          <!-- Grid visualization showing phone positions -->
           <div
             class="grid gap-3 mx-auto"
-            style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); max-width: {gridCols * 100}px"
+            style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); max-width: {gridCols * 110}px"
           >
             {#each phones as phone}
               <div
-                class="aspect-[3/4] rounded-xl border-2 flex flex-col items-center justify-center gap-1"
+                class="aspect-[3/4] rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition-all duration-300"
                 style="border-color: {phone.color}; background: {phone.color}15"
               >
                 <span class="text-3xl font-black" style="color: {phone.color}">{phone.displayNumber}</span>
@@ -409,6 +479,51 @@
                     G{phone.groupIndex + 1}
                   </span>
                 {/if}
+              </div>
+            {/each}
+          </div>
+
+          {#if subPhase === "waiting_admin"}
+            <p class="text-sm text-cyan-400 animate-pulse">
+              Waiting for host to confirm phones are in position...
+            </p>
+          {:else}
+            <p class="text-sm text-gray-500">Each phone is displaying its number</p>
+          {/if}
+        </div>
+
+      {:else if subPhase === "player_announce"}
+        <!-- Show who is going next with a big countdown -->
+        <div class="text-center space-y-6">
+          <p class="text-xs text-gray-500 uppercase tracking-widest">
+            {announceTotalGroups > 1 ? `Group ${announceGroupIndex + 1} of ${announceTotalGroups}` : "Up Next"}
+          </p>
+          <div class="flex flex-col items-center gap-3">
+            {#each announcePlayerNames as name}
+              <span class="px-8 py-3 rounded-2xl bg-cyan-500/20 text-3xl font-black text-cyan-400 border-2 border-cyan-500/40">
+                {name}
+              </span>
+            {/each}
+          </div>
+          <div class="relative w-32 h-32 mx-auto">
+            <div class="absolute inset-0 rounded-full border-4 border-gray-700"></div>
+            <div class="absolute inset-0 flex items-center justify-center">
+              <span class="text-6xl font-black text-white">{announceCountdown}</span>
+            </div>
+          </div>
+          <p class="text-gray-400">Get in position at the grid!</p>
+
+          <!-- Show the grid they should use -->
+          <div
+            class="grid gap-2 mx-auto"
+            style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); max-width: {gridCols * 60}px"
+          >
+            {#each phones as phone}
+              <div
+                class="aspect-square rounded-lg border flex items-center justify-center"
+                style="border-color: {phone.color}40; background: {phone.color}10"
+              >
+                <span class="text-xs font-bold" style="color: {phone.color}">{phone.displayNumber}</span>
               </div>
             {/each}
           </div>
