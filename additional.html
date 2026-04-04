@@ -6,6 +6,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Game Card Images</title>
+<script>
+  // Prevent flash of wrong theme
+  (function() {
+    var saved = localStorage.getItem('gamma-theme');
+    if (saved === 'light') document.documentElement.classList.add('light');
+    else if (!saved && window.matchMedia('(prefers-color-scheme: light)').matches)
+      document.documentElement.classList.add('light');
+  })();
+</script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
@@ -13,6 +22,7 @@ body {
   font-family: 'Georgia', serif;
   padding: 24px 16px;
   min-height: 100vh;
+  transition: background 0.3s;
 }
 h1 {
   color: #71717a;
@@ -21,6 +31,7 @@ h1 {
   text-transform: uppercase;
   margin-bottom: 28px;
   text-align: center;
+  transition: color 0.3s;
 }
 .grid {
   display: flex;
@@ -37,6 +48,7 @@ h1 {
   width: 200px;
   border: 1px solid #2a2a32;
   box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
 }
 .card-img {
   width: 200px;
@@ -53,6 +65,7 @@ h1 {
   color: #52525b;
   margin-bottom: 4px;
   font-family: 'Courier New', monospace;
+  transition: color 0.3s;
 }
 .card-title {
   font-size: 14px;
@@ -60,12 +73,67 @@ h1 {
   color: #e4e4e7;
   margin-bottom: 4px;
   font-family: 'Georgia', serif;
+  transition: color 0.3s;
 }
 .card-desc {
   font-size: 10px;
   color: #71717a;
   line-height: 1.4;
   font-family: 'Georgia', serif;
+  transition: color 0.3s;
+}
+
+/* ── Theme toggle button ── */
+#theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 100;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.08);
+  color: rgba(180,180,190,0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: background 0.2s, border-color 0.2s;
+  backdrop-filter: blur(8px);
+}
+#theme-toggle:hover { background: rgba(255,255,255,0.14); }
+.light #theme-toggle {
+  border-color: rgba(0,0,0,0.15);
+  background: rgba(0,0,0,0.06);
+  color: rgba(40,40,40,0.8);
+}
+.light #theme-toggle:hover { background: rgba(0,0,0,0.12); }
+
+/* ── Light mode overrides ── */
+.light body {
+  background: #f5f0e8;
+}
+.light h1 {
+  color: #8a8070;
+}
+.light .card {
+  background: #ffffff;
+  border-color: #ddd8cc;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+.light .card-tag   { color: #8a8070; }
+.light .card-title { color: #1a1408; }
+.light .card-desc  { color: #5a5040; }
+
+/* SVG art: lighten the dark card backgrounds in light mode */
+.light .card-img {
+  filter: brightness(1.9) saturate(0.6);
+}
+/* The Lowball card SVG already has a light background — don't over-brighten it */
+.light .card:last-child .card-img {
+  filter: none;
 }
 
 /* ── ODD ONE OUT animations ── */
@@ -93,8 +161,8 @@ h1 {
 50%     { transform: translateY(-3px); }
 }
 @keyframes mouth-open {
-0%,100% { d: path(“M 88 72 Q 100 78 112 72”); }
-50%     { d: path(“M 88 72 Q 100 84 112 72”); }
+0%,100% { d: path("M 88 72 Q 100 78 112 72"); }
+50%     { d: path("M 88 72 Q 100 84 112 72"); }
 }
 @keyframes laugh-wave {
 0%   { transform: translateX(-10px); opacity:0; }
@@ -144,6 +212,11 @@ h1 {
 
 </head>
 <body>
+
+<button id="theme-toggle" aria-label="Toggle theme" title="Toggle light/dark mode">
+  <span id="theme-icon">☀️</span>
+</button>
+
 <h1>Game Card Images</h1>
 <div class="grid">
 
@@ -399,9 +472,19 @@ h1 {
 
   </div>
 
-
-  </div>
-
 </div>
+
+<script>
+  var icon = document.getElementById('theme-icon');
+  function syncIcon() {
+    icon.textContent = document.documentElement.classList.contains('light') ? '🌙' : '☀️';
+  }
+  syncIcon();
+  document.getElementById('theme-toggle').addEventListener('click', function() {
+    var isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem('gamma-theme', isLight ? 'light' : 'dark');
+    syncIcon();
+  });
+</script>
 </body>
 </html>

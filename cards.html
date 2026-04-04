@@ -6,6 +6,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Game Cards</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cinzel:wght@700;900&family=Permanent+Marker&family=Orbitron:wght@700;900&family=MedievalSharp&family=Crimson+Text:ital,wght@0,600;1,400&display=swap" rel="stylesheet">
+<script>
+  // Prevent flash of wrong theme
+  (function() {
+    var saved = localStorage.getItem('gamma-theme');
+    if (saved === 'light') document.documentElement.classList.add('light');
+    else if (!saved && window.matchMedia('(prefers-color-scheme: light)').matches)
+      document.documentElement.classList.add('light');
+  })();
+</script>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
@@ -13,6 +22,50 @@
     background: #111018;
     font-family: 'Crimson Text', Georgia, serif;
     padding: 48px 32px 80px;
+    transition: background 0.3s;
+  }
+
+  /* ── Theme toggle button ── */
+  #theme-toggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 100;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.08);
+    color: rgba(200,190,170,0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+    backdrop-filter: blur(8px);
+  }
+  #theme-toggle:hover {
+    background: rgba(255,255,255,0.14);
+  }
+  .light #theme-toggle {
+    border-color: rgba(0,0,0,0.15);
+    background: rgba(0,0,0,0.06);
+    color: rgba(60,50,30,0.8);
+  }
+  .light #theme-toggle:hover {
+    background: rgba(0,0,0,0.12);
+  }
+
+  /* ── Light mode — page & header ── */
+  .light body {
+    background: #f5f0e8;
+  }
+  .light header h1 {
+    color: #2a2010;
+  }
+  .light header p {
+    color: rgba(60,50,30,0.5);
   }
 
 header {
@@ -340,10 +393,65 @@ font-size:0.65rem;
 padding: 2px 7px;
 border-radius: 99px;
 }
+
+/* ────────────────────────────────────────────────
+   LIGHT MODE OVERRIDES
+──────────────────────────────────────────────── */
+
+/* Art area: lighten all dark backgrounds uniformly */
+.light .card-art {
+  filter: brightness(2.2) saturate(0.55);
+}
+
+/* Card footer: white background, dark text */
+.light .card-footer {
+  background: #ffffff !important;
+  border-top-color: rgba(0,0,0,0.1) !important;
+}
+
+/* Card hover shadow — softer in light mode */
+.light .card:hover {
+  box-shadow: 0 12px 36px rgba(0,0,0,0.18) !important;
+}
+
+/* Per-theme name & meta colors — dark ink versions for light bg */
+.light .card-dragon .card-name  { color: #c03010 !important; }
+.light .card-dragon .card-meta  { color: rgba(160,60,20,0.65) !important; }
+
+.light .card-treasure .card-name { color: #8a6000 !important; }
+.light .card-treasure .card-meta { color: rgba(120,90,0,0.65) !important; }
+
+.light .card-ocean .card-name   { color: #0070a0 !important; }
+.light .card-ocean .card-meta   { color: rgba(0,100,140,0.65) !important; }
+
+.light .card-forest .card-name  { color: #186020 !important; }
+.light .card-forest .card-meta  { color: rgba(30,100,30,0.65) !important; }
+
+.light .card-lava .card-name    { color: #c03010 !important; }
+.light .card-lava .card-meta    { color: rgba(180,60,20,0.65) !important; }
+
+.light .card-shadow .card-name  { color: #303030 !important; }
+.light .card-shadow .card-meta  { color: rgba(50,50,50,0.65) !important; }
+
+.light .card-arcane .card-name  { color: #7020b0 !important; }
+.light .card-arcane .card-meta  { color: rgba(110,30,170,0.65) !important; }
+
+.light .card-mint .card-name    { color: #007050 !important; }
+.light .card-mint .card-meta    { color: rgba(0,110,70,0.65) !important; }
+
+.light .card-rose .card-name    { color: #b01058 !important; }
+.light .card-rose .card-meta    { color: rgba(170,20,80,0.65) !important; }
+
+.light .card-space .card-name   { color: #1840a0 !important; }
+.light .card-space .card-meta   { color: rgba(30,60,150,0.65) !important; }
 </style>
 
 </head>
 <body>
+
+<button id="theme-toggle" aria-label="Toggle theme" title="Toggle light/dark mode">
+  <span id="theme-icon">☀️</span>
+</button>
 
 <header>
   <h1>Choose Your Game</h1>
@@ -508,5 +616,18 @@ border-radius: 99px;
   </div>
 
 </div>
+
+<script>
+  var icon = document.getElementById('theme-icon');
+  function syncIcon() {
+    icon.textContent = document.documentElement.classList.contains('light') ? '🌙' : '☀️';
+  }
+  syncIcon();
+  document.getElementById('theme-toggle').addEventListener('click', function() {
+    var isLight = document.documentElement.classList.toggle('light');
+    localStorage.setItem('gamma-theme', isLight ? 'light' : 'dark');
+    syncIcon();
+  });
+</script>
 </body>
 </html>
