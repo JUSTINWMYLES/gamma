@@ -1,6 +1,9 @@
 apiVersion: v2
 name: gamma-operator
-description: Helm chart for the Gamma operator hub component
+description: >-
+  Minimal Helm chart that installs the Gamma Kubernetes operator.
+  The operator watches GammaInstance custom resources and manages
+  all game deployment resources (server, client, Redis, networking).
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
@@ -8,6 +11,7 @@ keywords:
   - gamma
   - game-server
   - operator
+  - kubebuilder
 home: https://github.com/gamma-io/gamma
 maintainers:
   - name: gamma-team

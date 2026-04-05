@@ -1,4 +1,4 @@
-.PHONY: install dev compose-up compose-down build test test-unit test-e2e smoke docker-push helm-install-operator clean dev-server dev-client
+.PHONY: install dev compose-up compose-down build test test-unit test-e2e smoke docker-push helm-install-operator clean dev-server dev-client operator-manifests operator-build operator-test
 
 # ── Variables ────────────────────────────────────────────────────────────────
 REGISTRY   ?= ghcr.io/gamma
@@ -77,6 +77,10 @@ smoke:
 helm-lint:
 	helm lint helm/gamma-operator
 
+## Template the Helm chart (dry-run render)
+helm-template:
+	helm template gamma-operator helm/gamma-operator --namespace $(NAMESPACE)
+
 ## Install the operator Helm chart into a local kind/minikube cluster
 helm-install-operator:
 	helm upgrade --install gamma-operator helm/gamma-operator \
@@ -87,6 +91,27 @@ helm-install-operator:
 ## Uninstall the operator Helm chart
 helm-uninstall-operator:
 	helm uninstall gamma-operator --namespace $(NAMESPACE)
+
+# ── Operator (kubebuilder) ───────────────────────────────────────────────────
+## Generate CRD manifests and Go code from kubebuilder markers
+operator-manifests:
+	cd operator && make manifests generate
+
+## Build the operator binary
+operator-build:
+	cd operator && make build
+
+## Run operator unit tests (envtest)
+operator-test:
+	cd operator && make test
+
+## Build the operator Docker image
+operator-docker-build:
+	cd operator && make docker-build IMG=$(REGISTRY)/gamma-operator:$(TAG)
+
+## Push the operator Docker image
+operator-docker-push:
+	cd operator && make docker-push IMG=$(REGISTRY)/gamma-operator:$(TAG)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 ## Remove all build artifacts
