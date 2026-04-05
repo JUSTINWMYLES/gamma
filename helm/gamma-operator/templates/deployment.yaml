@@ -9,8 +9,7 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "gamma-operator.name" . }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      {{- include "gamma-operator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
@@ -28,9 +27,6 @@ spec:
           args:
             - --leader-elect={{ .Values.leaderElection.enabled }}
             - --log-level={{ .Values.logLevel }}
-            {{- if .Values.watchNamespace }}
-            - --watch-namespace={{ .Values.watchNamespace }}
-            {{- end }}
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             {{- end }}
@@ -40,6 +36,9 @@ spec:
               containerPort: {{ .Values.metrics.port }}
               protocol: TCP
             {{- end }}
+            - name: health
+              containerPort: 8081
+              protocol: TCP
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           livenessProbe:

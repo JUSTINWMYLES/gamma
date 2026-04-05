@@ -1,0 +1,72 @@
+# k8s/examples/production.yaml
+#
+# Production-grade GammaInstance with autoscaling, ingress, and TLS.
+
+apiVersion: gamma.io/v1alpha1
+kind: GammaInstance
+metadata:
+  name: gamma-prod
+  namespace: gamma
+spec:
+  server:
+    image: ghcr.io/gamma/gamma-server:v1.0.0
+    replicas: 3
+    port: 2567
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    env:
+      - name: LOG_LEVEL
+        value: "warn"
+      - name: RECONNECT_GRACE_SECONDS
+        value: "60"
+      - name: NODE_ENV
+        value: "production"
+
+  client:
+    image: ghcr.io/gamma/gamma-client:v1.0.0
+    replicas: 2
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "32Mi"
+      limits:
+        cpu: "200m"
+        memory: "128Mi"
+
+  redis:
+    enabled: true
+    image: redis:7-alpine
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    storage:
+      size: 5Gi
+      storageClassName: gp3
+
+  networking:
+    ingress:
+      enabled: true
+      className: nginx
+      host: gamma.example.com
+      tls:
+        enabled: true
+        secretName: gamma-tls
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+
+  region: us-east-1
