@@ -1,0 +1,26 @@
+# k8s/examples/basic.yaml
+#
+# Minimal GammaInstance — deploys Gamma with sensible defaults.
+# Good starting point for development or small deployments.
+
+apiVersion: gamma.io/v1alpha1
+kind: GammaInstance
+metadata:
+  name: gamma-dev
+  namespace: gamma
+spec:
+  server:
+    image: ghcr.io/gamma/gamma-server:latest
+    replicas: 1
+    env:
+      - name: LOG_LEVEL
+        value: "info"
+      - name: RECONNECT_GRACE_SECONDS
+        value: "30"
+
+  client:
+    image: ghcr.io/gamma/gamma-client:latest
+    replicas: 1
+
+  redis:
+    enabled: true
