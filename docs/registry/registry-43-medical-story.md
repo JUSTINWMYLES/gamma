@@ -12,7 +12,7 @@ Players are assigned hospital roles and collaboratively invent the funniest diag
 
 ## Long Description
 
-A patient arrives by ambulance and the lobby votes to assign roles: patient, doctor, and nurse. The remaining players are bystanders. The group then works through three creative rounds: first inventing a hilariously made-up diagnosis (a fake medical term paired with a body part), next devising an emergency procedure (a made-up procedure name paired with a physical action from a preset list), and finally completing the doctor's classic boast — "well that's why they call me the ___ doctor in the country". After each submission phase, all players vote for their favourite entry, and points are awarded to the winning submission's author.
+A patient arrives by ambulance and the lobby votes to assign roles: patient, doctor, and nurse. The remaining players are bystanders (none of these roles actually affect the game, its just for gun). The group then works through four creative rounds: first defining what the patients primary complaint is while selecting a body part that is the primary area. second inventing a hilariously made-up diagnosis (a fake medical term paired with a body part), next devising an emergency procedure (a made-up procedure name paired with a physical action from a preset list), and finally completing the doctor's classic boast — "well that's why they call me the ___ doctor in the country". After each submission phase, all players vote for their favourite entry, and points are awarded to the winning submission's author.
 
 ## Target Platforms
 
@@ -22,7 +22,7 @@ A patient arrives by ambulance and the lobby votes to assign roles: patient, doc
 ## Core Mechanics
 
 - Role assignment by player vote (patient, doctor, nurse, bystanders)
-- Three sequential creative-submission phases per round
+- Four sequential creative-submission phases per round
 - Peer voting after each submission phase to determine the funniest entry
 - Points awarded to the author of the highest-voted submission each phase
 
