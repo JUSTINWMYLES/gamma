@@ -23,6 +23,7 @@
   import GridTapColors from "../../games/player/GridTapColors.svelte";
   import WordBuild from "../../games/player/WordBuild.svelte";
   import TierRanking from "../../games/player/TierRanking.svelte";
+  import MedicalStory from "../../games/player/MedicalStory.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -43,6 +44,7 @@
   $: isGridTapColors = state.selectedGame === "registry-10-grid-tap-colors";
   $: isWordBuild = state.selectedGame === "registry-27-word-build";
   $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
+  $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -206,7 +208,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isTierRanking) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isTierRanking || isMedicalStory) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -271,7 +273,10 @@
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isWordBuild}
+{#if isMedicalStory}
+  <!-- ── Registry-43: Medical Story ──────────────────────────────── -->
+  <MedicalStory {room} {state} {me} />
+{:else if isWordBuild}
   <!-- ── Registry-27: Word Build ─────────────────────────────────── -->
   <WordBuild {room} {state} {me} />
 {:else if isTierRanking}

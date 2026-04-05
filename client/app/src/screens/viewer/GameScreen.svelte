@@ -26,6 +26,7 @@
   import GridTapColorsTV from "../../games/viewer/GridTapColorsTV.svelte";
   import WordBuildTV from "../../games/viewer/WordBuildTV.svelte";
   import TierRankingTV from "../../games/viewer/TierRankingTV.svelte";
+  import MedicalStoryTV from "../../games/viewer/MedicalStoryTV.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
@@ -45,6 +46,7 @@
   $: isGridTapColors = state.selectedGame === "registry-10-grid-tap-colors";
   $: isWordBuild = state.selectedGame === "registry-27-word-build";
   $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
+  $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -59,7 +61,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isTierRanking) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isTierRanking || isMedicalStory) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -230,7 +232,9 @@
   }
 </script>
 
-{#if isWordBuild}
+{#if isMedicalStory}
+  <MedicalStoryTV {room} {state} />
+{:else if isWordBuild}
   <WordBuildTV {room} {state} />
 {:else if isTierRanking}
   <TierRankingTV {room} {state} />

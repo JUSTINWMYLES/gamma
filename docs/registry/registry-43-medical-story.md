@@ -55,27 +55,28 @@ A patient arrives by ambulance and the lobby votes to assign roles: patient, doc
 ## Instructions Phase
 
 - `hasInstructionsPhase`: true
-- `instructionsDelivery`: `broadcast` — all players receive the same overview of the three phases before play begins
+- `instructionsDelivery`: `broadcast` — all players receive the same overview of the four phases before play begins
 
 ## UI Flow
 
 1. Lobby / Join: players enter name and wait for host to start
 2. Game loading: no sensor permissions required
-3. Instructions: TV and phones show overview of the three phases; players tap "Got it"
+3. Instructions: TV and phones show overview of the four phases; players tap "Got it"
 4. Role voting: all players vote to assign patient, doctor, and nurse from the lobby
-5. Diagnosis phase: players submit a fake medical term and select a body part; votes reveal the winner
-6. Procedure phase: players submit a made-up procedure name and select a physical action (Compressions, Shock, Punch, Slap, Roll, Shake); votes reveal the winner
-7. Catchphrase phase: players complete "well that's why they call me the ___ doctor in the country"; votes reveal the winner
-8. Round end recap: phase winners and scores shown
-9. Scoreboard / final results after all rounds
+5. Complaint phase: players describe what the patient's primary complaint is and select a body part that is the primary area; votes reveal the winner
+6. Diagnosis phase: players submit a fake medical term and select a body part; votes reveal the winner
+7. Procedure phase: players submit a made-up procedure name and select a physical action (Compressions, Shock, Punch, Slap, Roll, Shake); votes reveal the winner
+8. Catchphrase phase: players complete "well that's why they call me the ___ doctor in the country"; votes reveal the winner
+9. Round end recap: phase winners and scores shown
+10. Scoreboard / final results after all rounds
 
 ## State Machine
 
-- States: `idle` -> `lobby` -> `instructions` -> `role_voting` -> `diagnosis_submission` -> `diagnosis_voting` -> `procedure_submission` -> `procedure_voting` -> `catchphrase_submission` -> `catchphrase_voting` -> `round_end` -> `scoreboard`
+- States: `idle` -> `lobby` -> `instructions` -> `role_voting` -> `complaint_submission` -> `complaint_voting` -> `diagnosis_submission` -> `diagnosis_voting` -> `procedure_submission` -> `procedure_voting` -> `catchphrase_submission` -> `catchphrase_voting` -> `round_end` -> `scoreboard`
 - Transitions:
   - `hostStart` — `lobby` -> `instructions`
   - `allReady` — `instructions` -> `role_voting`
-  - `roleVoteComplete` — `role_voting` -> `diagnosis_submission`
+  - `roleVoteComplete` — `role_voting` -> `complaint_submission`
   - `allSubmitted` — `*_submission` -> `*_voting`
   - `voteTimerExpired` — `*_voting` -> next submission state or `round_end`
   - `allRoundsComplete` — `round_end` -> `scoreboard`
@@ -84,8 +85,8 @@ A patient arrives by ambulance and the lobby votes to assign roles: patient, doc
 ## Data Structures
 
 - Player: `{id, name, deviceId, role: "patient"|"doctor"|"nurse"|"bystander", score}`
-- Submission: `{playerId, phase: "diagnosis"|"procedure"|"catchphrase", text, bodyPart?: string, action?: string, votes: number}`
-- Round: `{id, patientId, doctorId, nurseId, submissions: Submission[], phaseWinners: {diagnosis, procedure, catchphrase}}`
+- Submission: `{playerId, phase: "complaint"|"diagnosis"|"procedure"|"catchphrase", text, bodyPart?: string, action?: string, votes: number}`
+- Round: `{id, patientId, doctorId, nurseId, submissions: Submission[], phaseWinners: {complaint, diagnosis, procedure, catchphrase}}`
 
 ## Assets
 
@@ -132,6 +133,7 @@ Return: {"suggestions":[{"text":"...","bodyPart":"..."}]}
 ## Test Cases / Acceptance Criteria
 
 - Role voting correctly assigns exactly one patient, one doctor, and one nurse when ≥ 3 players are present
+- Complaint submission phase accepts a body part and free-text complaint; votes reveal the winner
 - Submission phase closes and advances when all connected players have submitted or the timer expires
 - Votes are tallied correctly and the highest-voted submission author receives points
 - Disconnected players do not block game progression
@@ -141,11 +143,12 @@ Return: {"suggestions":[{"text":"...","bodyPart":"..."}]}
 ## Implementation Tasks
 
 1. Implement role-voting UI and assignment logic
-2. Build reusable submission + voting phase component (used for all three phases)
-3. Add body-part selector diagram for diagnosis phase
+2. Build reusable submission + voting phase component (used for all four phases)
+3. Add body-part selector diagram for complaint and diagnosis phases
 4. Add preset action picker for procedure phase
 5. Build catchphrase fill-in-the-blank prompt UI
 6. Implement vote reveal animation and score update
 7. Add round recap and final scoreboard screens
 8. Integrate AI suggestion endpoint for fallback submissions
-9. Add tests for role assignment, vote tallying, and disconnect recovery
+9. Add 3D scene placeholders for body-part selector, action animations, and TV displays
+10. Add tests for role assignment, vote tallying, and disconnect recovery
