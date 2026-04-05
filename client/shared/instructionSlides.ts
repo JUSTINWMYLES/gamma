@@ -593,6 +593,54 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
   ],
 
+  "registry-43-medical-story": [
+    {
+      heading: "Medical Story",
+      body: "A patient just arrived by ambulance — it's time to save (or roast) them!",
+      bgClass: "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+      headingColor: "text-red-300",
+      bodyColor: "text-red-100",
+      fontClass: "font-black",
+      icon: "🚑",
+    },
+    {
+      heading: "Assign Roles",
+      body: "Vote to pick the patient, doctor, and nurse. Everyone else is a bystander!",
+      bgClass: "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+      headingColor: "text-blue-300",
+      bodyColor: "text-blue-100",
+      fontClass: "font-bold",
+      icon: "🏥",
+    },
+    {
+      heading: "Four Rounds of Chaos",
+      body: "Describe the complaint, invent a diagnosis, devise a procedure, and finish the doctor's catchphrase!",
+      bgClass: "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
+      headingColor: "text-emerald-300",
+      bodyColor: "text-emerald-100",
+      fontClass: "font-bold",
+      icon: "🩺",
+    },
+    {
+      heading: "Vote for the Funniest",
+      body: "After each round, vote for your favourite entry. The winning author earns points!",
+      bgClass: "bg-gradient-to-br from-amber-900 via-orange-900 to-yellow-900",
+      headingColor: "text-amber-300",
+      bodyColor: "text-amber-100",
+      fontClass: "font-bold",
+      icon: "🗳️",
+    },
+    {
+      heading: "The Best Doctor Wins!",
+      body: "Rack up points across all rounds. Can you be crowned the funniest medical mind?",
+      bgClass: "bg-gradient-to-br from-fuchsia-900 via-purple-900 to-violet-900",
+      headingColor: "text-fuchsia-300",
+      bodyColor: "text-fuchsia-100",
+      fontClass: "font-black",
+      icon: "🏆",
+    },
+  ],
+
   "registry-11-tier-ranking": [
     {
       heading: "S-Tier Ranking",
