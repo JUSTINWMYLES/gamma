@@ -217,7 +217,7 @@ export function assignRolesRandomly(
   rng: () => number = Math.random,
 ): Map<string, Role> {
   const roles = new Map<string, Role>();
-  const shuffled = [...playerIds].sort(() => rng() - 0.5);
+  const shuffled = fisherYatesShuffle([...playerIds], rng);
 
   if (shuffled.length >= 1) roles.set(shuffled[0], "patient");
   if (shuffled.length >= 2) roles.set(shuffled[1], "doctor");
@@ -227,6 +227,17 @@ export function assignRolesRandomly(
   }
 
   return roles;
+}
+
+/**
+ * Fisher-Yates (Knuth) shuffle for unbiased randomization.
+ */
+function fisherYatesShuffle<T>(arr: T[], rng: () => number): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
 }
 
 // ── Submission validation ─────────────────────────────────────────────────────
@@ -282,7 +293,6 @@ export interface VoteResult {
 export function tallySubmissionVotes(
   submissions: Submission[],
   votes: Map<string, string>,
-  rng: () => number = Math.random,
 ): VoteResult[] {
   // Count votes per submission author
   const voteCounts = new Map<string, number>();
@@ -305,11 +315,8 @@ export function tallySubmissionVotes(
     voteCount: voteCounts.get(sub.playerId) ?? 0,
   }));
 
-  // Sort by vote count descending, ties broken randomly
-  results.sort((a, b) => {
-    if (b.voteCount !== a.voteCount) return b.voteCount - a.voteCount;
-    return rng() - 0.5;
-  });
+  // Sort by vote count descending; ties preserve original submission order
+  results.sort((a, b) => b.voteCount - a.voteCount);
 
   return results;
 }
