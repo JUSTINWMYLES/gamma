@@ -1,0 +1,576 @@
+/**
+ * server/src/games/registry-43-medical-story/index.ts
+ *
+ * "Medical Story" — collaborative medical comedy game.
+ *
+ * Mechanic
+ * ───────
+ * A patient arrives by ambulance and the lobby votes to assign roles:
+ * patient, doctor, and nurse. The remaining players are bystanders (purely
+ * cosmetic — roles don't affect gameplay). The group then works through
+ * four creative submission + voting phases:
+ *
+ *   1. Complaint  — describe the patient's primary complaint + select a body part
+ *   2. Diagnosis  — invent a fake medical term + select a body part
+ *   3. Procedure  — devise an emergency procedure name + pick an action
+ *   4. Catchphrase — complete "well that's why they call me the ___ doctor"
+ *
+ * After each submission phase, all players vote for the funniest entry.
+ * The winning author earns points.
+ *
+ * Server messages → clients:
+ *   "ms_role_phase"         { playerList, durationMs }
+ *   "ms_roles_assigned"     { roles }
+ *   "ms_submission_phase"   { phase, durationMs, bodyParts?, actions? }
+ *   "ms_submit_ack"         { accepted, reason? }
+ *   "ms_voting_phase"       { phase, submissions, durationMs }
+ *   "ms_vote_ack"           {}
+ *   "ms_phase_result"       { phase, results, phaseWinner, points }
+ *   "ms_round_recap"        { phaseWinners, scores }
+ *   "round_skipped"         { reason }
+ *
+ * Client messages ← players:
+ *   { action: "ms_role_vote", patient: string, doctor: string, nurse: string }
+ *   { action: "ms_submit", text: string, bodyPart?: string, action?: string }
+ *   { action: "ms_vote", targetPlayerId: string }
+ */
+
+import { Client } from "@colyseus/core";
+import { BaseGame } from "../BaseGame";
+import {
+  tallyRoleVotes,
+  assignRolesRandomly,
+  normalizeSubmission,
+  isValidBodyPart,
+  isValidAction,
+  tallySubmissionVotes,
+  computePhasePoints,
+  BODY_PARTS,
+  ACTIONS,
+  PHASES,
+  ROLE_VOTE_DURATION_SECS,
+  SUBMISSION_DURATION_SECS,
+  VOTING_DURATION_SECS,
+  RESULTS_DISPLAY_MS,
+  RECAP_DISPLAY_MS,
+  type Phase as GamePhase,
+  type Role,
+  type Submission,
+  type VoteResult,
+} from "./medicalStoryLogic";
+
+// ── Input types ───────────────────────────────────────────────────────────────
+
+interface MedicalStoryInput {
+  action: "ms_role_vote" | "ms_submit" | "ms_vote";
+  // role vote
+  patient?: string;
+  doctor?: string;
+  nurse?: string;
+  // submission
+  text?: string;
+  bodyPart?: string;
+  actionName?: string; // "action" conflicts with the action field
+  // vote
+  targetPlayerId?: string;
+}
+
+// ── Per-round tracking ────────────────────────────────────────────────────────
+
+interface RoundData {
+  /** Assigned roles for this round. */
+  roles: Map<string, Role>;
+  /** Role votes: voterId → { patient, doctor, nurse } */
+  roleVotes: Map<string, { patient: string; doctor: string; nurse: string }>;
+  /** Current creative phase. */
+  currentPhase: GamePhase | null;
+  /** Submissions for the current phase. */
+  submissions: Map<string, Submission>;
+  /** Votes for the current phase: voterId → targetPlayerId */
+  phaseVotes: Map<string, string>;
+  /** Players who have submitted. */
+  submittedPlayers: Set<string>;
+  /** Players who have voted. */
+  votedPlayers: Set<string>;
+  /** Winners per phase. */
+  phaseWinners: Map<GamePhase, VoteResult | null>;
+}
+
+// ── Game class ────────────────────────────────────────────────────────────────
+
+export default class MedicalStoryGame extends BaseGame {
+  static override requiresTV = false;
+  static override supportsBracket = false;
+  static override defaultRoundCount = 3;
+  static override minRounds = 1;
+  static override maxRounds = 6;
+  static override hasInstructionsPhase = true;
+  static override instructionsDelivery = "broadcast" as const;
+
+  static override activityLevel: "none" | "some" | "full" = "none";
+  static override requiresSameRoom = false;
+  static override requiresSecondaryDisplay = false;
+
+  private round: RoundData | null = null;
+  private pendingScores: Map<string, number> = new Map();
+  private _extraTimers: ReturnType<typeof setTimeout>[] = [];
+
+  // Resolve callbacks for async phase waits
+  private roleVoteResolve: (() => void) | null = null;
+  private submissionResolve: (() => void) | null = null;
+  private votingResolve: (() => void) | null = null;
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+  protected override async onLoad(): Promise<void> {
+    for (const p of this.room.state.players.values()) {
+      p.score = 0;
+      p.isReady = false;
+      p.isEliminated = false;
+    }
+  }
+
+  protected override async runRound(roundNum: number): Promise<void> {
+    const players = this._activePlayers();
+
+    if (players.length < 3) {
+      this.broadcast("round_skipped", { reason: "Not enough connected players (need 3+)" });
+      return;
+    }
+
+    const playerIds = players.map((p) => p.id);
+
+    this.round = {
+      roles: new Map(),
+      roleVotes: new Map(),
+      currentPhase: null,
+      submissions: new Map(),
+      phaseVotes: new Map(),
+      submittedPlayers: new Set(),
+      votedPlayers: new Set(),
+      phaseWinners: new Map(),
+    };
+
+    // ── 1. Role voting ──────────────────────────────────────────────────────
+
+    const playerList = players.map((p) => ({ id: p.id, name: p.name }));
+
+    this.broadcast("ms_role_phase", {
+      playerList,
+      durationMs: ROLE_VOTE_DURATION_SECS * 1000,
+    });
+
+    await this._waitForRoleVotes(playerIds);
+
+    // Tally or assign randomly if not enough votes
+    let roles: Map<string, Role>;
+    if (this.round.roleVotes.size > 0) {
+      roles = tallyRoleVotes(this.round.roleVotes, playerIds);
+    } else {
+      roles = assignRolesRandomly(playerIds);
+    }
+    this.round.roles = roles;
+
+    // Broadcast assigned roles
+    const rolesObj: Record<string, Role> = {};
+    for (const [id, role] of roles.entries()) {
+      rolesObj[id] = role;
+    }
+    this.broadcast("ms_roles_assigned", { roles: rolesObj });
+    await this.delay(3000);
+
+    // ── 2–5. Creative phases ────────────────────────────────────────────────
+
+    for (const phase of PHASES) {
+      this.round.currentPhase = phase;
+      this.round.submissions.clear();
+      this.round.phaseVotes.clear();
+      this.round.submittedPlayers.clear();
+      this.round.votedPlayers.clear();
+
+      // ── Submission phase ──────────────────────────────────────────────
+      this.broadcast("ms_submission_phase", {
+        phase,
+        durationMs: SUBMISSION_DURATION_SECS * 1000,
+        bodyParts: (phase === "complaint" || phase === "diagnosis") ? [...BODY_PARTS] : undefined,
+        actions: phase === "procedure" ? [...ACTIONS] : undefined,
+        // 3D scene placeholder: body part selector, action animation viewer
+        scene3dPlaceholder: this._get3DPlaceholder(phase, "submission"),
+      });
+
+      await this._waitForSubmissions(playerIds);
+
+      const submissions = [...this.round.submissions.values()];
+
+      if (submissions.length === 0) {
+        // Skip voting if no submissions
+        this.round.phaseWinners.set(phase, null);
+        continue;
+      }
+
+      // ── Voting phase ──────────────────────────────────────────────────
+      const submissionList = submissions.map((s) => ({
+        playerId: s.playerId,
+        text: s.text,
+        bodyPart: s.bodyPart,
+        action: s.action,
+      }));
+
+      this.broadcast("ms_voting_phase", {
+        phase,
+        submissions: submissionList,
+        durationMs: VOTING_DURATION_SECS * 1000,
+        // 3D scene placeholder: action preview animations
+        scene3dPlaceholder: this._get3DPlaceholder(phase, "voting"),
+      });
+
+      await this._waitForVotes(playerIds);
+
+      // ── Tally and score ───────────────────────────────────────────────
+      const results = tallySubmissionVotes(submissions, this.round.phaseVotes);
+      const points = computePhasePoints(results, playerIds.length);
+
+      // Accumulate pending scores
+      for (const [id, pts] of points.entries()) {
+        this.pendingScores.set(id, (this.pendingScores.get(id) ?? 0) + pts);
+      }
+
+      const winner = results.length > 0 ? results[0] : null;
+      this.round.phaseWinners.set(phase, winner);
+
+      this.broadcast("ms_phase_result", {
+        phase,
+        results,
+        phaseWinner: winner,
+        points: Object.fromEntries(points),
+        // 3D scene placeholder: winner celebration animation
+        scene3dPlaceholder: this._get3DPlaceholder(phase, "result"),
+      });
+
+      await this.delay(RESULTS_DISPLAY_MS);
+    }
+
+    // ── Round recap ─────────────────────────────────────────────────────────
+
+    const phaseWinnersObj: Record<string, VoteResult | null> = {};
+    for (const [phase, winner] of this.round.phaseWinners.entries()) {
+      phaseWinnersObj[phase] = winner;
+    }
+
+    this.broadcast("ms_round_recap", {
+      phaseWinners: phaseWinnersObj,
+      scores: Object.fromEntries(this.pendingScores),
+      roles: rolesObj,
+    });
+
+    await this.delay(RECAP_DISPLAY_MS);
+  }
+
+  protected override scoreRound(_round: number): void {
+    for (const [playerId, points] of this.pendingScores.entries()) {
+      const player = this.room.state.players.get(playerId);
+      if (player) {
+        player.score += points;
+      }
+    }
+    this.pendingScores.clear();
+  }
+
+  override handleInput(client: Client, data: unknown): void {
+    const input = data as MedicalStoryInput;
+    if (!input || !input.action) return;
+
+    switch (input.action) {
+      case "ms_role_vote":
+        this._handleRoleVote(client, input);
+        break;
+      case "ms_submit":
+        this._handleSubmission(client, input);
+        break;
+      case "ms_vote":
+        this._handleVote(client, input);
+        break;
+    }
+  }
+
+  override teardown(): void {
+    super.teardown();
+    for (const t of this._extraTimers) clearTimeout(t);
+    this._extraTimers = [];
+    this.round = null;
+    this.roleVoteResolve = null;
+    this.submissionResolve = null;
+    this.votingResolve = null;
+    this.pendingScores.clear();
+  }
+
+  // ── Phase wait helpers ────────────────────────────────────────────────────
+
+  private _waitForRoleVotes(playerIds: string[]): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.roleVoteResolve = resolve;
+
+      const timeout = setTimeout(() => {
+        this.roleVoteResolve = null;
+        resolve();
+      }, ROLE_VOTE_DURATION_SECS * 1000);
+
+      this._extraTimers.push(timeout);
+      this._checkRoleVotesComplete(playerIds);
+    });
+  }
+
+  private _checkRoleVotesComplete(playerIds: string[]): void {
+    const rd = this.round;
+    if (!rd || !this.roleVoteResolve) return;
+
+    const connectedPlayers = playerIds.filter(
+      (id) => this.room.state.players.get(id)?.isConnected,
+    );
+
+    if (rd.roleVotes.size >= connectedPlayers.length) {
+      const resolve = this.roleVoteResolve;
+      this.roleVoteResolve = null;
+      resolve();
+    }
+  }
+
+  private _waitForSubmissions(playerIds: string[]): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.submissionResolve = resolve;
+
+      const timeout = setTimeout(() => {
+        this.submissionResolve = null;
+        resolve();
+      }, SUBMISSION_DURATION_SECS * 1000);
+
+      this._extraTimers.push(timeout);
+      this._checkSubmissionsComplete(playerIds);
+    });
+  }
+
+  private _checkSubmissionsComplete(playerIds: string[]): void {
+    const rd = this.round;
+    if (!rd || !this.submissionResolve) return;
+
+    const connectedPlayers = playerIds.filter(
+      (id) => this.room.state.players.get(id)?.isConnected,
+    );
+
+    if (rd.submittedPlayers.size >= connectedPlayers.length) {
+      const resolve = this.submissionResolve;
+      this.submissionResolve = null;
+      resolve();
+    }
+  }
+
+  private _waitForVotes(playerIds: string[]): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.votingResolve = resolve;
+
+      const timeout = setTimeout(() => {
+        this.votingResolve = null;
+        resolve();
+      }, VOTING_DURATION_SECS * 1000);
+
+      this._extraTimers.push(timeout);
+      this._checkVotesComplete(playerIds);
+    });
+  }
+
+  private _checkVotesComplete(playerIds: string[]): void {
+    const rd = this.round;
+    if (!rd || !this.votingResolve) return;
+
+    const connectedPlayers = playerIds.filter(
+      (id) => this.room.state.players.get(id)?.isConnected,
+    );
+
+    if (rd.votedPlayers.size >= connectedPlayers.length) {
+      const resolve = this.votingResolve;
+      this.votingResolve = null;
+      resolve();
+    }
+  }
+
+  // ── Input handlers ────────────────────────────────────────────────────────
+
+  private _handleRoleVote(client: Client, input: MedicalStoryInput): void {
+    const rd = this.round;
+    if (!rd || !this.roleVoteResolve) return;
+    if (!input.patient || !input.doctor || !input.nurse) return;
+
+    // Validate that voted players exist
+    const playerIds = this._activePlayers().map((p) => p.id);
+    if (!playerIds.includes(input.patient)) return;
+    if (!playerIds.includes(input.doctor)) return;
+    if (!playerIds.includes(input.nurse)) return;
+
+    // All three must be different
+    if (input.patient === input.doctor || input.patient === input.nurse || input.doctor === input.nurse) return;
+
+    rd.roleVotes.set(client.sessionId, {
+      patient: input.patient,
+      doctor: input.doctor,
+      nurse: input.nurse,
+    });
+
+    this._checkRoleVotesComplete(playerIds);
+  }
+
+  private _handleSubmission(client: Client, input: MedicalStoryInput): void {
+    const rd = this.round;
+    if (!rd || !this.submissionResolve || !rd.currentPhase) return;
+
+    // Already submitted
+    if (rd.submittedPlayers.has(client.sessionId)) {
+      this.send(client.sessionId, "ms_submit_ack", {
+        accepted: false,
+        reason: "You already submitted for this phase.",
+      });
+      return;
+    }
+
+    const text = normalizeSubmission(input.text ?? "");
+    if (!text) {
+      this.send(client.sessionId, "ms_submit_ack", {
+        accepted: false,
+        reason: "Submission cannot be empty.",
+      });
+      return;
+    }
+
+    const submission: Submission = { playerId: client.sessionId, text };
+
+    // Validate body part for complaint/diagnosis phase
+    if (rd.currentPhase === "complaint" || rd.currentPhase === "diagnosis") {
+      if (input.bodyPart && isValidBodyPart(input.bodyPart)) {
+        submission.bodyPart = input.bodyPart;
+      }
+      // Body part is optional — don't reject if missing
+    }
+
+    // Validate action for procedure phase
+    if (rd.currentPhase === "procedure") {
+      if (input.actionName && isValidAction(input.actionName)) {
+        submission.action = input.actionName;
+      }
+    }
+
+    rd.submissions.set(client.sessionId, submission);
+    rd.submittedPlayers.add(client.sessionId);
+
+    this.send(client.sessionId, "ms_submit_ack", { accepted: true });
+
+    const playerIds = this._activePlayers().map((p) => p.id);
+    this._checkSubmissionsComplete(playerIds);
+  }
+
+  private _handleVote(client: Client, input: MedicalStoryInput): void {
+    const rd = this.round;
+    if (!rd || !this.votingResolve) return;
+
+    // Already voted
+    if (rd.votedPlayers.has(client.sessionId)) return;
+
+    const targetId = input.targetPlayerId;
+    if (!targetId) return;
+
+    // Can't vote for yourself
+    if (targetId === client.sessionId) return;
+
+    // Must be a valid submission author
+    if (!rd.submissions.has(targetId)) return;
+
+    rd.phaseVotes.set(client.sessionId, targetId);
+    rd.votedPlayers.add(client.sessionId);
+
+    this.send(client.sessionId, "ms_vote_ack", {});
+
+    const playerIds = this._activePlayers().map((p) => p.id);
+    this._checkVotesComplete(playerIds);
+  }
+
+  // ── 3D Placeholder ────────────────────────────────────────────────────────
+
+  /**
+   * Returns placeholder metadata for future Three.js 3D scenes.
+   * These will be replaced with actual 3D scene configurations later.
+   */
+  private _get3DPlaceholder(
+    phase: GamePhase,
+    subPhase: "submission" | "voting" | "result",
+  ): { type: string; description: string } {
+    const placeholders: Record<string, Record<string, { type: string; description: string }>> = {
+      complaint: {
+        submission: {
+          type: "body_selector_3d",
+          description: "3D body model for selecting the affected area. Players tap on body parts to choose the primary complaint location.",
+        },
+        voting: {
+          type: "body_highlight_3d",
+          description: "3D body model highlighting each submission's selected body part during voting.",
+        },
+        result: {
+          type: "complaint_reveal_3d",
+          description: "3D animation showing the winning complaint with body part highlighted.",
+        },
+      },
+      diagnosis: {
+        submission: {
+          type: "body_selector_3d",
+          description: "3D body model for selecting the body part affected by the diagnosis.",
+        },
+        voting: {
+          type: "diagnosis_cards_3d",
+          description: "3D floating medical charts showing each diagnosis for voting.",
+        },
+        result: {
+          type: "diagnosis_reveal_3d",
+          description: "3D animation revealing the winning fake diagnosis with dramatic effect.",
+        },
+      },
+      procedure: {
+        submission: {
+          type: "action_preview_3d",
+          description: "3D character performing preview of each action (Punch, Slap, Shock, etc.) for player to choose from.",
+        },
+        voting: {
+          type: "action_playback_3d",
+          description: "3D animations of each procedure action playing alongside submission text during voting.",
+        },
+        result: {
+          type: "procedure_reveal_3d",
+          description: "3D surgery/action scene animation for the winning procedure.",
+        },
+      },
+      catchphrase: {
+        submission: {
+          type: "doctor_avatar_3d",
+          description: "3D doctor character with speech bubble for catchphrase entry.",
+        },
+        voting: {
+          type: "catchphrase_display_3d",
+          description: "3D podium with each catchphrase displayed for voting.",
+        },
+        result: {
+          type: "catchphrase_celebration_3d",
+          description: "3D doctor character celebrating with the winning catchphrase.",
+        },
+      },
+    };
+
+    return placeholders[phase]?.[subPhase] ?? {
+      type: "placeholder",
+      description: "3D scene placeholder — to be implemented with Three.js",
+    };
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+
+  private _activePlayers() {
+    return [...this.room.state.players.values()].filter(
+      (p) => p.isConnected && !p.isEliminated,
+    );
+  }
+}
