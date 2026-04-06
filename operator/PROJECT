@@ -1,0 +1,16 @@
+domain: gamma.io
+layout:
+- go.kubebuilder.io/v4
+projectName: gamma-operator
+repo: github.com/gamma/gamma-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: gamma.io
+  group: gamma
+  kind: GammaInstance
+  path: github.com/gamma/gamma-operator/api/v1alpha1
+  version: v1alpha1
+version: "3"

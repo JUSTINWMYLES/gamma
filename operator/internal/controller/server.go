@@ -1,0 +1,189 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
+	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
+)
+
+// reconcileServerDeployment ensures the server Deployment exists and matches the desired state.
+func (r *GammaInstanceReconciler) reconcileServerDeployment(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	serverName := fmt.Sprintf("%s-server", instance.Name)
+	labels := labelsForComponent(instance, "server")
+	selectorLabels := selectorLabelsForComponent(instance, "server")
+	replicas := instance.Spec.Server.ServerReplicas()
+	port := instance.Spec.Server.ServerPort()
+
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serverName,
+			Namespace: instance.Namespace,
+		},
+	}
+
+	return r.createOrUpdate(ctx, instance, deploy, func() error {
+		deploy.Labels = labels
+
+		// Build environment variables.
+		env := buildServerEnv(instance)
+
+		// When autoscaling is active, do not set replicas (let HPA manage it).
+		var replicaPtr *int32
+		if instance.Spec.Autoscaling == nil || !instance.Spec.Autoscaling.Enabled {
+			replicaPtr = &replicas
+		}
+
+		maxUnavailable := intstr.FromInt32(0)
+		maxSurge := intstr.FromInt32(1)
+
+		deploy.Spec = appsv1.DeploymentSpec{
+			Replicas: replicaPtr,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: selectorLabels,
+			},
+			Strategy: appsv1.DeploymentStrategy{
+				Type: appsv1.RollingUpdateDeploymentStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateDeployment{
+					MaxUnavailable: &maxUnavailable,
+					MaxSurge:       &maxSurge,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					TerminationGracePeriodSeconds: int64Ptr(60),
+					Containers: []corev1.Container{
+						{
+							Name:  "server",
+							Image: instance.Spec.Server.Image,
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "ws",
+									ContainerPort: port,
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							Env:       env,
+							Resources: instance.Spec.Server.Resources,
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt32(port),
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       10,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health",
+										Port: intstr.FromInt32(port),
+									},
+								},
+								InitialDelaySeconds: 15,
+								PeriodSeconds:       20,
+							},
+							Lifecycle: &corev1.Lifecycle{
+								PreStop: &corev1.LifecycleHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"sh", "-c", "sleep 15"},
+									},
+								},
+							},
+						},
+					},
+					Affinity: &corev1.Affinity{
+						PodAntiAffinity: &corev1.PodAntiAffinity{
+							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+								{
+									Weight: 100,
+									PodAffinityTerm: corev1.PodAffinityTerm{
+										LabelSelector: &metav1.LabelSelector{
+											MatchLabels: selectorLabels,
+										},
+										TopologyKey: "kubernetes.io/hostname",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return nil
+	})
+}
+
+// buildServerEnv constructs the environment variable list for the server container.
+func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
+	var env []corev1.EnvVar
+
+	if instance.Spec.Redis.IsRedisEnabled() {
+		redisURL := fmt.Sprintf("redis://%s-redis.%s.svc.cluster.local:6379",
+			instance.Name, instance.Namespace)
+		env = append(env,
+			corev1.EnvVar{Name: "STATE_BACKEND", Value: "redis"},
+			corev1.EnvVar{Name: "REDIS_URL", Value: redisURL},
+		)
+	} else {
+		env = append(env,
+			corev1.EnvVar{Name: "STATE_BACKEND", Value: "memory"},
+		)
+	}
+
+	// Append user-supplied env vars.
+	env = append(env, instance.Spec.Server.Env...)
+
+	return env
+}
+
+// reconcileServerService ensures the server Service exists with sticky sessions.
+func (r *GammaInstanceReconciler) reconcileServerService(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	serverName := fmt.Sprintf("%s-server", instance.Name)
+	port := instance.Spec.Server.ServerPort()
+	timeoutSeconds := int32(3600)
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serverName,
+			Namespace: instance.Namespace,
+		},
+	}
+
+	return r.createOrUpdate(ctx, instance, svc, func() error {
+		svc.Labels = labelsForComponent(instance, "server")
+		svc.Spec = corev1.ServiceSpec{
+			Type:            corev1.ServiceTypeClusterIP,
+			SessionAffinity: corev1.ServiceAffinityClientIP,
+			SessionAffinityConfig: &corev1.SessionAffinityConfig{
+				ClientIP: &corev1.ClientIPConfig{
+					TimeoutSeconds: &timeoutSeconds,
+				},
+			},
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "ws",
+					Port:       port,
+					TargetPort: intstr.FromInt32(port),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: selectorLabelsForComponent(instance, "server"),
+		}
+		return nil
+	})
+}
+
+func int64Ptr(i int64) *int64 {
+	return &i
+}
