@@ -70,6 +70,26 @@ spec:
                         properties:
                           name: { type: string }
                           value: { type: string }
+                    secretEnvVars:
+                      type: array
+                      description: >
+                        Environment variables loaded from Kubernetes Secrets.
+                        Use this for sensitive values such as third-party API keys
+                        (e.g. a GIF service API key) that must not be stored in
+                        plain text in the CR spec.
+                      items:
+                        type: object
+                        required: [name, secretName, secretKey]
+                        properties:
+                          name:
+                            type: string
+                            description: Name of the environment variable in the container.
+                          secretName:
+                            type: string
+                            description: Name of the Kubernetes Secret in the same namespace.
+                          secretKey:
+                            type: string
+                            description: Key within the Secret whose value will be used.
                 client:
                   type: object
                   required: [image]
@@ -171,6 +191,31 @@ spec:
                 region:
                   type: string
                   description: Informational region label for future multi-region federation.
+                observability:
+                  type: object
+                  description: >
+                    Configures OpenTelemetry tracing and metrics export for the server.
+                    When omitted the server uses its own built-in defaults.
+                  properties:
+                    enabled:
+                      type: boolean
+                      description: >
+                        Enable or disable OpenTelemetry telemetry. When true, OTEL_ENABLED=true
+                        is injected and telemetry is pushed to the configured otlpEndpoint.
+                        When false, OTEL_ENABLED=false is injected, disabling all traces and
+                        metrics. When omitted, no OTEL_* env vars are set.
+                    otlpEndpoint:
+                      type: string
+                      description: >
+                        Base URL of an OpenTelemetry Collector accepting OTLP/HTTP
+                        (e.g. http://otel-collector.monitoring.svc:4318). Traces are
+                        sent to <otlpEndpoint>/v1/traces and metrics to
+                        <otlpEndpoint>/v1/metrics every 10 seconds.
+                    serviceName:
+                      type: string
+                      description: >
+                        Overrides the OTEL service name reported in traces and metrics.
+                        Defaults to "gamma-server" when not set.
             status:
               type: object
               properties:
