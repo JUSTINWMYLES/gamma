@@ -31,7 +31,10 @@ jobs:
       - name: Run server tests
         run: npm run test --workspace=server
 
-  # ── Client: type-check + build all three clients ───────────────────────────
+  # ── Client: type-check + build unified client app ─────────────────────────
+  # client/app is the single unified SPA that handles both TV/viewer and
+  # phone/player roles; client/phone and client/tv are legacy stubs not used
+  # in production deployments.
   lint-build-client:
     name: Lint & Build – Client
     runs-on: ubuntu-latest
@@ -46,24 +49,8 @@ jobs:
       - name: Install root workspace dependencies
         run: npm install
 
-      - name: Install client/phone dependencies
-        run: npm install
-        working-directory: client/phone
-
-      - name: Install client/tv dependencies
-        run: npm install
-        working-directory: client/tv
-
       - name: Type-check & build client/app
         run: npm run build --workspace=client/app
-
-      - name: Build client/phone
-        run: npm run build
-        working-directory: client/phone
-
-      - name: Build client/tv
-        run: npm run build
-        working-directory: client/tv
 
   # ── Operator: vet + unit tests ─────────────────────────────────────────────
   lint-test-operator:

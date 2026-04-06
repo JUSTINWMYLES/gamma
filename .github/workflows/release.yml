@@ -11,6 +11,8 @@ permissions:
 
 jobs:
   # ── Build and push all Docker images ───────────────────────────────────────
+  # gamma-client (client/app) serves both the TV/viewer and phone/player roles
+  # in a single unified SPA — no separate phone or TV images are needed.
   build-push-images:
     name: Build & Push – ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -24,12 +26,6 @@ jobs:
           - name: gamma-client
             context: .
             dockerfile: client/app/Dockerfile
-          - name: gamma-phone
-            context: .
-            dockerfile: client/phone/Dockerfile
-          - name: gamma-tv
-            context: .
-            dockerfile: client/tv/Dockerfile
           - name: gamma-operator
             context: operator
             dockerfile: operator/Dockerfile
@@ -91,7 +87,7 @@ jobs:
           helm push "gamma-operator-${VERSION}.tgz" \
             "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
 
-  # ── Create GitHub release with npm tarball + client build zips ─────────────
+  # ── Create GitHub release with npm tarball + client build tarball ───────────
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -106,37 +102,19 @@ jobs:
       - name: Install root workspace dependencies
         run: npm install
 
-      - name: Install client/phone dependencies
-        run: npm install
-        working-directory: client/phone
-
-      - name: Install client/tv dependencies
-        run: npm install
-        working-directory: client/tv
-
       - name: Build server
         run: npm run build --workspace=server
 
       - name: Build client/app
         run: npm run build --workspace=client/app
 
-      - name: Build client/phone
-        run: npm run build
-        working-directory: client/phone
-
-      - name: Build client/tv
-        run: npm run build
-        working-directory: client/tv
-
       - name: Pack server npm tarball
         run: cd server && npm pack --pack-destination ..
 
-      - name: Zip client build artifacts
+      - name: Create client build tarball
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          (cd client/app/dist   && zip -r "$GITHUB_WORKSPACE/gamma-client-${VERSION}.zip" .)
-          (cd client/phone/dist && zip -r "$GITHUB_WORKSPACE/gamma-phone-${VERSION}.zip" .)
-          (cd client/tv/dist    && zip -r "$GITHUB_WORKSPACE/gamma-tv-${VERSION}.zip" .)
+          tar -czf "$GITHUB_WORKSPACE/gamma-client-${VERSION}.tar.gz" -C client/app/dist .
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -144,6 +122,4 @@ jobs:
           generate_release_notes: true
           files: |
             gamma-server-*.tgz
-            gamma-client-*.zip
-            gamma-phone-*.zip
-            gamma-tv-*.zip
+            gamma-client-*.tar.gz
