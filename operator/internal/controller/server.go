@@ -141,8 +141,39 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 		)
 	}
 
+	// Inject OTEL environment variables when observability is explicitly configured.
+	obs := instance.Spec.Observability
+	if obs.Enabled != nil {
+		if *obs.Enabled {
+			env = append(env, corev1.EnvVar{Name: "OTEL_ENABLED", Value: "true"})
+			if obs.OTLPEndpoint != "" {
+				env = append(env, corev1.EnvVar{Name: "OTEL_EXPORTER_OTLP_ENDPOINT", Value: obs.OTLPEndpoint})
+			}
+			if obs.ServiceName != "" {
+				env = append(env, corev1.EnvVar{Name: "OTEL_SERVICE_NAME", Value: obs.ServiceName})
+			}
+		} else {
+			env = append(env, corev1.EnvVar{Name: "OTEL_ENABLED", Value: "false"})
+		}
+	}
+
 	// Append user-supplied env vars.
 	env = append(env, instance.Spec.Server.Env...)
+
+	// Append secret-sourced env vars (e.g. third-party API keys).
+	for _, s := range instance.Spec.Server.SecretEnvVars {
+		env = append(env, corev1.EnvVar{
+			Name: s.Name,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: s.SecretName,
+					},
+					Key: s.SecretKey,
+				},
+			},
+		})
+	}
 
 	return env
 }
