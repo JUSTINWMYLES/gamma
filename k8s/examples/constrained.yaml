@@ -1,0 +1,56 @@
+# k8s/examples/constrained.yaml
+#
+# Constrained GammaInstance — minimal resources, no autoscaling.
+# Ideal for small clusters, local kind/minikube, or cost-sensitive environments.
+
+apiVersion: gamma.io/v1alpha1
+kind: GammaInstance
+metadata:
+  name: gamma-constrained
+  namespace: gamma
+spec:
+  server:
+    image: ghcr.io/gamma/gamma-server:latest
+    replicas: 1
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+    env:
+      - name: LOG_LEVEL
+        value: "info"
+
+  client:
+    image: ghcr.io/gamma/gamma-client:latest
+    replicas: 1
+    resources:
+      requests:
+        cpu: "25m"
+        memory: "16Mi"
+      limits:
+        cpu: "50m"
+        memory: "32Mi"
+
+  redis:
+    enabled: true
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+    storage:
+      size: 512Mi
+
+  # No autoscaling — fixed single replica
+  autoscaling:
+    enabled: false
+
+  # No ingress — use kubectl port-forward for access
+  networking:
+    ingress:
+      enabled: false

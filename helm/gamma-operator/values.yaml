@@ -1,6 +1,10 @@
 # helm/gamma-operator/values.yaml
 #
 # Default values for the gamma-operator Helm chart.
+# This chart installs ONLY the operator. All game resources
+# (server, client, Redis) are created by the operator when
+# you apply a GammaInstance custom resource.
+#
 # Override these with --set or a custom values file.
 
 # ── Operator image ────────────────────────────────────────────────────────────
@@ -9,11 +13,8 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-# ── Replica count for the hub operator deployment ─────────────────────────────
+# ── Replica count for the operator deployment ─────────────────────────────────
 replicaCount: 1
-
-# ── Namespace the operator watches for CRDs ───────────────────────────────────
-watchNamespace: ""  # empty = cluster-scoped (all namespaces)
 
 # ── Service account ───────────────────────────────────────────────────────────
 serviceAccount:
@@ -25,6 +26,10 @@ serviceAccount:
 rbac:
   create: true
 
+# ── CRD installation ──────────────────────────────────────────────────────────
+crds:
+  install: true   # Set to false if you manage CRDs separately
+
 # ── Resources ─────────────────────────────────────────────────────────────────
 resources:
   requests:
@@ -34,23 +39,14 @@ resources:
     cpu: 200m
     memory: 256Mi
 
-# ── CRD installation ──────────────────────────────────────────────────────────
-crds:
-  install: true   # Set to false if you manage CRDs separately
-
 # ── Leader election (required for HA) ────────────────────────────────────────
 leaderElection:
   enabled: true
-  leaseDuration: 15s
-  renewDeadline: 10s
-  retryPeriod: 2s
 
 # ── Metrics / monitoring ──────────────────────────────────────────────────────
 metrics:
   enabled: true
   port: 8080
-  serviceMonitor:
-    enabled: false   # Set true if Prometheus Operator is installed
 
 # ── Log level ─────────────────────────────────────────────────────────────────
 logLevel: info
