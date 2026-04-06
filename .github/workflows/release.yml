@@ -2,19 +2,111 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [main]
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  # ── Determine next version from conventional commits ────────────────────────
+  version:
+    name: Compute Version
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+      bump_type: ${{ steps.bump.outputs.bump_type }}
+      skip: ${{ steps.bump.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for commit analysis
+
+      - name: Determine version bump from commits
+        id: bump
+        run: |
+          # Get the latest tag (or default to v0.0.0)
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "Latest tag: $LATEST_TAG"
+
+          # Parse current version
+          CURRENT="${LATEST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # Analyse commits since last tag
+          COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          if [ -z "$COMMITS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "No new commits since last tag."
+            exit 0
+          fi
+
+          # Determine bump level from conventional commit prefixes
+          # BREAKING CHANGE or commits containing ! after type → major
+          # feat: → minor
+          # fix:, perf:, refactor:, docs:, chore:, ci:, test:, build:, style: → patch
+          BUMP="none"
+
+          while IFS= read -r msg; do
+            # Check for breaking changes
+            if echo "$msg" | grep -qiE "^[a-z]+(\(.+\))?!:|BREAKING[ -]CHANGE"; then
+              BUMP="major"
+              break
+            fi
+            # Check for features
+            if echo "$msg" | grep -qiE "^feat(\(.+\))?:"; then
+              if [ "$BUMP" != "major" ]; then
+                BUMP="minor"
+              fi
+            fi
+            # Check for fixes and other patch-level changes
+            if echo "$msg" | grep -qiE "^(fix|perf|refactor|docs|chore|ci|test|build|style)(\(.+\))?:"; then
+              if [ "$BUMP" = "none" ]; then
+                BUMP="patch"
+              fi
+            fi
+          done <<< "$COMMITS"
+
+          # If no conventional commits found, default to patch
+          if [ "$BUMP" = "none" ]; then
+            BUMP="patch"
+          fi
+
+          # Compute new version
+          case "$BUMP" in
+            major) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+          esac
+
+          echo "bump_type=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Version bump: $BUMP → v$NEW_VERSION"
+
+  # ── Create git tag ─────────────────────────────────────────────────────────
+  tag:
+    name: Create Tag
+    needs: version
+    if: needs.version.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ needs.version.outputs.new_version }}" \
+            -m "Release v${{ needs.version.outputs.new_version }}"
+          git push origin "v${{ needs.version.outputs.new_version }}"
+
   # ── Build and push all Docker images ───────────────────────────────────────
-  # gamma-client (client/app) serves both the TV/viewer and phone/player roles
-  # in a single unified SPA — no separate phone or TV images are needed.
   build-push-images:
     name: Build & Push – ${{ matrix.name }}
+    needs: [version, tag]
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -45,8 +137,8 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.version.outputs.new_version }}
+            type=raw,value=${{ needs.version.outputs.new_version }},suffix=
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6
@@ -62,6 +154,8 @@ jobs:
   # ── Push Helm chart as an OCI image ────────────────────────────────────────
   push-helm-oci:
     name: Push Helm Chart (OCI)
+    needs: [version, tag]
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,20 +170,22 @@ jobs:
 
       - name: Package Helm chart
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.version.outputs.new_version }}"
           helm package helm/gamma-operator \
             --version "$VERSION" \
             --app-version "$VERSION"
 
       - name: Push Helm chart to GHCR
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.version.outputs.new_version }}"
           helm push "gamma-operator-${VERSION}.tgz" \
             "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
 
   # ── Create GitHub release with npm tarball + client build tarball ───────────
   create-release:
     name: Create GitHub Release
+    needs: [version, tag]
+    if: needs.version.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,12 +209,14 @@ jobs:
 
       - name: Create client build tarball
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ needs.version.outputs.new_version }}"
           tar -czf "$GITHUB_WORKSPACE/gamma-client-${VERSION}.tar.gz" -C client/app/dist .
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ needs.version.outputs.new_version }}
+          name: v${{ needs.version.outputs.new_version }}
           generate_release_notes: true
           files: |
             gamma-server-*.tgz
