@@ -31,10 +31,19 @@ jobs:
       - name: Run server tests
         run: npm run test --workspace=server
 
+      - name: Run server tests with coverage
+        run: npm run test:coverage --workspace=server
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage
+          path: server/coverage/
+          retention-days: 14
+
   # ── Client: type-check + build unified client app ─────────────────────────
-  # client/app is the single unified SPA that handles both TV/viewer and
-  # phone/player roles; client/phone and client/tv are legacy stubs not used
-  # in production deployments.
+  # client/app is the single unified SPA (view screen + phone controller).
   lint-build-client:
     name: Lint & Build – Client
     runs-on: ubuntu-latest
