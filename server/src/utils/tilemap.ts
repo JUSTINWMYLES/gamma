@@ -308,9 +308,10 @@ export function findPath(
 
   let found = false;
   let steps = 0;
+  let queueHead = 0;
 
-  while (queue.length > 0 && steps < maxSteps) {
-    const current = queue.shift()!;
+  while (queueHead < queue.length && steps < maxSteps) {
+    const current = queue[queueHead++];
     steps++;
     const cr = Math.floor(current / w);
     const cc = current % w;

@@ -238,10 +238,14 @@ export abstract class BaseGame {
   protected waitForAllReady(timeoutMs: number = 30_000): Promise<void> {
     return new Promise((resolve) => {
       const check = (): boolean => {
-        const active = [...this.room.state.players.values()].filter(
-          (p) => p.isConnected && !p.isEliminated,
-        );
-        return active.length > 0 && active.every((p) => p.isReady);
+        for (const p of this.room.state.players.values()) {
+          if (p.isConnected && !p.isEliminated && !p.isReady) return false;
+        }
+        // Ensure at least one active player exists
+        for (const p of this.room.state.players.values()) {
+          if (p.isConnected && !p.isEliminated) return true;
+        }
+        return false;
       };
 
       if (check()) { resolve(); return; }
@@ -252,6 +256,7 @@ export abstract class BaseGame {
           resolve();
         }
       }, 200);
+      this._timers.push(interval as unknown as ReturnType<typeof setTimeout>);
 
       const timeout = setTimeout(() => {
         clearInterval(interval);

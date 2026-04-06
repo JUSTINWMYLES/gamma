@@ -10,3 +10,4 @@ Platform-level ADRs for Gamma. Each decision lives in its own file.
 | [004](004-player-and-view-screen-roles.md) | Player and View-Screen Roles | Active |
 | [005](005-lobby-setup-flow.md) | Lobby Setup Flow (3-step wizard) | Active |
 | [006](006-control-modes.md) | Control Modes — Joystick vs Tilt | Active |
+| [007](007-kubernetes-operator-and-redis.md) | Kubernetes Operator Design and Redis for Game State | Active |

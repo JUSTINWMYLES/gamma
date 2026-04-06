@@ -149,30 +149,15 @@ Keep game-specific fields clearly commented so they can be identified and remove
 
 ## Step 3 — Register the game in the client
 
-The TV lobby uses `GAME_REGISTRY` in `client/shared/types.ts` to list, describe, and filter games. Add an entry:
+The lobby uses the game registry to list, describe, and filter games. Add an entry with your game's ID, label, description, and filter fields that match the static metadata on your server class.
 
-```typescript
-// client/shared/types.ts
-export const GAME_REGISTRY: GameMeta[] = [
-  // ...existing entries...
-  {
-    id: "registry-99-my-game",        // must match the directory name exactly
-    label: "My Game",                 // short display name shown in picker
-    description: "One sentence that explains the goal to new players.",
-    activityLevel: "none",            // must match static activityLevel on your class
-    requiresSameRoom: false,          // must match static requiresSameRoom
-    requiresSecondaryDisplay: false,  // must match static requiresSecondaryDisplay
-  },
-];
-```
-
-The `getGameUnavailableReason()` helper in the same file automatically greys out your game in the picker when the host's setup answers are incompatible. No extra code needed — just keep the three filter fields consistent between server and client.
+The `getGameUnavailableReason()` helper automatically greys out your game in the picker when the host's setup answers are incompatible. No extra code needed — just keep the three filter fields consistent between server and client.
 
 ---
 
 ## Step 4 — Phone client screen
 
-For the phone controller, update (or conditionally extend) `client/phone/src/screens/GameScreen.svelte` to handle your game's input. The standard pattern is:
+For the phone controller, update (or conditionally extend) the game screen component in `client/app/src/` to handle your game's input. The standard pattern is:
 
 ```svelte
 <!-- Only show controls when in a round -->
@@ -190,9 +175,9 @@ Rules:
 
 ---
 
-## Step 5 — TV client screen
+## Step 5 — View screen display
 
-Update `client/tv/src/screens/GameScreen.svelte` to render your game. The TV screen receives the full live `RoomState` and renders it.
+Update the view-screen game component in `client/app/src/` to render your game. The view screen receives the full live `RoomState` and renders it.
 
 For canvas-based games, use `onMount` / `onDestroy` to set up and tear down a `requestAnimationFrame` loop.
 
@@ -209,7 +194,11 @@ Add `server/tests/registry-99-my-game.test.ts` covering any non-trivial logic yo
 Run after editing:
 
 ```bash
-npm run test
+# 3. Manual smoke test
+npm run dev
+# Open http://localhost:5173 on a big screen (view screen role)
+# Open http://localhost:5173 on a phone or second tab (player role)
+# Walk through the setup flow, select your game, and play a round.
 ```
 
 All 46 existing tests must continue to pass.
@@ -248,10 +237,10 @@ npm run dev
 
 - [ ] `server/src/games/registry-<n>-<slug>/index.ts` — plugin class with all required statics
 - [ ] `activityLevel`, `requiresSameRoom`, `requiresSecondaryDisplay` set on the class
-- [ ] Any new Schema fields added to `RoomState.ts` and mirrored in `client/shared/types.ts`
-- [ ] Entry added to `GAME_REGISTRY` in `client/shared/types.ts` (fields consistent with server statics)
-- [ ] Phone `GameScreen.svelte` updated with game controls
-- [ ] TV `GameScreen.svelte` updated with game rendering
+- [ ] Any new Schema fields added to `RoomState.ts` and mirrored in client types
+- [ ] Entry added to game registry in the client (fields consistent with server statics)
+- [ ] Phone game controls updated in `client/app/src/`
+- [ ] View screen game rendering updated in `client/app/src/`
 - [ ] Unit tests in `server/tests/` covering non-trivial logic
 - [ ] `docs/registry/registry-<n>-<slug>.md` design doc created
 - [ ] `npm run build` clean, `npm run test` all passing

@@ -133,8 +133,7 @@ Run `npm audit` regularly to check for known vulnerabilities in dependencies:
 ```bash
 npm audit
 npm audit --workspace=server
-npm audit --workspace=client/tv
-npm audit --workspace=client/phone
+npm audit --workspace=client/app
 ```
 
 Pin dependency versions in production builds. Consider integrating `npm audit` into CI.

@@ -8,10 +8,16 @@ This document walks a new developer through setting up the project locally, runn
 
 | Tool | Minimum version |
 |------|----------------|
-| Node.js | 18.x |
+| Node.js | 20.x |
 | npm | 9.x |
 | Docker + Docker Compose | 24.x / 2.x |
 | Git | any recent |
+
+### Required secrets / API keys
+
+| Secret | Used by | How to get |
+|--------|---------|-----------|
+| `KLIPY_API_KEY` | Audio Overlay game (GIF search) | https://klipy.com |
 
 ---
 
@@ -43,22 +49,20 @@ make dev
 npm run dev
 ```
 
-This uses `concurrently` to start three processes in parallel:
+This uses `concurrently` to start two processes in parallel:
 
 | Process | Port | Description |
 |---------|------|-------------|
 | Server  | 2567 | Colyseus WebSocket + Express HTTP |
-| TV client | 5173 | Vite dev server (Svelte) |
-| Phone client | 5174 | Vite dev server (Svelte) |
+| Client  | 5173 | Unified Vite dev server (Svelte SPA) |
 
-Open `http://localhost:5173` on a big screen and `http://localhost:5174/join` on a phone (or another browser tab).
+The unified client (`client/app/`) serves both the view-screen (TV/display) and phone-controller roles in a single SPA. Open `http://localhost:5173` on any device — the app adapts its UI based on the role selected at join time.
 
 ### Individual services
 
 ```bash
 npm run dev:server
-npm run dev:tv
-npm run dev:phone
+npm run dev:client
 ```
 
 ---
@@ -68,9 +72,9 @@ npm run dev:phone
 ### Unit tests (Vitest)
 
 ```bash
-make test
+make test-unit
 # or
-npm run test
+npm run test --workspace=server
 ```
 
 Tests live in `server/tests/`. They cover:
@@ -85,6 +89,12 @@ To run in watch mode:
 npm run test --workspace=server -- --watch
 ```
 
+### Unit tests with coverage
+
+```bash
+npm run test:coverage --workspace=server
+```
+
 ### End-to-end tests (Playwright)
 
 ```bash
@@ -93,7 +103,7 @@ make test-e2e
 npm run test:e2e
 ```
 
-`e2e/globalSetup.ts` spawns the server, TV client, and phone client before the suite runs. All three processes must be able to bind their ports (2567, 5173, 5174).
+`e2e/globalSetup.ts` spawns the server and client before the suite runs. Both processes must be able to bind their ports (2567, 5173).
 
 ---
 
@@ -107,8 +117,7 @@ npm run build
 
 Outputs:
 - `server/dist/` — compiled TypeScript
-- `client/tv/dist/` — bundled TV app
-- `client/phone/dist/` — bundled phone app
+- `client/app/dist/` — bundled unified client SPA
 
 ---
 
@@ -122,7 +131,7 @@ docker compose up --build
 docker compose down
 ```
 
-Each service has its own `Dockerfile`. The compose file wires them together and passes `VITE_SERVER_URL` at build time.
+The compose file wires the server and client together and passes `VITE_SERVER_URL` at build time.
 
 ---
 
@@ -139,12 +148,11 @@ gamma/
 │   │   └── utils/            LOS, tilemap, RNG, bracket helpers
 │   └── tests/        Vitest unit tests
 ├── client/
-│   ├── shared/       Shared types + Colyseus client helpers
-│   ├── tv/           TV display (Svelte + Vite, port 5173)
-│   └── phone/        Phone controller (Svelte + Vite, port 5174)
+│   └── app/          Unified Svelte SPA (view screen + phone controller)
 ├── e2e/              Playwright end-to-end tests
 ├── k8s/              Kubernetes CRDs, RBAC, example manifests
 ├── helm/             Helm chart for the Gamma operator
+├── design/           HTML prototypes and design assets
 └── docs/             Design and onboarding documentation
 ```
 
@@ -172,7 +180,7 @@ import { BaseGame } from "../BaseGame";
 
 export default class ExampleGame extends BaseGame {
   // ── Static metadata (required) ──────────────────────────────
-  static override requiresTV        = true;   // does the game need a TV display?
+  static override requiresTV        = true;   // does the game need a view screen?
   static override supportsBracket   = false;  // use bracket/1v1 matchmaking?
   static override defaultRoundCount = 3;
   static override minRounds         = 1;
@@ -248,7 +256,7 @@ http://localhost:2567/colyseus
 You can inspect live rooms, connected clients, and the current state tree.
 
 ### Vite HMR
-Both client packages support Vite hot module replacement. Component edits in `client/tv/src/` and `client/phone/src/` update in the browser without a full reload.
+The client package supports Vite hot module replacement. Component edits in `client/app/src/` update in the browser without a full reload.
 
 ### Playwright headed mode
 Run E2E tests with a visible browser for debugging:
@@ -264,7 +272,7 @@ npx playwright test --headed --debug
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | `Cannot find module 'colyseus.js'` | Dependencies not installed | `npm install` |
-| Tailwind classes not applied | PostCSS config missing | Each `client/tv/` and `client/phone/` package includes its own `postcss.config.cjs` and `tailwind.config.cjs` |
+| Tailwind classes not applied | PostCSS config missing | `client/app/` includes its own `postcss.config.cjs` and `tailwind.config.cjs` |
 | `__SERVER_URL__ is not defined` | Vite `define` not injecting | Set `VITE_SERVER_URL` before running `vite build` |
 | Room join fails with 404 | Server not running | Start the server first (`npm run dev:server`) |
 | E2E tests time out | Ports already in use | Kill any existing dev servers before running Playwright |
