@@ -20,6 +20,9 @@ type GammaInstanceSpec struct {
 	// Autoscaling configuration for the server deployment.
 	// +optional
 	Autoscaling *AutoscalingSpec `json:"autoscaling,omitempty"`
+	// Observability configures OpenTelemetry tracing and metrics export.
+	// +optional
+	Observability ObservabilitySpec `json:"observability,omitempty"`
 }
 
 // ServerSpec defines the desired state for the Gamma server component.
@@ -44,6 +47,22 @@ type ServerSpec struct {
 	// Additional environment variables injected into server pods.
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
+	// SecretEnvVars loads environment variables from Kubernetes Secrets.
+	// Use this for sensitive values such as third-party API keys (e.g. a GIF
+	// service API key) that must not be stored in plain text in the CR spec.
+	// +optional
+	SecretEnvVars []SecretEnvVar `json:"secretEnvVars,omitempty"`
+}
+
+// SecretEnvVar describes a single environment variable whose value is sourced
+// from a key in a Kubernetes Secret.
+type SecretEnvVar struct {
+	// Name of the environment variable to expose in the server container.
+	Name string `json:"name"`
+	// SecretName is the name of the Kubernetes Secret in the same namespace.
+	SecretName string `json:"secretName"`
+	// SecretKey is the key within the Secret whose value will be used.
+	SecretKey string `json:"secretKey"`
 }
 
 // ClientSpec defines the desired state for the Gamma client component.
@@ -143,6 +162,34 @@ type AutoscalingSpec struct {
 	// +kubebuilder:default=70
 	// +optional
 	TargetCPUUtilizationPercentage int32 `json:"targetCPUUtilizationPercentage,omitempty"`
+}
+
+// ObservabilitySpec configures OpenTelemetry tracing and metrics export for the
+// server component. The server reads OTEL_ENABLED, OTEL_EXPORTER_OTLP_ENDPOINT,
+// and OTEL_SERVICE_NAME at startup; this spec translates those values into
+// container environment variables automatically.
+type ObservabilitySpec struct {
+	// Whether to enable OpenTelemetry telemetry.
+	// When false the operator injects OTEL_ENABLED=false, disabling all traces
+	// and metrics regardless of the image's built-in defaults.
+	// When true the operator injects OTEL_ENABLED=true and, if otlpEndpoint is
+	// set, OTEL_EXPORTER_OTLP_ENDPOINT pointing at your OTEL Collector.
+	// When the field is omitted entirely, no OTEL_* vars are injected and the
+	// server falls back to its own built-in defaults.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+	// OTLPEndpoint is the base URL of an OpenTelemetry Collector that accepts
+	// OTLP/HTTP (e.g. http://otel-collector.monitoring.svc:4318).
+	// Traces are sent to <otlpEndpoint>/v1/traces and metrics to
+	// <otlpEndpoint>/v1/metrics every 10 seconds.
+	// Required when enabled is true and you want telemetry to reach a collector;
+	// omit to keep the server's default (http://localhost:4318).
+	// +optional
+	OTLPEndpoint string `json:"otlpEndpoint,omitempty"`
+	// ServiceName overrides the OTEL service name reported in traces and metrics.
+	// Defaults to "gamma-server" when not set.
+	// +optional
+	ServiceName string `json:"serviceName,omitempty"`
 }
 
 // GammaInstanceStatus defines the observed state of a Gamma deployment.
@@ -253,4 +300,10 @@ func (s *RedisStorageSpec) RedisStorageSize() string {
 		return s.Size
 	}
 	return "1Gi"
+}
+
+// IsObservabilityEnabled returns true when observability is explicitly enabled.
+// Returns false when explicitly disabled. Returns nil when not configured.
+func (o *ObservabilitySpec) IsObservabilityEnabled() *bool {
+	return o.Enabled
 }
