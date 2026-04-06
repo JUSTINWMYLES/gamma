@@ -180,7 +180,7 @@ See `.env.example` for full documentation.
 | Node.js | 20.x |
 | npm | 9.x |
 | Docker + Docker Compose | 24.x / 2.x (for container workflows) |
-| Go | 1.24+ (for operator development only) |
+| Go | 1.25+ (for operator development only) |
 | Helm | 3.x (for Kubernetes deployment only) |
 | Playwright | latest (installed automatically by `make install`) |
 

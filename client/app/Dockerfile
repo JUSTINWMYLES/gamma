@@ -9,8 +9,7 @@ ARG VITE_SERVER_URL=ws://localhost:2567
 COPY package.json package-lock.json* ./
 COPY client/app/package.json ./client/app/
 
-# Shared CSS and types used by the app
-COPY client/src/ ./client/src/
+# Shared types and Colyseus client used by the app
 COPY client/shared/ ./client/shared/
 
 # Root-level Svelte/Tailwind/PostCSS configs
