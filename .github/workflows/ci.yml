@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Server: type-check + unit tests ────────────────────────────────────────
+  lint-test-server:
+    name: Lint & Test – Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type-check server
+        run: npx tsc --noEmit
+        working-directory: server
+
+      - name: Run server tests
+        run: npm run test --workspace=server
+
+  # ── Client: type-check + build all three clients ───────────────────────────
+  lint-build-client:
+    name: Lint & Build – Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root workspace dependencies
+        run: npm install
+
+      - name: Install client/phone dependencies
+        run: npm install
+        working-directory: client/phone
+
+      - name: Install client/tv dependencies
+        run: npm install
+        working-directory: client/tv
+
+      - name: Type-check & build client/app
+        run: npm run build --workspace=client/app
+
+      - name: Build client/phone
+        run: npm run build
+        working-directory: client/phone
+
+      - name: Build client/tv
+        run: npm run build
+        working-directory: client/tv
+
+  # ── Operator: vet + unit tests ─────────────────────────────────────────────
+  lint-test-operator:
+    name: Lint & Test – Operator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/go.mod
+          cache-dependency-path: operator/go.sum
+
+      - name: Vet operator
+        run: go vet ./...
+        working-directory: operator
+
+      - name: Run operator tests
+        run: go test ./...
+        working-directory: operator
+
+  # ── Helm chart: lint ───────────────────────────────────────────────────────
+  lint-helm:
+    name: Lint – Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint helm/gamma-operator
