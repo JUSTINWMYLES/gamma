@@ -703,3 +703,155 @@ func TestReconcile_AppliesToCorrectNamespace(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildServerEnv_SecretEnvVars(t *testing.T) {
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Server.SecretEnvVars = []gammav1alpha1.SecretEnvVar{
+		{
+			Name:       "GIPHY_API_KEY",
+			SecretName: "giphy-secret",
+			SecretKey:  "api-key",
+		},
+		{
+			Name:       "TENOR_API_KEY",
+			SecretName: "tenor-secret",
+			SecretKey:  "key",
+		},
+	}
+
+	env := buildServerEnv(instance)
+
+	// Find the secret-sourced env vars.
+	secretEnvs := map[string]*corev1.EnvVarSource{}
+	for _, e := range env {
+		if e.ValueFrom != nil {
+			secretEnvs[e.Name] = e.ValueFrom
+		}
+	}
+
+	require.Contains(t, secretEnvs, "GIPHY_API_KEY")
+	giphyRef := secretEnvs["GIPHY_API_KEY"].SecretKeyRef
+	require.NotNil(t, giphyRef)
+	assert.Equal(t, "giphy-secret", giphyRef.Name)
+	assert.Equal(t, "api-key", giphyRef.Key)
+
+	require.Contains(t, secretEnvs, "TENOR_API_KEY")
+	tenorRef := secretEnvs["TENOR_API_KEY"].SecretKeyRef
+	require.NotNil(t, tenorRef)
+	assert.Equal(t, "tenor-secret", tenorRef.Name)
+	assert.Equal(t, "key", tenorRef.Key)
+}
+
+func TestReconcile_InjectsSecretEnvVarsIntoServerDeployment(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Server.SecretEnvVars = []gammav1alpha1.SecretEnvVar{
+		{
+			Name:       "GIPHY_API_KEY",
+			SecretName: "giphy-secret",
+			SecretKey:  "api-key",
+		},
+	}
+
+	cl := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: cl, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	deploy := &appsv1.Deployment{}
+	err = cl.Get(context.Background(), types.NamespacedName{Name: "my-gamma-server", Namespace: "default"}, deploy)
+	require.NoError(t, err)
+
+	found := false
+	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
+		if env.Name == "GIPHY_API_KEY" {
+			found = true
+			require.NotNil(t, env.ValueFrom)
+			require.NotNil(t, env.ValueFrom.SecretKeyRef)
+			assert.Equal(t, "giphy-secret", env.ValueFrom.SecretKeyRef.Name)
+			assert.Equal(t, "api-key", env.ValueFrom.SecretKeyRef.Key)
+		}
+	}
+	assert.True(t, found, "GIPHY_API_KEY secret env var should be injected into server deployment")
+}
+
+func TestBuildServerEnv_OTELEnabled(t *testing.T) {
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Observability = gammav1alpha1.ObservabilitySpec{
+		Enabled:      boolPtr(true),
+		OTLPEndpoint: "http://otel-collector.monitoring.svc:4318",
+		ServiceName:  "my-gamma-server",
+	}
+
+	env := buildServerEnv(instance)
+
+	envMap := map[string]string{}
+	for _, e := range env {
+		if e.Value != "" {
+			envMap[e.Name] = e.Value
+		}
+	}
+
+	assert.Equal(t, "true", envMap["OTEL_ENABLED"])
+	assert.Equal(t, "http://otel-collector.monitoring.svc:4318", envMap["OTEL_EXPORTER_OTLP_ENDPOINT"])
+	assert.Equal(t, "my-gamma-server", envMap["OTEL_SERVICE_NAME"])
+}
+
+func TestBuildServerEnv_OTELDisabled(t *testing.T) {
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Observability = gammav1alpha1.ObservabilitySpec{
+		Enabled: boolPtr(false),
+	}
+
+	env := buildServerEnv(instance)
+
+	envMap := map[string]string{}
+	for _, e := range env {
+		envMap[e.Name] = e.Value
+	}
+
+	assert.Equal(t, "false", envMap["OTEL_ENABLED"])
+	_, hasEndpoint := envMap["OTEL_EXPORTER_OTLP_ENDPOINT"]
+	assert.False(t, hasEndpoint, "OTEL_EXPORTER_OTLP_ENDPOINT should not be set when OTEL is disabled")
+}
+
+func TestBuildServerEnv_OTELNotConfigured(t *testing.T) {
+	// When observability is not configured, no OTEL_* env vars should be injected.
+	instance := newTestInstance("my-gamma", "default")
+	// instance.Spec.Observability is zero-value (Enabled == nil)
+
+	env := buildServerEnv(instance)
+
+	for _, e := range env {
+		assert.False(t, e.Name == "OTEL_ENABLED" || e.Name == "OTEL_EXPORTER_OTLP_ENDPOINT" || e.Name == "OTEL_SERVICE_NAME",
+			"OTEL env var %s should not be injected when observability is not configured", e.Name)
+	}
+}
+
+func TestBuildServerEnv_OTELEnabledWithoutEndpoint(t *testing.T) {
+	// Enabled=true but no endpoint/serviceName — only OTEL_ENABLED should be injected.
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Observability = gammav1alpha1.ObservabilitySpec{
+		Enabled: boolPtr(true),
+	}
+
+	env := buildServerEnv(instance)
+
+	envMap := map[string]string{}
+	for _, e := range env {
+		envMap[e.Name] = e.Value
+	}
+
+	assert.Equal(t, "true", envMap["OTEL_ENABLED"])
+	_, hasEndpoint := envMap["OTEL_EXPORTER_OTLP_ENDPOINT"]
+	assert.False(t, hasEndpoint, "OTEL_EXPORTER_OTLP_ENDPOINT should not be set when endpoint is not configured")
+	_, hasServiceName := envMap["OTEL_SERVICE_NAME"]
+	assert.False(t, hasServiceName, "OTEL_SERVICE_NAME should not be set when service name is not configured")
+}
