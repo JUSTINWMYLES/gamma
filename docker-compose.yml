@@ -19,29 +19,15 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── TV static client (served by nginx) ───────────────────────────
-  tv:
+  # ── Unified client (served by nginx) ─────────────────────────────
+  client:
     build:
       context: .
-      dockerfile: client/tv/Dockerfile
+      dockerfile: client/app/Dockerfile
       args:
         VITE_SERVER_URL: ws://localhost:2567
     ports:
       - "5173:80"
-    depends_on:
-      server:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ── Phone static client (served by nginx) ────────────────────────
-  phone:
-    build:
-      context: .
-      dockerfile: client/phone/Dockerfile
-      args:
-        VITE_SERVER_URL: ws://localhost:2567
-    ports:
-      - "5174:80"
     depends_on:
       server:
         condition: service_healthy

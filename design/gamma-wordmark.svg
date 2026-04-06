@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 100" fill="none">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;display=swap');
+      .base { font-family: 'Bebas Neue', sans-serif; font-size: 84px; letter-spacing: 0.1em; fill: #9b93b8; }
+      .mg   { font-family: 'Bebas Neue', sans-serif; font-size: 84px; letter-spacing: 0.1em; fill: #cc6ab5; opacity: 0; }
+      .tl   { font-family: 'Bebas Neue', sans-serif; font-size: 84px; letter-spacing: 0.1em; fill: #5bbfb5; opacity: 0; }
+      @keyframes glitch-mg {
+        0%,84%  { opacity:0; }
+        85%     { opacity:0.7; transform:translate(-5px,0); }
+        86%     { opacity:0; }
+        90%     { opacity:0.7; transform:translate(-3px,1px); }
+        91%     { opacity:0; }
+        95%     { opacity:0.7; transform:translate(-2px,0); }
+        96%,100% { opacity:0; }
+      }
+      @keyframes glitch-tl {
+        0%,84%  { opacity:0; }
+        85%     { opacity:0.7; transform:translate(5px,0); }
+        86%     { opacity:0; }
+        90%     { opacity:0.7; transform:translate(3px,-1px); }
+        91%     { opacity:0; }
+        95%     { opacity:0.7; transform:translate(2px,0); }
+        96%,100% { opacity:0; }
+      }
+      .mg { animation: glitch-mg 3.8s steps(1) infinite; }
+      .tl { animation: glitch-tl 3.8s steps(1) infinite; }
+      .subtitle { font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 0.35em; fill: #b0a8cc; }
+    </style>
+  </defs>
+  <text class="mg" x="50%" y="68" text-anchor="middle">GAMMA</text>
+  <text class="tl" x="50%" y="68" text-anchor="middle">GAMMA</text>
+  <text class="base" x="50%" y="68" text-anchor="middle">GAMMA</text>
+  <text class="subtitle" x="50%" y="92" text-anchor="middle">PARTY GAME PLATFORM</text>
+</svg>

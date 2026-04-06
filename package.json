@@ -1,7 +1,7 @@
 {
   "name": "gamma",
   "version": "0.1.0",
-  "description": "Networked multiplayer party game framework — Jackbox-style, phone controllers + TV display",
+  "description": "Networked multiplayer party game framework — phone controllers + shared display",
   "private": true,
   "workspaces": [
     "server",
@@ -24,7 +24,7 @@
     "eslint": "^8.57.0"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": ">=20.0.0",
     "npm": ">=9.0.0"
   }
 }
