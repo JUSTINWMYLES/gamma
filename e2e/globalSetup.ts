@@ -1,8 +1,9 @@
 /**
  * e2e/globalSetup.ts
  *
- * Starts the Colyseus server and both Vite dev servers before Playwright
- * test suites run.  Returns a teardown function that kills all processes.
+ * Starts the Colyseus server and the unified client Vite dev server before
+ * Playwright test suites run.  Returns a teardown function that kills all
+ * processes.
  *
  * Processes are started with stdio: "pipe" so CI logs aren't flooded.
  * Each process is waited on using a "ready" signal in stdout.
@@ -42,23 +43,14 @@ export default async function globalSetup() {
   processes.push(server);
   await waitForOutput(server, "listening on");
 
-  // 2. Start TV Vite dev server
-  const tv = spawn("npm", ["run", "dev:tv"], {
+  // 2. Start unified client Vite dev server
+  const client = spawn("npm", ["run", "dev:client"], {
     stdio: "pipe",
     shell: true,
     env: { ...process.env, VITE_SERVER_URL: "ws://localhost:2567" },
   });
-  processes.push(tv);
-  await waitForOutput(tv, "Local");
-
-  // 3. Start Phone Vite dev server
-  const phone = spawn("npm", ["run", "dev:phone"], {
-    stdio: "pipe",
-    shell: true,
-    env: { ...process.env, VITE_SERVER_URL: "ws://localhost:2567" },
-  });
-  processes.push(phone);
-  await waitForOutput(phone, "Local");
+  processes.push(client);
+  await waitForOutput(client, "Local");
 
   // Brief pause for sockets to stabilise
   await sleep(500);
