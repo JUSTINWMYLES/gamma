@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  # ── Build and push all Docker images ───────────────────────────────────────
+  # gamma-client (client/app) serves both the TV/viewer and phone/player roles
+  # in a single unified SPA — no separate phone or TV images are needed.
+  build-push-images:
+    name: Build & Push – ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gamma-server
+            context: .
+            dockerfile: server/Dockerfile
+          - name: gamma-client
+            context: .
+            dockerfile: client/app/Dockerfile
+          - name: gamma-operator
+            context: operator
+            dockerfile: operator/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Push Helm chart as an OCI image ────────────────────────────────────────
+  push-helm-oci:
+    name: Push Helm Chart (OCI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Package Helm chart
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package helm/gamma-operator \
+            --version "$VERSION" \
+            --app-version "$VERSION"
+
+      - name: Push Helm chart to GHCR
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm push "gamma-operator-${VERSION}.tgz" \
+            "oci://ghcr.io/${{ github.repository_owner }}/helm-charts"
+
+  # ── Create GitHub release with npm tarball + client build tarball ───────────
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install root workspace dependencies
+        run: npm install
+
+      - name: Build server
+        run: npm run build --workspace=server
+
+      - name: Build client/app
+        run: npm run build --workspace=client/app
+
+      - name: Pack server npm tarball
+        run: cd server && npm pack --pack-destination ..
+
+      - name: Create client build tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -czf "$GITHUB_WORKSPACE/gamma-client-${VERSION}.tar.gz" -C client/app/dist .
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            gamma-server-*.tgz
+            gamma-client-*.tar.gz
