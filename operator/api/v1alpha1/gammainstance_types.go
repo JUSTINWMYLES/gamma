@@ -301,9 +301,3 @@ func (s *RedisStorageSpec) RedisStorageSize() string {
 	}
 	return "1Gi"
 }
-
-// IsObservabilityEnabled returns true when observability is explicitly enabled.
-// Returns false when explicitly disabled. Returns nil when not configured.
-func (o *ObservabilitySpec) IsObservabilityEnabled() *bool {
-	return o.Enabled
-}
