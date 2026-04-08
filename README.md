@@ -248,11 +248,25 @@ Apache License 2.0 — see [LICENSE](LICENSE).
 
 ## Third-Party Audio Attribution
 
-This repository includes third-party music licensed under Creative Commons Attribution 4.0 International (CC BY 4.0):
+This repository includes third-party audio. CC BY 4.0 tracks (attribution required):
 
 - "Cloud Dancer" — Kevin MacLeod (incompetech.com)
 - "Farting Around" — Kevin MacLeod (incompetech.com)
+- "Zazie" — Kevin MacLeod (incompetech.com)
+- "Pixelland" — Kevin MacLeod (incompetech.com)
+- "Vivacity" — Kevin MacLeod (incompetech.com)
+- "Le Grand Chase" — Kevin MacLeod (incompetech.com)
+- "Thinking Music" — Kevin MacLeod (incompetech.com)
+- Cash Register — kiddpark (freesound.org/s/201159/)
+- Whip Crack 01.wav — CGEffex (freesound.org/s/93100/)
+- hey.wav — UncleSigmund (freesound.org/s/30989/)
 
-License: https://creativecommons.org/licenses/by/4.0/
+CC0 tracks (no attribution required):
 
-Full attribution details are in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+- Disco Clap — NenadSimic (freesound.org/s/169085/)
+- Car Crash — squareal (freesound.org/s/237375/)
+- Men Shouting Hey — Jace (freesound.org/s/57204/)
+
+License CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+
+Full attribution details, usage locations, and license URLs are in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
