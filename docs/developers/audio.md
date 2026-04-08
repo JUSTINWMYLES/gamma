@@ -119,11 +119,18 @@ Both TV and phone clients can import from `../../shared/audio/` using the Vite a
 
 ## Attribution
 
-If you use CC BY assets, add a row to `CREDITS.md` at the repo root:
+If you use CC BY assets, add an entry to `ATTRIBUTIONS.md` at the repo root following the existing format:
 
 ```
-| "Sound Name" | Author Name | https://link-to-asset | CC BY 4.0 |
+- "Sound Name" — Author Name
+  - Source: https://link-to-asset
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: <component or game context>
+  - Changes: none
 ```
+
+Also add a matching entry to `audio/ATTRIBUTION.txt`.
 
 CC0 assets do not require attribution but crediting them is appreciated.
 
