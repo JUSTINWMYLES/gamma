@@ -370,7 +370,7 @@
 <!-- Template                                                           -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-<div class="min-h-screen flex flex-col bg-gray-950 text-white">
+<div data-testid="app-root" class="min-h-screen flex flex-col bg-gray-950 text-white">
 
   {#if showBackground}
     <FloatingBackground dark={$isDark} />

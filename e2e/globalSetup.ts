@@ -12,9 +12,15 @@
 import { ChildProcess, spawn } from "child_process";
 import { setTimeout as sleep } from "timers/promises";
 
+import fs from "fs";
+
 const processes: ChildProcess[] = [];
 
 function waitForOutput(proc: ChildProcess, token: string, timeoutMs = 30_000): Promise<void> {
+  const logStream = fs.createWriteStream("e2e-server.log", { flags: "a" });
+  proc.stdout?.pipe(logStream);
+  proc.stderr?.pipe(logStream);
+
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timeout waiting for "${token}"`)), timeoutMs);
     proc.stdout?.on("data", (chunk: Buffer) => {

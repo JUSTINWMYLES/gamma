@@ -17,6 +17,7 @@
   $: totalCount = state.players.size;
 </script>
 
+<div data-testid="instructions-screen" class="contents">
 <InstructionSlideshow
   {slides}
   mode="viewer"
@@ -24,3 +25,4 @@
   {totalCount}
   scale="large"
 />
+</div>
