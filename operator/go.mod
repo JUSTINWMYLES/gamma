@@ -1,4 +1,4 @@
-module github.com/gamma/gamma-operator
+module github.com/JUSTINWMYLES/gamma/operator
 
 go 1.25.0
 

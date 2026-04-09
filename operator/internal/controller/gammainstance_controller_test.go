@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
+	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 )
 
 func newScheme() *runtime.Scheme {

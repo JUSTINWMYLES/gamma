@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
-	"github.com/gamma/gamma-operator/internal/controller"
+	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
+	"github.com/JUSTINWMYLES/gamma/operator/internal/controller"
 )
 
 var (

@@ -62,5 +62,4 @@ Car Crash by squareal -- https://freesound.org/s/237375/ -- License: Creative Co
 https://creativecommons.org/publicdomain/zero/1.0/
 
 whoosh.flac
-Source and license unknown — needs verification before release.
-Used as target reference sound in registry-06-sound-replication.
+Whoosh by qubodup -- https://freesound.org/s/60013/ -- License: Creative Commons 0

@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
+	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 )
 
 // reconcileRedisConfigMap ensures the Redis configuration ConfigMap exists.

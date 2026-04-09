@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
+	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 )
 
 // reconcileHPA ensures the HorizontalPodAutoscaler exists for the server Deployment.

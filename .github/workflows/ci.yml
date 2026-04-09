@@ -34,6 +34,9 @@ jobs:
       - name: Run server tests with coverage
         run: npm run test:coverage --workspace=server
 
+      - name: npm audit
+        run: npm audit --audit-level=high
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
@@ -92,3 +95,36 @@ jobs:
 
       - name: Lint Helm chart
         run: helm lint helm/gamma-operator
+
+  # ── E2E: Playwright ────────────────────────────────────────────────────────
+  e2e:
+    name: E2E – Playwright
+    runs-on: ubuntu-latest
+    needs: [lint-test-server, lint-build-client]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build client
+        run: npm run build --workspace=client/app
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
