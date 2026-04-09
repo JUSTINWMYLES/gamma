@@ -60,6 +60,9 @@ export abstract class BaseGame {
   static minRounds: number = 1;
   static maxRounds: number = 10;
 
+  /** Default time limit in seconds. Host can override via GameConfig. */
+  static defaultTimeLimitSecs?: number;
+
   /** Whether to show the instructions phase before the first countdown. */
   static hasInstructionsPhase: boolean = false;
 

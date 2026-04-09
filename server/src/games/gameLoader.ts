@@ -46,6 +46,7 @@ type GameConstructor = {
   defaultRoundCount: number;
   minRounds: number;
   maxRounds: number;
+  defaultTimeLimitSecs?: number;
   hasInstructionsPhase: boolean;
   instructionsDelivery: string;
 };

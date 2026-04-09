@@ -319,6 +319,7 @@
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">How active?</h2>
           <div class="space-y-3">
             <button
+              data-testid="setup-activity-none"
               class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
               on:click={() => selectActivity("none")}
             >

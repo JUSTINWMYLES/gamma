@@ -14,9 +14,11 @@
   function confirm() { room.send("player_ready", {}); }
 </script>
 
+<div data-testid="phone-instructions" class="contents">
 <InstructionSlideshow
   {slides}
   mode="player"
   isReady={amReady}
   on:confirm={confirm}
 />
+</div>

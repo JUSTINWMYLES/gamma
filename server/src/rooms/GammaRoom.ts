@@ -306,9 +306,19 @@ export class GammaRoom extends Room<RoomState> {
     });
 
     /** Host selects a game from the list. TV / first player only. */
-    this.onMessage("select_game", (client, data: { gameId: string }) => {
+    this.onMessage("select_game", async (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;
       this.state.selectedGame = data.gameId;
+
+      try {
+        const GameClass = await loadGame(data.gameId);
+        this.state.gameConfig.roundCount = GameClass.defaultRoundCount;
+        if (typeof GameClass.defaultTimeLimitSecs === "number") {
+          this.state.gameConfig.timeLimitSecs = GameClass.defaultTimeLimitSecs;
+        }
+      } catch (err) {
+        console.error(`[GammaRoom] Failed to load game ${data.gameId} for defaults:`, err);
+      }
 
       // Keep game-specific config sane when switching games.
       if (data.gameId === "registry-25-lowball-marketplace") {
@@ -473,11 +483,6 @@ export class GammaRoom extends Room<RoomState> {
     if (GameClass.requiresTV && !this.state.viewScreenConnected) {
       this.broadcast("error", { message: "This game requires a view screen to be connected." });
       return;
-    }
-
-    // Apply plugin defaults to config (host overrides take precedence)
-    if (this.state.gameConfig.roundCount === 1 && GameClass.defaultRoundCount > 1) {
-      this.state.gameConfig.roundCount = GameClass.defaultRoundCount;
     }
 
     // Reset all players' isReady so instructions phase waitForAllReady() works
