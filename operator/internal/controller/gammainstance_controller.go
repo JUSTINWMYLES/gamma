@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	gammav1alpha1 "github.com/gamma/gamma-operator/api/v1alpha1"
+	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 )
 
 // GammaInstanceReconciler reconciles a GammaInstance object.

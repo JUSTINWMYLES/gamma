@@ -67,7 +67,6 @@
   {/if}
   <!-- Room code — big and prominent for players to join -->
   <div class="text-center">
-    <p class="text-gray-400 text-sm uppercase tracking-widest mb-1">Join at gamma.app/join</p>
     <p class="text-8xl font-black tracking-widest font-mono text-indigo-400" data-testid="room-code">{state.roomCode}</p>
   </div>
 

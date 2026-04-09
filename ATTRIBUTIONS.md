@@ -88,11 +88,12 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: staged asset (not yet wired to a game)
   - Changes: none
 
-- Whoosh — source unknown
-  - License: unknown; file present at audio/whoosh.flac
+- Whoosh — qubodup
+  - Source: https://freesound.org/s/60013/
+  - License: CC0
+  - License URL: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer during `registry-06-sound-replication` as the target reference sound players must replicate
   - Changes: none
-  - Note: source and license for this file need to be verified and updated
 
 ## Short-form in-app attribution
 
