@@ -43,6 +43,7 @@ import {
   normalizeSubmission,
   isValidBodyPart,
   isValidAction,
+  haveAllExpectedPlayersResponded,
   tallySubmissionVotes,
   computePhasePoints,
   BODY_PARTS,
@@ -119,6 +120,9 @@ export default class MedicalStoryGame extends BaseGame {
   private roleVoteResolve: (() => void) | null = null;
   private submissionResolve: (() => void) | null = null;
   private votingResolve: (() => void) | null = null;
+  private expectedRoleVotePlayerIds: string[] = [];
+  private expectedSubmissionPlayerIds: string[] = [];
+  private expectedVotingPlayerIds: string[] = [];
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -301,6 +305,9 @@ export default class MedicalStoryGame extends BaseGame {
     this.roleVoteResolve = null;
     this.submissionResolve = null;
     this.votingResolve = null;
+    this.expectedRoleVotePlayerIds = [];
+    this.expectedSubmissionPlayerIds = [];
+    this.expectedVotingPlayerIds = [];
     this.pendingScores.clear();
   }
 
@@ -308,6 +315,7 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _waitForRoleVotes(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
+      this.expectedRoleVotePlayerIds = [...playerIds];
       this.roleVoteResolve = resolve;
 
       const timeout = setTimeout(() => {
@@ -324,11 +332,7 @@ export default class MedicalStoryGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.roleVoteResolve) return;
 
-    const connectedPlayers = playerIds.filter(
-      (id) => this.room.state.players.get(id)?.isConnected,
-    );
-
-    if (rd.roleVotes.size >= connectedPlayers.length) {
+    if (haveAllExpectedPlayersResponded(playerIds, rd.roleVotes.keys())) {
       const resolve = this.roleVoteResolve;
       this.roleVoteResolve = null;
       resolve();
@@ -337,6 +341,7 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _waitForSubmissions(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
+      this.expectedSubmissionPlayerIds = [...playerIds];
       this.submissionResolve = resolve;
 
       const timeout = setTimeout(() => {
@@ -353,11 +358,7 @@ export default class MedicalStoryGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.submissionResolve) return;
 
-    const connectedPlayers = playerIds.filter(
-      (id) => this.room.state.players.get(id)?.isConnected,
-    );
-
-    if (rd.submittedPlayers.size >= connectedPlayers.length) {
+    if (haveAllExpectedPlayersResponded(playerIds, rd.submittedPlayers)) {
       const resolve = this.submissionResolve;
       this.submissionResolve = null;
       resolve();
@@ -366,6 +367,7 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _waitForVotes(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
+      this.expectedVotingPlayerIds = [...playerIds];
       this.votingResolve = resolve;
 
       const timeout = setTimeout(() => {
@@ -382,11 +384,7 @@ export default class MedicalStoryGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.votingResolve) return;
 
-    const connectedPlayers = playerIds.filter(
-      (id) => this.room.state.players.get(id)?.isConnected,
-    );
-
-    if (rd.votedPlayers.size >= connectedPlayers.length) {
+    if (haveAllExpectedPlayersResponded(playerIds, rd.votedPlayers)) {
       const resolve = this.votingResolve;
       this.votingResolve = null;
       resolve();
@@ -401,10 +399,9 @@ export default class MedicalStoryGame extends BaseGame {
     if (!input.patient || !input.doctor || !input.nurse) return;
 
     // Validate that voted players exist
-    const playerIds = this._activePlayers().map((p) => p.id);
-    if (!playerIds.includes(input.patient)) return;
-    if (!playerIds.includes(input.doctor)) return;
-    if (!playerIds.includes(input.nurse)) return;
+    if (!this.expectedRoleVotePlayerIds.includes(input.patient)) return;
+    if (!this.expectedRoleVotePlayerIds.includes(input.doctor)) return;
+    if (!this.expectedRoleVotePlayerIds.includes(input.nurse)) return;
 
     // All three must be different
     if (input.patient === input.doctor || input.patient === input.nurse || input.doctor === input.nurse) return;
@@ -415,7 +412,7 @@ export default class MedicalStoryGame extends BaseGame {
       nurse: input.nurse,
     });
 
-    this._checkRoleVotesComplete(playerIds);
+    this._checkRoleVotesComplete(this.expectedRoleVotePlayerIds);
   }
 
   private _handleSubmission(client: Client, input: MedicalStoryInput): void {
@@ -444,17 +441,26 @@ export default class MedicalStoryGame extends BaseGame {
 
     // Validate body part for complaint/diagnosis phase
     if (rd.currentPhase === "complaint" || rd.currentPhase === "diagnosis") {
-      if (input.bodyPart && isValidBodyPart(input.bodyPart)) {
-        submission.bodyPart = input.bodyPart;
+      if (!input.bodyPart || !isValidBodyPart(input.bodyPart)) {
+        this.send(client.sessionId, "ms_submit_ack", {
+          accepted: false,
+          reason: "Choose a valid body part before submitting.",
+        });
+        return;
       }
-      // Body part is optional — don't reject if missing
+      submission.bodyPart = input.bodyPart;
     }
 
     // Validate action for procedure phase
     if (rd.currentPhase === "procedure") {
-      if (input.actionName && isValidAction(input.actionName)) {
-        submission.action = input.actionName;
+      if (!input.actionName || !isValidAction(input.actionName)) {
+        this.send(client.sessionId, "ms_submit_ack", {
+          accepted: false,
+          reason: "Choose a valid action before submitting.",
+        });
+        return;
       }
+      submission.action = input.actionName;
     }
 
     rd.submissions.set(client.sessionId, submission);
@@ -462,8 +468,7 @@ export default class MedicalStoryGame extends BaseGame {
 
     this.send(client.sessionId, "ms_submit_ack", { accepted: true });
 
-    const playerIds = this._activePlayers().map((p) => p.id);
-    this._checkSubmissionsComplete(playerIds);
+    this._checkSubmissionsComplete(this.expectedSubmissionPlayerIds);
   }
 
   private _handleVote(client: Client, input: MedicalStoryInput): void {
@@ -487,8 +492,7 @@ export default class MedicalStoryGame extends BaseGame {
 
     this.send(client.sessionId, "ms_vote_ack", {});
 
-    const playerIds = this._activePlayers().map((p) => p.id);
-    this._checkVotesComplete(playerIds);
+    this._checkVotesComplete(this.expectedVotingPlayerIds);
   }
 
   // ── 3D Placeholder ────────────────────────────────────────────────────────

@@ -18,6 +18,7 @@ import {
   normalizeSubmission,
   isValidBodyPart,
   isValidAction,
+  haveAllExpectedPlayersResponded,
   tallySubmissionVotes,
   computePhasePoints,
   type Role,
@@ -287,6 +288,24 @@ describe("isValidAction", () => {
     expect(isValidAction("Kick")).toBe(false);
     expect(isValidAction("")).toBe(false);
     expect(isValidAction("punch")).toBe(false); // case-sensitive
+  });
+});
+
+describe("haveAllExpectedPlayersResponded", () => {
+  it("returns true when every expected player responds", () => {
+    expect(haveAllExpectedPlayersResponded(["p1", "p2", "p3"], ["p3", "p1", "p2"])).toBe(
+      true,
+    );
+  });
+
+  it("returns false when an expected player is missing", () => {
+    expect(haveAllExpectedPlayersResponded(["p1", "p2"], ["p1"])).toBe(false);
+  });
+
+  it("ignores duplicate and unexpected responders", () => {
+    expect(
+      haveAllExpectedPlayersResponded(["p1", "p2"], ["p1", "spectator", "p1", "p2"]),
+    ).toBe(true);
   });
 });
 

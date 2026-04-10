@@ -7,6 +7,7 @@ import {
   pickRandomSuggestion,
   normalizeEntry,
   isDuplicateEntry,
+  haveAllExpectedPlayersResponded,
   aggregateVotes,
   scoreRound,
   CATEGORY_PICK_DURATION_SECS,
@@ -129,6 +130,22 @@ describe("isDuplicateEntry", () => {
 
   it("returns false for an empty entry string", () => {
     expect(isDuplicateEntry("", ["Frosted Flakes"])).toBe(false);
+  });
+});
+
+describe("haveAllExpectedPlayersResponded", () => {
+  it("returns true when every expected player responded", () => {
+    expect(haveAllExpectedPlayersResponded(["p1", "p2"], ["p2", "p1"])).toBe(true);
+  });
+
+  it("returns false when an expected player is still missing", () => {
+    expect(haveAllExpectedPlayersResponded(["p1", "p2", "p3"], ["p1", "p2"])).toBe(false);
+  });
+
+  it("ignores duplicate and unexpected responders", () => {
+    expect(
+      haveAllExpectedPlayersResponded(["p1", "p2"], ["p1", "p1", "spectator", "p2"]),
+    ).toBe(true);
   });
 });
 

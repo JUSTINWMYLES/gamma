@@ -268,6 +268,28 @@ export function isValidAction(action: string): boolean {
   return (ACTIONS as readonly string[]).includes(action);
 }
 
+/**
+ * Return true when every expected player has responded during the current
+ * phase. Unexpected responders are ignored.
+ */
+export function haveAllExpectedPlayersResponded(
+  expectedPlayerIds: string[],
+  respondingPlayerIds: Iterable<string>,
+): boolean {
+  if (expectedPlayerIds.length === 0) return true;
+
+  const expected = new Set(expectedPlayerIds);
+  const responded = new Set<string>();
+
+  for (const playerId of respondingPlayerIds) {
+    if (expected.has(playerId)) {
+      responded.add(playerId);
+    }
+  }
+
+  return responded.size === expected.size;
+}
+
 // ── Vote tallying (submission voting) ─────────────────────────────────────────
 
 export interface VoteResult {

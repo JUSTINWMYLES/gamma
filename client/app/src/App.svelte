@@ -91,7 +91,7 @@
 
   // ── Viewer-only background music ──────────────────────────────────
 
-  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking";
+  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking" | "entertainer";
 
   const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string }> = {
     cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
@@ -101,6 +101,7 @@
     vivacity:       { file: "/vivacity.mp3",         volume: 0.35, attribution: '"Vivacity" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     le_grand_chase: { file: "/le_grand_chase.mp3",   volume: 0.35, attribution: '"Le Grand Chase" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     thinking:       { file: "/thinking_music.mp3",   volume: 0.35, attribution: '"Thinking Music" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    entertainer:    { file: "/the_entertainer.mp3",  volume: 0.34, attribution: '"The Entertainer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
   };
 
   /** Map of track ID → Audio element, initialised in onMount. */
@@ -129,6 +130,13 @@
     if (role !== "viewer" || !state) return null;
     if (phase === "lobby") {
       return "cloud";
+    }
+    if (
+      state.selectedGame === "registry-43-medical-story" &&
+      phase !== "lobby" &&
+      phase !== "game_loading"
+    ) {
+      return "entertainer";
     }
     // Play game-specific music during in_round (and countdown/instructions for smoother transitions)
     if (phase === "in_round" || phase === "countdown" || phase === "instructions") {
