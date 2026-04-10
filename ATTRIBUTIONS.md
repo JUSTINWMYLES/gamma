@@ -51,6 +51,12 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer during `registry-20-odd-one-out` and `registry-40-paint-match` active round gameplay
   - Changes: none
 
+- "The Entertainer" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer throughout `registry-43-medical-story` once the game begins
+  - Changes: none
+
 ### Sound Effects
 
 - Cash Register — kiddpark
@@ -95,9 +101,13 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer during `registry-06-sound-replication` as the target reference sound players must replicate
   - Changes: none
 
-"The Entertainer" Kevin MacLeod (incompetech.com)
-Licensed under Creative Commons: By Attribution 4.0 License
-http://creativecommons.org/licenses/by/4.0/
+## Models
+
+- "Human Dude Guy" — hat_my_guy
+  - Source: https://poly.pizza/m/83DpVkzvWk
+  - License: Poly Pizza standard attribution request
+  - Used in: `registry-43-medical-story` phone body-part selector and TV winner display
+  - Changes: none
 
 ## Short-form in-app attribution
 
