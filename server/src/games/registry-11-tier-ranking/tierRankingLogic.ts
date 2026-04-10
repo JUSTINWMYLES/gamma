@@ -92,6 +92,30 @@ export function isDuplicateEntry(entry: string, existingEntries: string[]): bool
   return existingEntries.some((e) => normalizeEntry(e) === normalized);
 }
 
+/**
+ * Return true when every expected player has responded exactly once.
+ *
+ * Extra responses from players outside the expected list are ignored so a
+ * stale reconnect or duplicated client event cannot hold the phase open.
+ */
+export function haveAllExpectedPlayersResponded(
+  expectedPlayerIds: string[],
+  respondingPlayerIds: Iterable<string>,
+): boolean {
+  if (expectedPlayerIds.length === 0) return true;
+
+  const expected = new Set(expectedPlayerIds);
+  const responded = new Set<string>();
+
+  for (const playerId of respondingPlayerIds) {
+    if (expected.has(playerId)) {
+      responded.add(playerId);
+    }
+  }
+
+  return responded.size === expected.size;
+}
+
 // ── Vote aggregation ──────────────────────────────────────────────────────────
 
 export interface VoteCounts {

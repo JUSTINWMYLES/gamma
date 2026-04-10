@@ -37,6 +37,7 @@ import {
   pickRandomSuggestion,
   normalizeEntry,
   isDuplicateEntry,
+  haveAllExpectedPlayersResponded,
   aggregateVotes,
   scoreRound,
   CATEGORY_SUGGESTIONS,
@@ -65,6 +66,8 @@ interface RoundData {
   category: string | null;
   /** Accepted unique entries (original casing for display). */
   entries: string[];
+  /** Players who have submitted an entry. */
+  entryPlayersSubmitted: Set<string>;
   /** Per-player tier votes: Map<playerId, Map<item, Tier>> */
   playerVotes: Map<string, Map<string, Tier>>;
   /** Players who have submitted their rankings. */
@@ -98,6 +101,9 @@ export default class TierRankingGame extends BaseGame {
   /** Resolves when all players have submitted rankings (or timeout fires). */
   private rankingResolve: (() => void) | null = null;
 
+  private expectedEntryPlayerIds: string[] = [];
+  private expectedRankingPlayerIds: string[] = [];
+
   private pendingScores: Map<string, number> = new Map();
   private _extraTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -129,6 +135,7 @@ export default class TierRankingGame extends BaseGame {
       chooserId,
       category: null,
       entries: [],
+      entryPlayersSubmitted: new Set(),
       playerVotes: new Map(),
       rankingsSubmitted: new Set(),
       results: null,
@@ -171,6 +178,7 @@ export default class TierRankingGame extends BaseGame {
     });
 
     this.room.state.roundDurationSecs = TIER_RANK_DURATION_SECS;
+    this.expectedRankingPlayerIds = [...playerIds];
 
     await this._waitForRankings(playerIds);
 
@@ -234,6 +242,8 @@ export default class TierRankingGame extends BaseGame {
     this.categoryResolve = null;
     this.entryPhaseResolve = null;
     this.rankingResolve = null;
+    this.expectedEntryPlayerIds = [];
+    this.expectedRankingPlayerIds = [];
     this.pendingScores.clear();
   }
 
@@ -257,6 +267,7 @@ export default class TierRankingGame extends BaseGame {
 
   private _waitForEntries(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
+      this.expectedEntryPlayerIds = [...playerIds];
       this.entryPhaseResolve = resolve;
 
       const timeout = setTimeout(() => {
@@ -276,11 +287,7 @@ export default class TierRankingGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.entryPhaseResolve) return;
 
-    const connectedPlayers = playerIds.filter(
-      (id) => this.room.state.players.get(id)?.isConnected,
-    );
-
-    if (rd.entries.length >= connectedPlayers.length) {
+    if (haveAllExpectedPlayersResponded(playerIds, rd.entryPlayersSubmitted)) {
       const resolve = this.entryPhaseResolve;
       this.entryPhaseResolve = null;
       resolve();
@@ -289,6 +296,7 @@ export default class TierRankingGame extends BaseGame {
 
   private _waitForRankings(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
+      this.expectedRankingPlayerIds = [...playerIds];
       this.rankingResolve = resolve;
 
       const timeout = setTimeout(() => {
@@ -307,11 +315,7 @@ export default class TierRankingGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.rankingResolve) return;
 
-    const connectedPlayers = playerIds.filter(
-      (id) => this.room.state.players.get(id)?.isConnected,
-    );
-
-    if (rd.rankingsSubmitted.size >= connectedPlayers.length) {
+    if (haveAllExpectedPlayersResponded(playerIds, rd.rankingsSubmitted)) {
       const resolve = this.rankingResolve;
       this.rankingResolve = null;
       resolve();
@@ -337,6 +341,15 @@ export default class TierRankingGame extends BaseGame {
     const rd = this.round;
     if (!rd || !this.entryPhaseResolve) return;
 
+    if (rd.entryPlayersSubmitted.has(client.sessionId)) {
+      this.send(client.sessionId, "tr_entry_ack", {
+        accepted: false,
+        reason: "You already submitted an entry for this round.",
+        currentEntryCount: rd.entries.length,
+      });
+      return;
+    }
+
     const normalized = normalizeEntry(entry ?? "");
     if (!normalized) {
       this.send(client.sessionId, "tr_entry_ack", {
@@ -358,6 +371,7 @@ export default class TierRankingGame extends BaseGame {
 
     // Accept the entry (store original casing for display)
     rd.entries.push(entry!.trim());
+    rd.entryPlayersSubmitted.add(client.sessionId);
 
     this.send(client.sessionId, "tr_entry_ack", {
       accepted: true,
@@ -365,8 +379,7 @@ export default class TierRankingGame extends BaseGame {
     });
 
     // Check if all connected players have submitted
-    const playerIds = this._activePlayers().map((p) => p.id);
-    this._checkEntryPhaseComplete(playerIds);
+    this._checkEntryPhaseComplete(this.expectedEntryPlayerIds);
   }
 
   private _handleSubmitRankings(
@@ -393,8 +406,7 @@ export default class TierRankingGame extends BaseGame {
     this.send(client.sessionId, "tr_rankings_ack", {});
 
     // Check if all connected players have submitted
-    const playerIds = this._activePlayers().map((p) => p.id);
-    this._checkRankingPhaseComplete(playerIds);
+    this._checkRankingPhaseComplete(this.expectedRankingPlayerIds);
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────

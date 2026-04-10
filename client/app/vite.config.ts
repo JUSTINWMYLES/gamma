@@ -48,6 +48,7 @@ function getMime(f: string): string {
     html: "text/html", css: "text/css", js: "application/javascript",
     json: "application/json", png: "image/png", svg: "image/svg+xml",
     mp3: "audio/mpeg", wav: "audio/wav", flac: "audio/flac", ogg: "audio/ogg",
+    glb: "model/gltf-binary",
     txt: "text/plain",
   };
   return map[ext ?? ""] ?? "application/octet-stream";
@@ -62,6 +63,7 @@ export default defineConfig({
       preprocess: (await import("svelte-preprocess")).default(),
     }),
     extraStaticDir("../../audio"),
+    extraStaticDir("../../models"),
   ],
   server: {
     port: 5173,
