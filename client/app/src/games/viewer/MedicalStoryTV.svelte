@@ -17,6 +17,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import MedicalStoryBodyModel from "../../components/MedicalStoryBodyModel.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -311,15 +312,18 @@
 
         <p class="text-lg text-gray-400">Submit your answers on your phones!</p>
 
-        <!-- TODO: 3D scene placeholder for TV display -->
-        <!-- {scene3dPlaceholder?.description ?? ''} -->
-        <!-- When implementing: show a 3D body model for complaint/diagnosis, -->
-        <!-- or 3D action previews for procedure phase on the TV -->
-        <div class="w-full h-48 rounded-2xl border-2 border-dashed border-gray-700 flex items-center justify-center">
-          <p class="text-gray-600 text-sm">
-            🎬 3D Scene: {scene3dPlaceholder?.type ?? 'placeholder'}
-          </p>
-        </div>
+        {#if currentPhase === "complaint" || currentPhase === "diagnosis"}
+          <MedicalStoryBodyModel
+            title="Live 3D Body Board"
+            subtitle={scene3dPlaceholder?.description ?? "Players are choosing a complaint location on the body model."}
+          />
+        {:else}
+          <div class="w-full h-48 rounded-2xl border-2 border-dashed border-gray-700 flex items-center justify-center">
+            <p class="text-gray-600 text-sm">
+              🎬 3D Scene: {scene3dPlaceholder?.type ?? 'placeholder'}
+            </p>
+          </div>
+        {/if}
       </div>
 
     {:else if subPhase === "voting"}
@@ -357,19 +361,30 @@
         <h2 class="text-3xl font-black text-emerald-400">{phaseLabels[currentPhase]} — Winner!</h2>
 
         {#if phaseWinner}
-          <!-- TODO: Replace with 3D winner celebration scene (Three.js) -->
-          <div class="bg-gradient-to-br from-amber-900/50 to-yellow-900/50 border-2 border-amber-500 rounded-2xl p-8 inline-block">
-            <p class="text-2xl font-bold text-white mb-2">"{phaseWinner.text}"</p>
+          <div
+            class="grid gap-6 items-center w-full max-w-5xl mx-auto"
+            style={phaseWinner.bodyPart ? "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);" : ""}
+          >
             {#if phaseWinner.bodyPart}
-              <p class="text-lg text-amber-200">📍 {phaseWinner.bodyPart}</p>
+              <MedicalStoryBodyModel
+                selectedPart={phaseWinner.bodyPart}
+                title="Winning Player Model"
+                subtitle={`${getPlayerName(phaseWinner.playerId)} nailed the location: ${phaseWinner.bodyPart}`}
+              />
             {/if}
-            {#if phaseWinner.action}
-              <p class="text-lg text-amber-200">⚡ {phaseWinner.action}</p>
-            {/if}
-            <p class="text-lg text-gray-300 mt-2">by {getPlayerName(phaseWinner.playerId)}</p>
-            <p class="text-xl text-amber-300 font-bold mt-1">
-              {phaseWinner.voteCount} vote{phaseWinner.voteCount !== 1 ? 's' : ''} — +{phasePoints[phaseWinner.playerId] ?? 0} pts
-            </p>
+            <div class="bg-gradient-to-br from-amber-900/50 to-yellow-900/50 border-2 border-amber-500 rounded-2xl p-8 inline-block">
+              <p class="text-2xl font-bold text-white mb-2">"{phaseWinner.text}"</p>
+              {#if phaseWinner.bodyPart}
+                <p class="text-lg text-amber-200">📍 {phaseWinner.bodyPart}</p>
+              {/if}
+              {#if phaseWinner.action}
+                <p class="text-lg text-amber-200">⚡ {phaseWinner.action}</p>
+              {/if}
+              <p class="text-lg text-gray-300 mt-2">by {getPlayerName(phaseWinner.playerId)}</p>
+              <p class="text-xl text-amber-300 font-bold mt-1">
+                {phaseWinner.voteCount} vote{phaseWinner.voteCount !== 1 ? 's' : ''} — +{phasePoints[phaseWinner.playerId] ?? 0} pts
+              </p>
+            </div>
           </div>
         {:else}
           <p class="text-xl text-gray-400">No submissions this phase.</p>

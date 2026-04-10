@@ -16,6 +16,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import MedicalStoryBodyModel from "../../components/MedicalStoryBodyModel.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -307,6 +308,13 @@
     selectedPatient !== selectedNurse &&
     selectedDoctor !== selectedNurse;
 
+  $: requiresBodyPart = bodyParts.length > 0;
+  $: requiresAction = actions.length > 0;
+  $: canSubmitEntry =
+    Boolean(submissionText.trim()) &&
+    (!requiresBodyPart || Boolean(selectedBodyPart)) &&
+    (!requiresAction || Boolean(selectedAction));
+
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   onMount(() => {
@@ -463,9 +471,15 @@
         <!-- Body part selector (complaint/diagnosis) -->
         {#if bodyParts.length > 0}
           <div class="space-y-2">
-            <p class="text-xs text-gray-400 uppercase tracking-widest">Select body part</p>
-            <!-- TODO: Replace with 3D body model selector (Three.js) -->
-            <!-- Placeholder: {scene3dPlaceholder?.description ?? ''} -->
+            <p class="text-xs text-gray-400 uppercase tracking-widest">Select body part *</p>
+            <MedicalStoryBodyModel
+              allowedParts={bodyParts}
+              bind:selectedPart={selectedBodyPart}
+              interactive={true}
+              title="3D Body Selector"
+              subtitle={scene3dPlaceholder?.description ?? "Tap the body model to mark where the complaint is happening."}
+              compact={true}
+            />
             <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
               {#each bodyParts as part}
                 <button
@@ -485,9 +499,7 @@
         <!-- Action selector (procedure) -->
         {#if actions.length > 0}
           <div class="space-y-2">
-            <p class="text-xs text-gray-400 uppercase tracking-widest">Select action</p>
-            <!-- TODO: Replace with 3D action preview animations (Three.js) -->
-            <!-- Placeholder: {scene3dPlaceholder?.description ?? ''} -->
+            <p class="text-xs text-gray-400 uppercase tracking-widest">Select action *</p>
             <div class="grid grid-cols-3 gap-2">
               {#each actions as actionItem}
                 <button
@@ -510,14 +522,19 @@
 
         <button
           class="w-full py-3 rounded-xl font-bold transition-all
-            {submissionText.trim()
+            {canSubmitEntry
               ? 'bg-amber-600 text-white active:bg-amber-500 active:scale-95'
               : 'bg-gray-800 text-gray-600 cursor-not-allowed'}"
-          disabled={!submissionText.trim()}
+          disabled={!canSubmitEntry}
           on:click={submitEntry}
         >
           Submit
         </button>
+        {#if requiresBodyPart && !selectedBodyPart}
+          <p class="text-xs text-amber-300 text-center">Pick a body part to finish your answer.</p>
+        {:else if requiresAction && !selectedAction}
+          <p class="text-xs text-amber-300 text-center">Pick an action to finish your answer.</p>
+        {/if}
       {/if}
     </div>
 
@@ -570,8 +587,16 @@
       <h2 class="text-lg font-black text-emerald-400">{phaseLabels[currentPhase]} Winner!</h2>
 
       {#if phaseWinner}
-        <!-- TODO: Replace with 3D celebration scene (Three.js) -->
         <div class="bg-gradient-to-br from-amber-900/50 to-yellow-900/50 border border-amber-500 rounded-xl p-6 space-y-2">
+          {#if phaseWinner.bodyPart}
+            <MedicalStoryBodyModel
+              allowedParts={bodyParts}
+              selectedPart={phaseWinner.bodyPart}
+              title="Winning Body Part"
+              subtitle={`Chosen by ${getPlayerName(phaseWinner.playerId)}`}
+              compact={true}
+            />
+          {/if}
           <p class="text-xs text-amber-400 uppercase tracking-widest">Winner</p>
           <p class="text-lg font-bold text-white">"{phaseWinner.text}"</p>
           {#if phaseWinner.bodyPart}

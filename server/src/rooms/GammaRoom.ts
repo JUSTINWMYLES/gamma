@@ -19,7 +19,7 @@
  *   them after server validation
  */
 
-import { Room, Client } from "@colyseus/core";
+import { Room, Client, ServerError } from "@colyseus/core";
 import { RoomState } from "../schema/RoomState";
 import { PlayerState } from "../schema/PlayerState";
 import { GameConfig } from "../schema/GameConfig";
@@ -29,6 +29,10 @@ import { generateRoomCode } from "../utils/rng";
 import { meter, tracer } from "../telemetry";
 import { SpanStatusCode, type Span } from "@opentelemetry/api";
 import { ArraySchema } from "@colyseus/schema";
+import {
+  sanitizePlayerName,
+  playerNamesMatch,
+} from "./playerNameUtils";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -98,6 +102,17 @@ export class GammaRoom extends Room<RoomState> {
       return;
     }
     this._onPlayerJoin(client, options);
+  }
+
+  onAuth(_client: Client, options: JoinOptions): boolean {
+    if (options.role !== "player") return true;
+
+    const incomingName = sanitizePlayerName(options.name);
+    if (this._findConnectedPlayerByName(incomingName)) {
+      throw new ServerError(4002, `The name "${incomingName}" is already taken in this lobby.`);
+    }
+
+    return true;
   }
 
   async onLeave(client: Client, consented: boolean): Promise<void> {
@@ -172,7 +187,7 @@ export class GammaRoom extends Room<RoomState> {
     // sessionId-based check above won't match.  If there's a disconnected
     // player with the same name, reclaim that slot — preserving score and
     // all game-specific state.
-    const incomingName = (options.name ?? "Player").slice(0, 20);
+    const incomingName = sanitizePlayerName(options.name);
     const disconnected = this._findDisconnectedPlayerByName(incomingName);
 
     if (disconnected) {
@@ -230,14 +245,19 @@ export class GammaRoom extends Room<RoomState> {
   /**
    * Find a disconnected player with the given name.
    * Returns the first match, or null if none found.
-   *
-   * Edge case: if multiple disconnected players share the same name,
-   * we return the first one found (Map iteration order = insertion order).
-   * In practice, duplicate names in the same room are rare.
    */
   private _findDisconnectedPlayerByName(name: string): PlayerState | null {
     for (const player of this.state.players.values()) {
-      if (!player.isConnected && player.name === name) {
+      if (!player.isConnected && playerNamesMatch(player.name, name)) {
+        return player;
+      }
+    }
+    return null;
+  }
+
+  private _findConnectedPlayerByName(name: string): PlayerState | null {
+    for (const player of this.state.players.values()) {
+      if (player.isConnected && playerNamesMatch(player.name, name)) {
         return player;
       }
     }
