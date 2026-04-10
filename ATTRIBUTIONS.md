@@ -95,6 +95,10 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer during `registry-06-sound-replication` as the target reference sound players must replicate
   - Changes: none
 
+"The Entertainer" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+http://creativecommons.org/licenses/by/4.0/
+
 ## Short-form in-app attribution
 
 A shortened attribution line is displayed in the TV UI while each CC BY track is actively playing, with a link to the CC BY 4.0 license and this file for full details.
