@@ -11,6 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 	"github.com/JUSTINWMYLES/gamma/operator/internal/controller"
@@ -39,12 +40,18 @@ func main() {
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
+	if zapLogLevel := flag.CommandLine.Lookup("zap-log-level"); zapLogLevel != nil {
+		flag.Var(zapLogLevel.Value, "log-level", "Deprecated alias for --zap-log-level.")
+	}
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
+		Scheme: scheme,
+		Metrics: metricsserver.Options{
+			BindAddress: metricsAddr,
+		},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "gamma-operator-leader-election",

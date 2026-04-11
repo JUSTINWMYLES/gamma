@@ -29,6 +29,8 @@ spec:
             - --zap-log-level={{ .Values.logLevel }}
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.port }}
+            {{- else }}
+            - --metrics-bind-address=0
             {{- end }}
           ports:
             {{- if .Values.metrics.enabled }}
