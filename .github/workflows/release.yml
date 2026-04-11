@@ -126,6 +126,30 @@ jobs:
         with:
           lfs: true
 
+      - name: Ensure Git LFS files are fetched
+        run: git lfs pull
+
+      - name: Verify LFS assets are real files (not pointers)
+        if: matrix.name == 'gamma-client' || matrix.name == 'gamma-server'
+        run: |
+          echo "Checking audio/model file sizes..."
+          fail=0
+          for f in audio/*.mp3 audio/*.wav audio/*.flac models/*.glb; do
+            [ -f "$f" ] || continue
+            size=$(stat --format=%s "$f")
+            if [ "$size" -lt 1000 ]; then
+              echo "FAIL: $f is $size bytes (LFS pointer, not real file)"
+              head -3 "$f"
+              fail=1
+            else
+              echo "  OK: $f ($size bytes)"
+            fi
+          done
+          if [ "$fail" -eq 1 ]; then
+            echo "::error::Git LFS files were not fetched. Audio will be broken in the image."
+            exit 1
+          fi
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -193,6 +217,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
+
+      - name: Ensure Git LFS files are fetched
+        run: git lfs pull
+
+      - name: Verify LFS assets are real files (not pointers)
+        run: |
+          fail=0
+          for f in audio/*.mp3 audio/*.wav audio/*.flac models/*.glb; do
+            [ -f "$f" ] || continue
+            size=$(stat --format=%s "$f")
+            if [ "$size" -lt 1000 ]; then
+              echo "FAIL: $f is $size bytes (LFS pointer)"
+              fail=1
+            else
+              echo "  OK: $f ($size bytes)"
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
 
       - uses: actions/setup-node@v4
         with:
