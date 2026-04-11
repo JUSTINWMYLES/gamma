@@ -26,7 +26,7 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           args:
             - --leader-elect={{ .Values.leaderElection.enabled }}
-            - --log-level={{ .Values.logLevel }}
+            - --zap-log-level={{ .Values.logLevel }}
             {{- if .Values.metrics.enabled }}
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             {{- end }}
