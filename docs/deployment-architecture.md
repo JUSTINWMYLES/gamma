@@ -129,7 +129,6 @@ nginx.ingress.kubernetes.io/affinity-mode: "persistent"
 nginx.ingress.kubernetes.io/session-cookie-name: "gamma-sticky"
 nginx.ingress.kubernetes.io/session-cookie-max-age: "3600"
 nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
-nginx.ingress.kubernetes.io/connection-proxy-header: "keep-alive"
 ```
 
 User-supplied annotations in the `GammaInstance` spec override these defaults.

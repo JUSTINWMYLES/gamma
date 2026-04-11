@@ -201,7 +201,7 @@
     if (typeof e === "object" && e !== null) {
       const maybeEvent = e as { type?: string; message?: unknown };
       if (maybeEvent.type === "error" || maybeEvent.type === "timeout") {
-        return "Could not reach the game server. Check the public server URL and ingress routing.";
+        return "Could not reach the game server. Check the public server URL and WebSocket routing.";
       }
       if (typeof maybeEvent.message === "string" && maybeEvent.message.length > 0) {
         return maybeEvent.message;
