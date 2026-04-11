@@ -18,6 +18,8 @@
 
 import * as Colyseus from "colyseus.js";
 
+const ROOM_CONNECT_TIMEOUT_MS = 8000;
+
 // __SERVER_URL__ is replaced at build time by Vite only when VITE_SERVER_URL is set.
 declare const __SERVER_URL__: string | undefined;
 
@@ -99,6 +101,23 @@ export function getClient(): Colyseus.Client {
   return _client;
 }
 
+async function withConnectionTimeout<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error("Timed out connecting to the room. Check server ingress and WebSocket routing."));
+        }, ROOM_CONNECT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * Create a new room as a view screen (TV, laptop browser, projector).
  * The view screen becomes the host/admin and drives the setup wizard.
@@ -107,7 +126,7 @@ export function getClient(): Colyseus.Client {
  * @deprecated TVs should no longer create rooms. Use joinAsViewer() instead.
  */
 export async function hostRoom(): Promise<Colyseus.Room> {
-  return getClient().create("gamma_room", { role: "view_screen" });
+  return withConnectionTimeout(getClient().create("gamma_room", { role: "view_screen" }));
 }
 
 /**
@@ -123,7 +142,7 @@ export async function joinAsViewer(roomCode: string): Promise<Colyseus.Room> {
     (r) => (r.metadata as { roomCode?: string })?.roomCode === roomCode.toUpperCase(),
   );
   if (!match) throw new Error(`Room "${roomCode}" not found`);
-  return client.joinById(match.roomId, { role: "view_screen" });
+  return withConnectionTimeout(client.joinById(match.roomId, { role: "view_screen" }));
 }
 
 /**
@@ -134,7 +153,7 @@ export async function joinAsViewer(roomCode: string): Promise<Colyseus.Room> {
  * @param name  Player display name (max 20 chars)
  */
 export async function createRoom(name: string): Promise<Colyseus.Room> {
-  return getClient().create("gamma_room", { role: "player", name });
+  return withConnectionTimeout(getClient().create("gamma_room", { role: "player", name }));
 }
 
 /**
@@ -152,5 +171,5 @@ export async function joinRoom(roomCode: string, name: string): Promise<Colyseus
     (r) => (r.metadata as { roomCode?: string })?.roomCode === roomCode.toUpperCase(),
   );
   if (!match) throw new Error(`Room "${roomCode}" not found`);
-  return client.joinById(match.roomId, { role: "player", name });
+  return withConnectionTimeout(client.joinById(match.roomId, { role: "player", name }));
 }

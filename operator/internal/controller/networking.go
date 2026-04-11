@@ -31,15 +31,14 @@ func (r *GammaInstanceReconciler) reconcileIngress(ctx context.Context, instance
 
 		// Build annotations — start with WebSocket defaults for nginx.
 		annotations := map[string]string{
-			"nginx.ingress.kubernetes.io/proxy-read-timeout":       "3600",
-			"nginx.ingress.kubernetes.io/proxy-send-timeout":       "3600",
-			"nginx.ingress.kubernetes.io/upstream-hash-by":         "$remote_addr",
-			"nginx.ingress.kubernetes.io/affinity":                 "cookie",
-			"nginx.ingress.kubernetes.io/affinity-mode":            "persistent",
-			"nginx.ingress.kubernetes.io/session-cookie-name":      "gamma-sticky",
-			"nginx.ingress.kubernetes.io/session-cookie-max-age":   "3600",
-			"nginx.ingress.kubernetes.io/proxy-http-version":       "1.1",
-			"nginx.ingress.kubernetes.io/connection-proxy-header":  "keep-alive",
+			"nginx.ingress.kubernetes.io/proxy-read-timeout":     "3600",
+			"nginx.ingress.kubernetes.io/proxy-send-timeout":     "3600",
+			"nginx.ingress.kubernetes.io/upstream-hash-by":       "$remote_addr",
+			"nginx.ingress.kubernetes.io/affinity":               "cookie",
+			"nginx.ingress.kubernetes.io/affinity-mode":          "persistent",
+			"nginx.ingress.kubernetes.io/session-cookie-name":    "gamma-sticky",
+			"nginx.ingress.kubernetes.io/session-cookie-max-age": "3600",
+			"nginx.ingress.kubernetes.io/proxy-http-version":     "1.1",
 		}
 
 		// Merge user-supplied annotations (user annotations take precedence).

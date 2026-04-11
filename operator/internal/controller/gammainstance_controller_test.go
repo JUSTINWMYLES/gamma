@@ -443,6 +443,8 @@ func TestReconcile_CreatesIngressWhenEnabled(t *testing.T) {
 	// Verify sticky session annotations.
 	assert.Equal(t, "cookie", ingress.Annotations["nginx.ingress.kubernetes.io/affinity"])
 	assert.Equal(t, "3600", ingress.Annotations["nginx.ingress.kubernetes.io/proxy-read-timeout"])
+	_, hasBadConnectionHeader := ingress.Annotations["nginx.ingress.kubernetes.io/connection-proxy-header"]
+	assert.False(t, hasBadConnectionHeader)
 }
 
 func TestReconcile_DoesNotCreateIngressWhenDisabled(t *testing.T) {
