@@ -107,7 +107,7 @@
 
   let musicAudio: HTMLAudioElement | null = null;
   let currentTrack: TrackId | null = null;
-  let audioBlocked = false;
+  let userHasInteracted = false;
 
   function pauseAllTracks() {
     if (musicAudio) {
@@ -162,7 +162,9 @@
 
     musicAudio.loop = true;
     musicAudio.volume = config.volume;
-    musicAudio.muted = false;
+    // Start muted if the user hasn't interacted yet — browsers allow muted autoplay.
+    // Once the user has interacted, play unmuted.
+    musicAudio.muted = !userHasInteracted;
 
     if (sourceChanged) {
       musicAudio.pause();
@@ -172,30 +174,25 @@
     }
 
     if (!sourceChanged && next === currentTrack && !musicAudio.paused) {
-      audioBlocked = false;
       return;
     }
 
     try {
       await musicAudio.play();
       currentTrack = next;
-      audioBlocked = false;
     } catch {
+      // Extremely rare edge case — browser still blocked even muted play.
       currentTrack = null;
-      audioBlocked = true;
     }
   }
 
   function onUserInteraction() {
-    if (!audioBlocked) return;
-    void syncTrackPlayback();
-  }
-
-  function enableSound() {
-    if (musicAudio) {
+    if (userHasInteracted) return;
+    userHasInteracted = true;
+    // Unmute the already-playing audio now that we have a user gesture
+    if (musicAudio && !musicAudio.paused) {
       musicAudio.muted = false;
     }
-    void syncTrackPlayback();
   }
 
   function describeError(e: unknown): string {
@@ -607,14 +604,5 @@
         Music: Kevin MacLeod (incompetech.com) — Licensed under CC BY 4.0
       </div>
     {/if}
-  {/if}
-
-  {#if audioBlocked}
-    <div class="fixed bottom-14 right-4 z-50">
-      <button
-        class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-sm font-semibold shadow-lg"
-        on:click={enableSound}
-      >Enable sound</button>
-    </div>
   {/if}
 </div>
