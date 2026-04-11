@@ -147,8 +147,9 @@ Tarballs are used instead of zip files because the target environment is Linux a
 `tar`/`gzip` are universally available without additional tooling.
 
 The server tarball follows the [npm pack](https://docs.npmjs.com/cli/v10/commands/npm-pack)
-convention: it can be installed directly with `npm install gamma-server-<version>.tgz`
-or published to any npm-compatible registry with `npm publish gamma-server-<version>.tgz`.
+convention, so it stays as `.tgz` rather than a generic `.tar.gz`: it can be installed
+directly with `npm install gamma-server-<version>.tgz` or published to any npm-compatible
+registry with `npm publish gamma-server-<version>.tgz`.
 The package is marked `"private": true` so it will not be accidentally published to
 the public npm registry.
 

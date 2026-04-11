@@ -566,7 +566,7 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
     {
       heading: "Speed Tap Mode",
-      body: "One phone lights up with a color — race to tap it! The next phone lights up instantly. You have 20 seconds!",
+      body: "One phone lights up with a color. Tap it fast, and the next phone lights up immediately. Finish all 10 taps before time runs out!",
       bgClass: "bg-gradient-to-br from-red-900 via-orange-900 to-amber-900",
       headingColor: "text-orange-300",
       bodyColor: "text-orange-100",
@@ -574,8 +574,8 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
       icon: "⚡",
     },
     {
-      heading: "Take Turns",
-      body: "Each player gets announced on screen with 10 seconds to get in position. Watch for your name!",
+      heading: "One Player at a Time",
+      body: "Each player gets announced on screen with 10 seconds to get in position. Everyone completes the full sequence on their own turn.",
       bgClass: "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
       headingColor: "text-emerald-300",
       bodyColor: "text-emerald-100",
@@ -583,13 +583,13 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
       icon: "👆",
     },
     {
-      heading: "Ready?",
-      body: "The host will confirm once all phones are placed. Then the tapping begins!",
+      heading: "Three Ways to Win",
+      body: "Round points go to the fastest overall time, the fastest average press, and the fastest single press.",
       bgClass: "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
       headingColor: "text-violet-300",
       bodyColor: "text-violet-100",
       fontClass: "font-black",
-      icon: "🏁",
+      icon: "🏆",
     },
   ],
 

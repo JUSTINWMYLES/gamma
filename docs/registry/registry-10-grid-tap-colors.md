@@ -8,18 +8,14 @@ registry-10-grid-tap-colors
 
 ## One-line Summary
 
-Phones laid on the ground form a grid; players race to tap phones that light up with colors.
+Phones laid on the ground form a grid; players take turns racing through a full lit-phone sequence.
 
 ## Long Description
 
 Arrange phones face-up in a grid formation. The TV shows the required layout pattern.
-In Speed Tap mode, one phone at a time lights up with a full-screen color — race to
-tap it! Each player gets announced by name with 10 seconds to get in position before
-their turn. Rounds are capped at 20 seconds. With fewer than 8 players, one player
-goes at a time. With 8–15, two compete head-to-head. With 16+, four at once.
-
-In Color Sequence mode, watch the TV display a color order, memorize it, then tap the
-correct phones in sequence.
+Each player is announced by name, gets 10 seconds to get in position, then one phone at a time
+lights up with a full-screen color. Tap that phone and the next phone lights up immediately.
+Every player completes the full random sequence across the entire grid. Rounds are capped at 20 seconds.
 
 ## Target Platforms
 
@@ -28,14 +24,14 @@ correct phones in sequence.
 ## Core Mechanics
 
 - Grid phone layout with server-computed optimal patterns for 2–32 players
-- Speed Tap: phone lights up → tap → next phone → repeat (20s cap per player)
-- Color Sequence: watch sequence → memorize → replicate by tapping phones
-- Player announcement with 10-second get-in-position countdown
+- Sequential speed taps: phone lights up → tap → next phone → repeat (20s cap per player)
+- Player announcement with 10-second get-in-position countdown before each turn
+- Round metrics: overall completion time, average press time, fastest press time
 - Host confirms grid placement before game starts
 
 ## Player Interactions
 
-- Controls: tap phone when lit (Speed Tap) or in sequence order (Color Sequence)
+- Controls: tap the currently lit phone as fast as possible
 - Host: confirms phones are placed via "Phones Are Ready" button
 - Feedback: full-screen color flash, tap confirmation, progress bar
 
@@ -46,8 +42,8 @@ correct phones in sequence.
 ## Outputs / Network
 
 - Messages: grid_setup, grid_phone_assignment, grid_round_start, grid_player_announce,
-  grid_group_start, grid_phone_light, grid_tap_confirmed, grid_player_complete,
-  grid_group_results, grid_round_scores, grid_waiting_for_admin
+  grid_group_start, grid_phone_light, grid_tap_confirmed, grid_tap_progress,
+  grid_player_complete, grid_group_results, grid_round_scores, grid_waiting_for_admin
 
 ## UI Flow
 
@@ -55,20 +51,21 @@ correct phones in sequence.
 2. Grid setup → TV shows layout, phones show numbers
 3. Host confirms phones placed → game_input: admin_grid_ready
 4. Round start → all phones go white
-5. Player announced (10s countdown) → group starts
-6. Speed Tap: phones light up one at a time, 20s cap
-7. Results shown → next player → round scores
+5. Player announced (10s countdown) → turn starts
+6. One phone lights at a time until the full sequence is completed or time expires
+7. Turn results shown → next player → round scores
 
 ## State Machine
 
 - `game_loading` → `instructions` → `countdown` → `in_round` → `round_end` → `scoreboard`
-- Sub-phases: setup → waiting_admin → white_ready → player_announce → countdown → speed_tap/color_input → group_results → round_scores
+- Sub-phases: setup → waiting_admin → white_ready → player_announce → countdown → speed_tap → group_results → round_scores
 
 ## Data Structures
 
 - PhoneAssignment: { phoneId, displayNumber, color, groupIndex }
 - GridLayout: { cols, rows }
 - SpeedTapPlayerResult: { playerId, completionTimeMs, tapTimesMs[], completed }
+- Display metrics: overall completion, average press time, fastest press time
 
 ## Grid Layout Patterns
 
@@ -106,8 +103,7 @@ correct phones in sequence.
 ## Test Cases / Acceptance Criteria
 
 - Grid layout has enough cells for all player counts (2–32)
-- Speed tap scoring awards completion bonuses correctly
-- Color sequence errors counted accurately
+- Speed tap scoring awards the three timing categories correctly
 - Instruction slides are defined (5 slides)
 - Admin grid ready message proceeds past setup phase
 
@@ -117,4 +113,4 @@ correct phones in sequence.
 2. ✅ Player component with setup, admin ready, tap phases
 3. ✅ TV component with grid visualization and player announcements
 4. ✅ Instruction slides (5 themed slides)
-5. ✅ Unit tests for grid layout and scoring
+5. ✅ Unit tests for grid layout and timing-category scoring

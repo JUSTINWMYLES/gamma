@@ -95,16 +95,41 @@ export interface SpeedTapPlayerResult {
   completed: boolean;
 }
 
+export interface SpeedTapMetrics {
+  tapCount: number;
+  completionTimeMs: number | null;
+  averageTapTimeMs: number | null;
+  fastestTapTimeMs: number | null;
+}
+
+/**
+ * Derive the player-facing timing metrics for a completed speed-tap turn.
+ */
+export function getSpeedTapMetrics(result: SpeedTapPlayerResult): SpeedTapMetrics {
+  const tapCount = result.tapTimesMs.length;
+  const averageTapTimeMs = tapCount > 0
+    ? Math.round(result.tapTimesMs.reduce((sum, time) => sum + time, 0) / tapCount)
+    : null;
+  const fastestTapTimeMs = tapCount > 0 ? Math.min(...result.tapTimesMs) : null;
+
+  return {
+    tapCount,
+    completionTimeMs: result.completed ? result.completionTimeMs : null,
+    averageTapTimeMs,
+    fastestTapTimeMs,
+  };
+}
+
 /**
  * Score a Mode 1 (Speed Tap) round.
  *
  * Points breakdown:
- *   - Fastest completion: +300
- *   - Second fastest:     +200
- *   - Third fastest:      +100
- *   - Per completed tap:  +10
- *   - Fastest individual tap in the round: +100
- *   - Slowest individual tap penalty:       -50
+ *   - Fastest overall completion: +100
+ *   - Fastest average tap time:   +100
+ *   - Fastest individual tap:     +100
+ *
+ * Ties share the category win and each tied player receives the full category
+ * bonus. Average and overall time only consider fully completed turns.
  *
  * @param results All player results for the round.
  * @returns Map of playerId → points earned.
@@ -113,50 +138,47 @@ export function scoreSpeedTapRound(results: SpeedTapPlayerResult[]): Map<string,
   const scores = new Map<string, number>();
   if (results.length === 0) return scores;
 
-  // Initialize scores
   for (const r of results) {
     scores.set(r.playerId, 0);
   }
 
-  // Completion order (only completed players)
-  const completed = results
-    .filter((r) => r.completed)
-    .sort((a, b) => a.completionTimeMs - b.completionTimeMs);
+  awardCategory(scores, results.filter((result) => result.completed), (result) => result.completionTimeMs);
+  awardCategory(
+    scores,
+    results.filter((result) => result.completed && result.tapTimesMs.length > 0),
+    (result) => getSpeedTapMetrics(result).averageTapTimeMs,
+  );
+  awardCategory(
+    scores,
+    results.filter((result) => result.tapTimesMs.length > 0),
+    (result) => getSpeedTapMetrics(result).fastestTapTimeMs,
+  );
 
-  const completionBonuses = [300, 200, 100];
-  for (let i = 0; i < completed.length && i < completionBonuses.length; i++) {
-    const prev = scores.get(completed[i].playerId) ?? 0;
-    scores.set(completed[i].playerId, prev + completionBonuses[i]);
-  }
+  return scores;
+}
 
-  // Points per tap
-  for (const r of results) {
-    const tapPoints = r.tapTimesMs.length * 10;
-    const prev = scores.get(r.playerId) ?? 0;
-    scores.set(r.playerId, prev + tapPoints);
-  }
+function awardCategory(
+  scores: Map<string, number>,
+  candidates: SpeedTapPlayerResult[],
+  metric: (result: SpeedTapPlayerResult) => number | null,
+): void {
+  if (candidates.length === 0) return;
 
-  // Fastest individual tap bonus
-  const allTaps: { playerId: string; time: number }[] = [];
-  for (const r of results) {
-    for (const t of r.tapTimesMs) {
-      allTaps.push({ playerId: r.playerId, time: t });
+  let bestValue: number | null = null;
+  for (const candidate of candidates) {
+    const value = metric(candidate);
+    if (value === null) continue;
+    if (bestValue === null || value < bestValue) {
+      bestValue = value;
     }
   }
 
-  if (allTaps.length > 0) {
-    allTaps.sort((a, b) => a.time - b.time);
-    const fastestTap = allTaps[0];
-    const prev = scores.get(fastestTap.playerId) ?? 0;
-    scores.set(fastestTap.playerId, prev + 100);
+  if (bestValue === null) return;
 
-    // Slowest individual tap penalty
-    const slowestTap = allTaps[allTaps.length - 1];
-    const prevSlow = scores.get(slowestTap.playerId) ?? 0;
-    scores.set(slowestTap.playerId, prevSlow - 50);
+  for (const candidate of candidates) {
+    if (metric(candidate) !== bestValue) continue;
+    scores.set(candidate.playerId, (scores.get(candidate.playerId) ?? 0) + 100);
   }
-
-  return scores;
 }
 
 // ── Mode 2: Color Sequence Memory ────────────────────────────────────────────
