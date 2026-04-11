@@ -30,8 +30,8 @@ func newScheme() *runtime.Scheme {
 	return s
 }
 
-func boolPtr(b bool) *bool       { return &b }
-func int32Ptr(i int32) *int32    { return &i }
+func boolPtr(b bool) *bool    { return &b }
+func int32Ptr(i int32) *int32 { return &i }
 
 func newTestInstance(name, namespace string) *gammav1alpha1.GammaInstance {
 	return &gammav1alpha1.GammaInstance{
@@ -47,8 +47,9 @@ func newTestInstance(name, namespace string) *gammav1alpha1.GammaInstance {
 				Port:     2567,
 			},
 			Client: gammav1alpha1.ClientSpec{
-				Image:    "ghcr.io/gamma/gamma-client:latest",
-				Replicas: int32Ptr(2),
+				Image:     "ghcr.io/gamma/gamma-client:latest",
+				Replicas:  int32Ptr(2),
+				ServerURL: "wss://gamma.example.com/ws",
 			},
 			Redis: gammav1alpha1.RedisSpec{
 				Enabled: boolPtr(true),
@@ -132,15 +133,80 @@ func TestReconcile_CreatesClientDeployment(t *testing.T) {
 	assert.Equal(t, "ghcr.io/gamma/gamma-client:latest", deploy.Spec.Template.Spec.Containers[0].Image)
 	assert.Equal(t, int32(2), *deploy.Spec.Replicas)
 
-	// Verify VITE_SERVER_URL env var.
+	// Verify runtime-injected GAMMA_SERVER_URL env var.
 	found := false
 	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
-		if env.Name == "VITE_SERVER_URL" {
+		if env.Name == "GAMMA_SERVER_URL" {
 			found = true
-			assert.Contains(t, env.Value, "my-gamma-server")
+			assert.Equal(t, "wss://gamma.example.com/ws", env.Value)
 		}
 	}
-	assert.True(t, found, "VITE_SERVER_URL env var should be set")
+	assert.True(t, found, "GAMMA_SERVER_URL env var should be set")
+}
+
+func TestReconcile_DerivesClientServerURLFromIngress(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Client.ServerURL = ""
+	instance.Spec.Networking.Ingress = gammav1alpha1.IngressSpec{
+		Enabled:   true,
+		Host:      "gamma.example.com",
+		ClassName: "nginx",
+		TLS: gammav1alpha1.IngressTLSSpec{
+			Enabled: true,
+		},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	deploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-client", Namespace: "default"}, deploy)
+	require.NoError(t, err)
+
+	found := false
+	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
+		if env.Name == "GAMMA_SERVER_URL" {
+			found = true
+			assert.Equal(t, "wss://gamma.example.com/ws", env.Value)
+		}
+	}
+	assert.True(t, found, "GAMMA_SERVER_URL env var should be derived from ingress")
+}
+
+func TestReconcile_DoesNotInjectClientServerURLWithoutIngressOrOverride(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Client.ServerURL = ""
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	deploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-client", Namespace: "default"}, deploy)
+	require.NoError(t, err)
+
+	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
+		assert.NotEqual(t, "GAMMA_SERVER_URL", env.Name)
+	}
 }
 
 func TestReconcile_CreatesRedisResources(t *testing.T) {

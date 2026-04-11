@@ -30,6 +30,7 @@ spec:
   client:
     image: ghcr.io/gamma/gamma-client:v1.0.0
     replicas: 2
+    serverUrl: wss://gamma.example.com/ws
     resources:
       requests:
         cpu: "50m"

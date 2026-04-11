@@ -26,6 +26,15 @@ There is no need to run separate containers for the TV and phone interfaces.
 `client/phone` and `client/tv` in the repository are legacy packages that are not
 built or deployed; all production traffic goes through `client/app`.
 
+### Runtime server URL injection
+
+The client image is a static SPA and must not have a deployment-specific server URL baked into the image.
+
+At deployment time, the public Colyseus URL is provided via runtime config:
+- the client container renders `/config.js` from `GAMMA_SERVER_URL`
+- the SPA reads `window.__GAMMA_CONFIG__.serverUrl` at runtime
+- when no explicit URL is injected, the SPA derives the server URL from `window.location`
+
 ---
 
 ## Kubernetes Deployment (Operator-Managed)

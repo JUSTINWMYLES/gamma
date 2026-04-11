@@ -168,7 +168,8 @@ See `.env.example` for full documentation.
 |---|---|---|
 | `PORT` | `2567` | Colyseus server port |
 | `LOG_LEVEL` | `info` | Server log verbosity |
-| `VITE_SERVER_URL` | `ws://localhost:2567` | WebSocket URL for browser clients |
+| `VITE_SERVER_URL` | `ws://localhost:2567` | Local-development override for browser clients |
+| `GAMMA_SERVER_URL` | _(unset)_ | Runtime Colyseus URL injected into the deployed client container |
 | `CLIENT_PORT` | `5173` | Vite dev server port for the unified client |
 | `RECONNECT_GRACE_SECONDS` | `30` | How long to hold disconnected player slots |
 | `KLIPY_API_KEY` | _(empty)_ | API key for Klipy GIF search (used by Audio Overlay game) |

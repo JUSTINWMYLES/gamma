@@ -29,8 +29,13 @@ func (r *GammaInstanceReconciler) reconcileClientDeployment(ctx context.Context,
 	return r.createOrUpdate(ctx, instance, deploy, func() error {
 		deploy.Labels = labels
 
-		serverURL := fmt.Sprintf("ws://%s-server.%s.svc.cluster.local:%d",
-			instance.Name, instance.Namespace, instance.Spec.Server.ServerPort())
+		clientEnv := []corev1.EnvVar{}
+		if serverURL := runtimeClientServerURL(instance); serverURL != "" {
+			clientEnv = append(clientEnv, corev1.EnvVar{
+				Name:  "GAMMA_SERVER_URL",
+				Value: serverURL,
+			})
+		}
 
 		deploy.Spec = appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -53,12 +58,7 @@ func (r *GammaInstanceReconciler) reconcileClientDeployment(ctx context.Context,
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							Env: []corev1.EnvVar{
-								{
-									Name:  "VITE_SERVER_URL",
-									Value: serverURL,
-								},
-							},
+							Env:       clientEnv,
 							Resources: instance.Spec.Client.Resources,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -87,6 +87,22 @@ func (r *GammaInstanceReconciler) reconcileClientDeployment(ctx context.Context,
 		}
 		return nil
 	})
+}
+
+func runtimeClientServerURL(instance *gammav1alpha1.GammaInstance) string {
+	if instance.Spec.Client.ServerURL != "" {
+		return instance.Spec.Client.ServerURL
+	}
+
+	if instance.Spec.Networking.Ingress.Enabled && instance.Spec.Networking.Ingress.Host != "" {
+		protocol := "ws"
+		if instance.Spec.Networking.Ingress.TLS.Enabled {
+			protocol = "wss"
+		}
+		return fmt.Sprintf("%s://%s/ws", protocol, instance.Spec.Networking.Ingress.Host)
+	}
+
+	return ""
 }
 
 // reconcileClientService ensures the client Service exists.

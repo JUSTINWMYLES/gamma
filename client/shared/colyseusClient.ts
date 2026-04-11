@@ -21,24 +21,69 @@ import * as Colyseus from "colyseus.js";
 // __SERVER_URL__ is replaced at build time by Vite only when VITE_SERVER_URL is set.
 declare const __SERVER_URL__: string | undefined;
 
+declare global {
+  interface Window {
+    __GAMMA_CONFIG__?: {
+      serverUrl?: string;
+    };
+  }
+}
+
+function isBrowserReachableServerUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+      return false;
+    }
+
+    // Browsers outside the cluster cannot resolve Kubernetes service DNS names.
+    if (hostname.endsWith(".svc") || hostname.includes(".svc.")) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function resolveServerUrl(): string {
+  // 0. Runtime config injected by the container at deployment time.
+  if (typeof window !== "undefined") {
+    const runtimeServerUrl = window.__GAMMA_CONFIG__?.serverUrl;
+    if (runtimeServerUrl && isBrowserReachableServerUrl(runtimeServerUrl)) {
+      return runtimeServerUrl;
+    }
+  }
+
   // 1. Build-time override (only set when VITE_SERVER_URL env var is present at build)
-  if (typeof __SERVER_URL__ !== "undefined" && __SERVER_URL__) {
+  if (typeof __SERVER_URL__ !== "undefined" && __SERVER_URL__ && isBrowserReachableServerUrl(__SERVER_URL__)) {
     return __SERVER_URL__;
   }
 
   // 2. Explicit runtime env var
-  if (import.meta.env?.VITE_SERVER_URL) {
+  if (import.meta.env?.VITE_SERVER_URL && isBrowserReachableServerUrl(import.meta.env.VITE_SERVER_URL as string)) {
     return import.meta.env.VITE_SERVER_URL as string;
   }
 
-  // 3. Auto-derive from page origin so cross-device LAN access works out of the box.
-  //    The Vite dev servers (ports 5173/5174) are served from the same host as
-  //    the Colyseus server (port 2567).  Using the page's hostname keeps this
-  //    working whether the user opens via localhost, 127.0.0.1, or a LAN IP.
+  // 3. Auto-derive from page origin so LAN/dev and public ingress both work.
+  //    In Kubernetes, the ingress exposes the Colyseus server under /ws.
   if (typeof window !== "undefined") {
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${window.location.hostname}:2567`;
+    const isDefaultPort =
+      (window.location.protocol === "https:" && window.location.port === "443") ||
+      (window.location.protocol === "http:" && window.location.port === "80") ||
+      window.location.port === "";
+    const originPort = isDefaultPort ? "" : `:${window.location.port}`;
+    const isViteDevPort = window.location.port === "5173" || window.location.port === "5174";
+
+    if (isViteDevPort) {
+      return `${protocol}://${window.location.hostname}:2567`;
+    }
+
+    return `${protocol}://${window.location.hostname}${originPort}/ws`;
   }
 
   // Fallback for SSR / test environments

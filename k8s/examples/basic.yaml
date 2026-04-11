@@ -21,6 +21,9 @@ spec:
   client:
     image: ghcr.io/gamma/gamma-client:latest
     replicas: 1
+    # Optional when the app is served from the same public host and can derive /ws.
+    # Set explicitly when the Colyseus endpoint is on a different host or path.
+    # serverUrl: wss://gamma.example.com/ws
 
   redis:
     enabled: true
