@@ -204,8 +204,14 @@ jobs:
       - name: Build client/app
         run: npm run build --workspace=client/app
 
+      - name: Set server package version for release asset
+        run: |
+          VERSION="${{ needs.version.outputs.new_version }}"
+          npm pkg set version="$VERSION" --prefix server
+
       - name: Pack server npm tarball
-        run: cd server && npm pack --pack-destination ..
+        working-directory: server
+        run: npm pack --pack-destination ..
 
       - name: Create client build tarball
         run: |
@@ -219,5 +225,5 @@ jobs:
           name: v${{ needs.version.outputs.new_version }}
           generate_release_notes: true
           files: |
-            gamma-server-*.tgz
-            gamma-client-*.tar.gz
+            gamma-server-${{ needs.version.outputs.new_version }}.tgz
+            gamma-client-${{ needs.version.outputs.new_version }}.tar.gz

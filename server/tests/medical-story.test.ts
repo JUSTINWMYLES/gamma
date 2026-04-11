@@ -528,4 +528,34 @@ describe("integration: full round flow", () => {
     expect(isValidAction("Punch")).toBe(true);
     expect(isValidAction("Kick")).toBe(false);
   });
+
+  it("keeps bystanders fully eligible for submissions and votes", () => {
+    const playerIds = ["p1", "p2", "p3", "p4"];
+    const roles = tallyRoleVotes(
+      new Map([
+        ["p1", { patient: "p1", doctor: "p2", nurse: "p3" }],
+        ["p2", { patient: "p1", doctor: "p2", nurse: "p3" }],
+      ]),
+      playerIds,
+      () => 0,
+    );
+
+    expect(roles.get("p4")).toBe("bystander");
+
+    const submissions: Submission[] = [
+      { playerId: "p4", text: "Deploy the jazz defibrillator", action: "Shock" },
+      { playerId: "p2", text: "Reboot the ankle", action: "Shake" },
+    ];
+    const votes = new Map([
+      ["p1", "p4"],
+      ["p3", "p4"],
+      ["p4", "p2"],
+    ]);
+
+    const results = tallySubmissionVotes(submissions, votes);
+
+    expect(results[0].playerId).toBe("p4");
+    expect(results[0].action).toBe("Shock");
+    expect(results[0].voteCount).toBe(2);
+  });
 });

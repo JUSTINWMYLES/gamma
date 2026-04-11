@@ -220,6 +220,8 @@ export default class MedicalStoryGame extends BaseGame {
         action: s.action,
       }));
 
+      const expectedVoterIds = playerIds.filter((playerId) => submissions.some((submission) => submission.playerId !== playerId));
+
       this.broadcast("ms_voting_phase", {
         phase,
         submissions: submissionList,
@@ -228,7 +230,7 @@ export default class MedicalStoryGame extends BaseGame {
         scene3dPlaceholder: this._get3DPlaceholder(phase, "voting"),
       });
 
-      await this._waitForVotes(playerIds);
+      await this._waitForVotes(expectedVoterIds);
 
       // ── Tally and score ───────────────────────────────────────────────
       const results = tallySubmissionVotes(submissions, this.round.phaseVotes);

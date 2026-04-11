@@ -31,6 +31,13 @@
     | "voting"
     | "phase_result"
     | "round_recap";
+  type VotingSubmission = {
+    playerId: string;
+    text: string;
+    bodyPart?: string;
+    action?: string;
+  };
+  type PhaseResult = VotingSubmission & { voteCount: number };
   let subPhase: SubPhase = "waiting";
 
   // ── Role voting ──────────────────────────────────────────────────────
@@ -44,6 +51,7 @@
   let selectedDoctor = "";
   let selectedNurse = "";
   let roleVoteSubmitted = false;
+  type RoleSelectionKey = "selectedPatient" | "selectedDoctor" | "selectedNurse";
 
   // ── Role assignment ──────────────────────────────────────────────────
   let roles: Record<string, string> = {};
@@ -65,36 +73,22 @@
   let bodyParts: string[] = [];
   let actions: string[] = [];
 
-  // 3D placeholder data
-  let scene3dPlaceholder: { type: string; description: string } | null = null;
-
   // ── Voting phase ─────────────────────────────────────────────────────
   let votingDurationMs = 30_000;
   let votingTimeLeft = 0;
   let votingEndTime = 0;
   let votingTimer: ReturnType<typeof setInterval> | null = null;
-  let votingSubmissions: {
-    playerId: string;
-    text: string;
-    bodyPart?: string;
-    action?: string;
-  }[] = [];
+  let votingSubmissions: VotingSubmission[] = [];
   let votedFor = "";
   let voteSubmitted = false;
 
   // ── Phase result ─────────────────────────────────────────────────────
-  let phaseResults: {
-    playerId: string;
-    text: string;
-    bodyPart?: string;
-    action?: string;
-    voteCount: number;
-  }[] = [];
-  let phaseWinner: typeof phaseResults[0] | null = null;
+  let phaseResults: PhaseResult[] = [];
+  let phaseWinner: PhaseResult | null = null;
   let phasePoints: Record<string, number> = {};
 
   // ── Round recap ──────────────────────────────────────────────────────
-  let phaseWinners: Record<string, typeof phaseWinner> = {};
+  let phaseWinners: Record<string, PhaseResult | null> = {};
   let roundScores: Record<string, number> = {};
   let recapRoles: Record<string, string> = {};
 
@@ -123,6 +117,12 @@
     procedure: "🏥",
     catchphrase: "🎤",
   };
+
+  const roleOptions: { role: string; emoji: string; label: string; bind: RoleSelectionKey }[] = [
+    { role: "patient", emoji: "🤒", label: "Patient", bind: "selectedPatient" },
+    { role: "doctor", emoji: "👨‍⚕️", label: "Doctor", bind: "selectedDoctor" },
+    { role: "nurse", emoji: "👩‍⚕️", label: "Nurse", bind: "selectedNurse" },
+  ];
 
   // ── Message handlers ─────────────────────────────────────────────────
 
@@ -154,7 +154,6 @@
     durationMs: number;
     bodyParts?: string[];
     actions?: string[];
-    scene3dPlaceholder?: { type: string; description: string };
   }) {
     subPhase = "submission";
     currentPhase = data.phase;
@@ -162,7 +161,6 @@
     submissionEndTime = Date.now() + data.durationMs;
     bodyParts = data.bodyParts ?? [];
     actions = data.actions ?? [];
-    scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     submissionText = "";
     selectedBodyPart = "";
     selectedAction = "";
@@ -188,14 +186,12 @@
     phase: typeof currentPhase;
     submissions: typeof votingSubmissions;
     durationMs: number;
-    scene3dPlaceholder?: { type: string; description: string };
   }) {
     subPhase = "voting";
     currentPhase = data.phase;
     votingDurationMs = data.durationMs;
     votingEndTime = Date.now() + data.durationMs;
     votingSubmissions = data.submissions.filter((s) => s.playerId !== me?.id);
-    scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     votedFor = "";
     voteSubmitted = false;
 
@@ -214,14 +210,12 @@
     results: typeof phaseResults;
     phaseWinner: typeof phaseWinner;
     points: Record<string, number>;
-    scene3dPlaceholder?: { type: string; description: string };
   }) {
     subPhase = "phase_result";
     currentPhase = data.phase;
     phaseResults = data.results;
     phaseWinner = data.phaseWinner;
     phasePoints = data.points;
-    scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     clearAllTimers();
   }
 
@@ -285,6 +279,40 @@
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
   }
 
+  function getRoleSelection(bind: RoleSelectionKey): string {
+    if (bind === "selectedPatient") return selectedPatient;
+    if (bind === "selectedDoctor") return selectedDoctor;
+    return selectedNurse;
+  }
+
+  function setRoleSelection(bind: RoleSelectionKey, playerId: string) {
+    if (bind === "selectedPatient") selectedPatient = playerId;
+    else if (bind === "selectedDoctor") selectedDoctor = playerId;
+    else selectedNurse = playerId;
+  }
+
+  function isPickedForAnotherRole(bind: RoleSelectionKey, playerId: string): boolean {
+    return (
+      (bind !== "selectedPatient" && selectedPatient === playerId) ||
+      (bind !== "selectedDoctor" && selectedDoctor === playerId) ||
+      (bind !== "selectedNurse" && selectedNurse === playerId)
+    );
+  }
+
+  function isRoleChoiceDisabled(bind: RoleSelectionKey, playerId: string): boolean {
+    return getRoleSelection(bind) !== playerId && isPickedForAnotherRole(bind, playerId);
+  }
+
+  function getRoleChoiceClass(bind: RoleSelectionKey, playerId: string): string {
+    if (getRoleSelection(bind) === playerId) {
+      return "border-blue-400 bg-blue-600 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.45)]";
+    }
+    if (isRoleChoiceDisabled(bind, playerId)) {
+      return "border-gray-800 bg-gray-900/70 text-gray-600 cursor-not-allowed opacity-60";
+    }
+    return "border-gray-700 bg-gray-800 text-gray-300 active:border-blue-500";
+  }
+
   function getPlayerName(id: string): string {
     return state.players.get(id)?.name ?? id;
   }
@@ -297,6 +325,12 @@
       bystander: "👀",
     };
     return emojis[role] ?? "👤";
+  }
+
+  function submitEntryFromKeyboard(event: KeyboardEvent) {
+    if (event.key !== "Enter" || !canSubmitEntry) return;
+    event.preventDefault();
+    submitEntry();
   }
 
   // ── Reactive checks ──────────────────────────────────────────────────
@@ -334,7 +368,7 @@
   });
 </script>
 
-<div class="flex-1 flex flex-col items-center justify-center gap-4 p-4" data-testid="medical-story">
+<div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto p-4 pb-24 sm:justify-center" data-testid="medical-story">
   {#if roundSkipped}
     <!-- ── Round skipped ────────────────────────────────────────── -->
     <div class="text-center space-y-3">
@@ -365,11 +399,7 @@
           <p class="text-green-400 text-sm">Waiting for others...</p>
         </div>
       {:else}
-        {#each [
-          { role: "patient", emoji: "🤒", label: "Patient", bind: "selectedPatient" },
-          { role: "doctor", emoji: "👨‍⚕️", label: "Doctor", bind: "selectedDoctor" },
-          { role: "nurse", emoji: "👩‍⚕️", label: "Nurse", bind: "selectedNurse" },
-        ] as roleOption}
+        {#each roleOptions as roleOption}
           <div class="space-y-1">
             <p class="text-xs text-gray-400 uppercase tracking-widest">
               {roleOption.emoji} {roleOption.label}
@@ -378,14 +408,9 @@
               {#each playerList as player}
                 <button
                   class="px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
-                    {(roleOption.bind === 'selectedPatient' ? selectedPatient : roleOption.bind === 'selectedDoctor' ? selectedDoctor : selectedNurse) === player.id
-                      ? 'border-blue-500 bg-blue-900 text-white'
-                      : 'border-gray-700 bg-gray-800 text-gray-300 active:border-blue-500'}"
-                  on:click={() => {
-                    if (roleOption.bind === 'selectedPatient') selectedPatient = player.id;
-                    else if (roleOption.bind === 'selectedDoctor') selectedDoctor = player.id;
-                    else selectedNurse = player.id;
-                  }}
+                    {getRoleChoiceClass(roleOption.bind, player.id)}"
+                  disabled={isRoleChoiceDisabled(roleOption.bind, player.id)}
+                  on:click={() => setRoleSelection(roleOption.bind, player.id)}
                 >
                   {player.name}
                 </button>
@@ -459,6 +484,7 @@
             placeholder={currentPhase === "catchphrase" ? "best / greatest / most feared..." : "Type your answer..."}
             bind:value={submissionText}
             class="w-full px-4 py-3 rounded-xl bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:border-amber-500 focus:outline-none"
+            on:keydown={submitEntryFromKeyboard}
           />
           {#if currentPhase === "catchphrase"}
             <div class="text-sm text-gray-300 text-right">
@@ -476,8 +502,6 @@
               allowedParts={bodyParts}
               bind:selectedPart={selectedBodyPart}
               interactive={true}
-              title="3D Body Selector"
-              subtitle={scene3dPlaceholder?.description ?? "Tap the body model to mark where the complaint is happening."}
               compact={true}
             />
             <div class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
@@ -500,7 +524,7 @@
         {#if actions.length > 0}
           <div class="space-y-2">
             <p class="text-xs text-gray-400 uppercase tracking-widest">Select action *</p>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {#each actions as actionItem}
                 <button
                   class="px-2 py-3 rounded-xl text-sm font-bold border transition-colors
@@ -592,8 +616,6 @@
             <MedicalStoryBodyModel
               allowedParts={bodyParts}
               selectedPart={phaseWinner.bodyPart}
-              title="Winning Body Part"
-              subtitle={`Chosen by ${getPlayerName(phaseWinner.playerId)}`}
               compact={true}
             />
           {/if}

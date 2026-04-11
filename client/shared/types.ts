@@ -247,8 +247,8 @@ export const GAME_REGISTRY: GameMeta[] = [
   {
     id: "registry-10-grid-tap-colors",
     label: "Grid Tap Colors",
-    description: "Phones form a grid — tap lit phones or memorize color sequences!",
-    detailDescription: "Lay phones out in a grid formation. In Speed Tap mode, one phone lights up at a time and you race to tap it as fast as possible — the next phone lights up instantly after each tap. In Color Sequence mode, watch the TV display a color order, then memorize and tap the correct phones in sequence. With fewer than 8 players, one player goes at a time. With 8+ players, compete head-to-head. Scores are based on speed, accuracy, and having the fastest individual tap.",
+    description: "Phones form a grid — one player at a time races through a lit tap sequence!",
+    detailDescription: "Lay phones out in a grid formation. Each turn, one player is announced, then one phone lights up at a time and must be tapped before the next one appears. Every player completes the full random sequence across the whole grid. Scores are awarded for the fastest overall completion, fastest average press time, and fastest individual press.",
     activityLevel: "some",
     requiresSameRoom: true,
     requiresSecondaryDisplay: true,

@@ -6,8 +6,6 @@
   export let allowedParts: string[] = [];
   export let selectedPart = "";
   export let interactive = false;
-  export let title = "";
-  export let subtitle = "";
   export let compact = false;
 
   interface BodyTarget {
@@ -47,6 +45,7 @@
     spine: { position: [0, 0.82, -0.22], size: [0.14, 0.78, 0.12] },
     spleen: { position: [-0.2, 0.72, 0.2], size: [0.16, 0.16, 0.14] },
   };
+  const HITBOX_Y_OFFSET = -0.24;
 
   let container: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | null = null;
@@ -58,6 +57,11 @@
   let hitboxGroup: THREE.Group | null = null;
   let highlightPulse = 0;
   let loadError = "";
+  let modelLoaded = false;
+  let isDragging = false;
+  let dragMoved = false;
+  let dragStartX = 0;
+  let dragRotationStart = 0;
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const hitboxMap = new Map<string, THREE.Mesh>();
@@ -72,10 +76,10 @@
     for (const [part, mesh] of hitboxMap.entries()) {
       const material = mesh.material as THREE.MeshStandardMaterial;
       const isSelected = part === selectedPart;
-      material.color.set(isSelected ? 0xf59e0b : 0x38bdf8);
-      material.emissive.set(isSelected ? 0xf59e0b : 0x0f172a);
-      material.emissiveIntensity = isSelected ? 0.9 + Math.sin(highlightPulse) * 0.18 : 0.18;
-      material.opacity = isSelected ? 0.42 : interactive ? 0.22 : 0.12;
+      material.color.set(0xf59e0b);
+      material.emissive.set(0xf59e0b);
+      material.emissiveIntensity = isSelected ? 0.9 + Math.sin(highlightPulse) * 0.18 : 0;
+      material.opacity = isSelected ? 0.34 : 0;
       mesh.scale.setScalar(isSelected ? 1.08 : 1);
     }
   }
@@ -99,15 +103,15 @@
       const target = BODY_PART_TARGETS[part];
       const geometry = new THREE.BoxGeometry(...target.size);
       const material = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        emissive: 0x0f172a,
+        color: 0xf59e0b,
+        emissive: 0xf59e0b,
         transparent: true,
-        opacity: interactive ? 0.22 : 0.12,
+        opacity: 0,
         roughness: 0.3,
         metalness: 0.15,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...target.position);
+      mesh.position.set(target.position[0], target.position[1] + HITBOX_Y_OFFSET, target.position[2]);
       mesh.userData.bodyPart = part;
       hitboxGroup.add(mesh);
       hitboxMap.set(part, mesh);
@@ -127,6 +131,40 @@
   }
 
   function handlePointerDown(event: PointerEvent) {
+    if (!renderer || !rootGroup) return;
+
+    isDragging = true;
+    dragMoved = false;
+    dragStartX = event.clientX;
+    dragRotationStart = rootGroup.rotation.y;
+    renderer.domElement.setPointerCapture(event.pointerId);
+  }
+
+  function handlePointerMove(event: PointerEvent) {
+    if (!isDragging || !rootGroup) return;
+
+    const deltaX = event.clientX - dragStartX;
+    if (Math.abs(deltaX) > 3) {
+      dragMoved = true;
+    }
+
+    rootGroup.rotation.y = dragRotationStart + deltaX * 0.012;
+  }
+
+  function handlePointerUp(event: PointerEvent) {
+    if (!renderer) return;
+
+    if (!dragMoved) {
+      handleSelection(event);
+    }
+
+    if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    }
+    isDragging = false;
+  }
+
+  function handleSelection(event: PointerEvent) {
     if (!interactive || !renderer || !camera || !hitboxGroup) return;
 
     const rect = renderer.domElement.getBoundingClientRect();
@@ -145,7 +183,9 @@
   function animate() {
     if (!renderer || !scene || !camera || !rootGroup) return;
     highlightPulse += 0.08;
-    rootGroup.rotation.y += interactive ? 0.005 : 0.003;
+    if (!isDragging) {
+      rootGroup.rotation.y += interactive ? 0.002 : 0.0015;
+    }
     syncHitboxStyles();
     renderer.render(scene, camera);
     frameId = requestAnimationFrame(animate);
@@ -153,15 +193,16 @@
 
   onMount(() => {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f172a);
 
-    camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    camera.position.set(0, 0.6, 5.2);
+    camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+    camera.position.set(0, 0.55, 6.2);
+    camera.lookAt(0, 0.45, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = false;
+    renderer.setClearColor(0x000000, 0);
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.4);
@@ -173,14 +214,6 @@
 
     rootGroup = new THREE.Group();
     scene.add(rootGroup);
-
-    const stage = new THREE.Mesh(
-      new THREE.CircleGeometry(1.7, 48),
-      new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.95, metalness: 0 }),
-    );
-    stage.rotation.x = -Math.PI / 2;
-    stage.position.y = -1.25;
-    scene.add(stage);
 
     const loader = new GLTFLoader();
     loader.load(
@@ -194,10 +227,10 @@
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
         const height = Math.max(size.y, 0.001);
-        const scale = 3.1 / height;
+        const scale = 3.9 / height;
         model.scale.setScalar(scale);
-        model.position.sub(center.multiplyScalar(scale));
-        model.position.y -= 1.15;
+        const scaledCenter = center.multiplyScalar(scale);
+        model.position.set(-scaledCenter.x, -scaledCenter.y - 1.05, -scaledCenter.z);
 
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
@@ -207,6 +240,8 @@
         });
 
         rootGroup.add(model);
+        rootGroup.rotation.y = Math.PI;
+        modelLoaded = true;
         rebuildHitboxes();
       },
       undefined,
@@ -220,6 +255,9 @@
     resizeObserver = new ResizeObserver(() => resizeRenderer());
     resizeObserver.observe(container);
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+    renderer.domElement.addEventListener("pointermove", handlePointerMove);
+    renderer.domElement.addEventListener("pointerup", handlePointerUp);
+    renderer.domElement.addEventListener("pointercancel", handlePointerUp);
     frameId = requestAnimationFrame(animate);
   });
 
@@ -228,6 +266,9 @@
     if (resizeObserver) resizeObserver.disconnect();
     if (renderer) {
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+      renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      renderer.domElement.removeEventListener("pointercancel", handlePointerUp);
       renderer.dispose();
       renderer.domElement.remove();
     }
@@ -243,23 +284,31 @@
   $: syncHitboxStyles();
 </script>
 
-<div class="rounded-2xl border border-cyan-500/30 bg-slate-950/90 overflow-hidden shadow-[0_0_30px_rgba(8,145,178,0.18)]">
-  <div bind:this={container} class={compact ? "h-56 w-full" : "h-72 w-full"}></div>
+<div class="relative overflow-hidden rounded-2xl bg-transparent">
+  <div
+    bind:this={container}
+    class={`${compact ? "h-52 w-full sm:h-60" : "h-64 w-full sm:h-80"} ${interactive ? "cursor-grab active:cursor-grabbing" : ""}`}
+  ></div>
 
-  <div class="border-t border-white/10 px-3 py-2 space-y-1 bg-slate-950/90">
-    {#if title}
-      <p class="text-[11px] uppercase tracking-[0.3em] text-cyan-300">{title}</p>
-    {/if}
-    <p class="text-sm font-semibold text-white">
-      {selectedPart ? `Selected: ${selectedPart}` : interactive ? "Tap the model to choose a body part" : "Highlighted area will appear here"}
-    </p>
-    {#if subtitle}
-      <p class="text-xs text-slate-300">{subtitle}</p>
-    {:else if interactive}
-      <p class="text-xs text-slate-400">You can also use the quick-select buttons below if you prefer.</p>
-    {/if}
-    {#if loadError}
-      <p class="text-xs text-amber-300">{loadError}</p>
-    {/if}
-  </div>
+  {#if selectedPart}
+    <div class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-xs font-semibold text-gray-700 shadow-sm">
+      {selectedPart}
+    </div>
+  {:else if interactive}
+    <div class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-gray-500 shadow-sm">
+      Tap a body part
+    </div>
+  {/if}
+
+  {#if interactive && modelLoaded}
+    <div class="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-white/85 px-3 py-1 text-[11px] font-medium text-gray-500 shadow-sm">
+      Drag to rotate
+    </div>
+  {/if}
+
+  {#if loadError}
+    <div class="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-100 px-3 py-1 text-[11px] font-medium text-amber-700 shadow-sm">
+      {loadError}
+    </div>
+  {/if}
 </div>

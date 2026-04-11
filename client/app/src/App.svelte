@@ -91,7 +91,7 @@
 
   // ── Viewer-only background music ──────────────────────────────────
 
-  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking" | "entertainer";
+  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking" | "entertainer" | "ouroboros";
 
   const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string }> = {
     cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
@@ -102,6 +102,7 @@
     le_grand_chase: { file: "/le_grand_chase.mp3",   volume: 0.35, attribution: '"Le Grand Chase" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     thinking:       { file: "/thinking_music.mp3",   volume: 0.35, attribution: '"Thinking Music" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     entertainer:    { file: "/the_entertainer.mp3",  volume: 0.34, attribution: '"The Entertainer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    ouroboros:      { file: "/ouroboros.mp3",        volume: 0.36, attribution: '"Ouroboros" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
   };
 
   /** Map of track ID → Audio element, initialised in onMount. */
@@ -124,6 +125,7 @@
     "registry-14-dont-get-caught":       "le_grand_chase",
     "registry-20-odd-one-out":           "thinking",
     "registry-40-paint-match":           "thinking",
+    "registry-10-grid-tap-colors":       "ouroboros",
   };
 
   function desiredTrack(): TrackId | null {
@@ -133,7 +135,6 @@
     }
     if (
       state.selectedGame === "registry-43-medical-story" &&
-      phase !== "lobby" &&
       phase !== "game_loading"
     ) {
       return "entertainer";
@@ -155,7 +156,20 @@
       return;
     }
 
-    if (next === currentTrack) return;
+    if (next === currentTrack) {
+      const currentAudio = currentTrack ? tracks.get(currentTrack) : null;
+      if (currentAudio && currentAudio.paused) {
+        currentAudio.currentTime = 0;
+        try {
+          await currentAudio.play();
+          audioBlocked = false;
+        } catch {
+          currentTrack = null;
+          audioBlocked = true;
+        }
+      }
+      return;
+    }
 
     pauseAllTracks();
 
@@ -295,15 +309,13 @@
     // Initialise all music tracks from config
     const restartOnEnd = (e: Event) => {
       const audio = e.target as HTMLAudioElement;
-      if (audio.loop && audio.paused) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-      }
+      audio.currentTime = 0;
+      audio.play().catch(() => {});
     };
 
     for (const [id, cfg] of Object.entries(TRACK_CONFIG) as [TrackId, typeof TRACK_CONFIG[TrackId]][]) {
       const audio = new Audio(cfg.file);
-      audio.loop = true;
+      audio.loop = false;
       audio.volume = cfg.volume;
       audio.addEventListener("ended", restartOnEnd);
       tracks.set(id, audio);

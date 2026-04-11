@@ -31,6 +31,13 @@
     | "voting"
     | "phase_result"
     | "round_recap";
+  type VotingSubmission = {
+    playerId: string;
+    text: string;
+    bodyPart?: string;
+    action?: string;
+  };
+  type PhaseResult = VotingSubmission & { voteCount: number };
   let subPhase: SubPhase = "waiting";
 
   // ── Role voting ──────────────────────────────────────────────────────
@@ -58,26 +65,15 @@
   let votingTimeLeft = 0;
   let votingEndTime = 0;
   let votingTimer: ReturnType<typeof setInterval> | null = null;
-  let votingSubmissions: {
-    playerId: string;
-    text: string;
-    bodyPart?: string;
-    action?: string;
-  }[] = [];
+  let votingSubmissions: VotingSubmission[] = [];
 
   // ── Phase result ─────────────────────────────────────────────────────
-  let phaseResults: {
-    playerId: string;
-    text: string;
-    bodyPart?: string;
-    action?: string;
-    voteCount: number;
-  }[] = [];
-  let phaseWinner: typeof phaseResults[0] | null = null;
+  let phaseResults: PhaseResult[] = [];
+  let phaseWinner: PhaseResult | null = null;
   let phasePoints: Record<string, number> = {};
 
   // ── Round recap ──────────────────────────────────────────────────────
-  let phaseWinners: Record<string, typeof phaseWinner> = {};
+  let phaseWinners: Record<string, PhaseResult | null> = {};
   let roundScores: Record<string, number> = {};
   let recapRoles: Record<string, string> = {};
 
@@ -313,14 +309,17 @@
         <p class="text-lg text-gray-400">Submit your answers on your phones!</p>
 
         {#if currentPhase === "complaint" || currentPhase === "diagnosis"}
-          <MedicalStoryBodyModel
-            title="Live 3D Body Board"
-            subtitle={scene3dPlaceholder?.description ?? "Players are choosing a complaint location on the body model."}
-          />
+          <div class="space-y-3">
+            <MedicalStoryBodyModel />
+            <p class="text-sm text-gray-400">
+              {scene3dPlaceholder?.description ?? "Players are choosing a complaint location on the body model."}
+            </p>
+          </div>
         {:else}
-          <div class="w-full h-48 rounded-2xl border-2 border-dashed border-gray-700 flex items-center justify-center">
-            <p class="text-gray-600 text-sm">
-              🎬 3D Scene: {scene3dPlaceholder?.type ?? 'placeholder'}
+          <div class="w-full rounded-3xl border border-gray-700/60 bg-white/5 px-6 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <p class="text-lg font-semibold text-white">Action preview coming next</p>
+            <p class="mt-2 text-sm text-gray-400">
+              {scene3dPlaceholder?.description ?? "Players are picking the emergency procedure action on their phones."}
             </p>
           </div>
         {/if}
@@ -366,11 +365,12 @@
             style={phaseWinner.bodyPart ? "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);" : ""}
           >
             {#if phaseWinner.bodyPart}
-              <MedicalStoryBodyModel
-                selectedPart={phaseWinner.bodyPart}
-                title="Winning Player Model"
-                subtitle={`${getPlayerName(phaseWinner.playerId)} nailed the location: ${phaseWinner.bodyPart}`}
-              />
+              <div class="space-y-3">
+                <MedicalStoryBodyModel selectedPart={phaseWinner.bodyPart} />
+                <p class="text-sm text-gray-400">
+                  {getPlayerName(phaseWinner.playerId)} nailed the location: {phaseWinner.bodyPart}
+                </p>
+              </div>
             {/if}
             <div class="bg-gradient-to-br from-amber-900/50 to-yellow-900/50 border-2 border-amber-500 rounded-2xl p-8 inline-block">
               <p class="text-2xl font-bold text-white mb-2">"{phaseWinner.text}"</p>

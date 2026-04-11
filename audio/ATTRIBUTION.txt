@@ -68,3 +68,8 @@ https://creativecommons.org/publicdomain/zero/1.0/
 
 whoosh.flac
 Whoosh by qubodup -- https://freesound.org/s/60013/ -- License: Creative Commons 0
+
+ouroboros.mp3
+"Ouroboros" Kevin MacLeod (incompetech.com)
+Licensed under Creative Commons: By Attribution 4.0 License
+https://creativecommons.org/licenses/by/4.0/

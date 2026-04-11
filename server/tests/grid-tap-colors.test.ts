@@ -4,6 +4,7 @@ import {
   assignPhones,
   getPhonesForGroup,
   generateColorSequence,
+  getSpeedTapMetrics,
   scoreSpeedTapRound,
   scoreColorSequenceRound,
   countSequenceErrors,
@@ -198,67 +199,76 @@ describe("countSequenceErrors", () => {
 
 // ── scoreSpeedTapRound ──────────────────────────────────────────────────────
 
+describe("getSpeedTapMetrics", () => {
+  it("derives completion, average, and fastest tap metrics", () => {
+    const metrics = getSpeedTapMetrics({
+      playerId: "a",
+      completionTimeMs: 3000,
+      tapTimesMs: [200, 300, 500],
+      completed: true,
+    });
+
+    expect(metrics.tapCount).toBe(3);
+    expect(metrics.completionTimeMs).toBe(3000);
+    expect(metrics.averageTapTimeMs).toBe(333);
+    expect(metrics.fastestTapTimeMs).toBe(200);
+  });
+
+  it("omits completion time when the player did not finish", () => {
+    const metrics = getSpeedTapMetrics({
+      playerId: "a",
+      completionTimeMs: 9000,
+      tapTimesMs: [400, 450],
+      completed: false,
+    });
+
+    expect(metrics.completionTimeMs).toBeNull();
+    expect(metrics.averageTapTimeMs).toBe(425);
+    expect(metrics.fastestTapTimeMs).toBe(400);
+  });
+});
+
 describe("scoreSpeedTapRound", () => {
-  it("awards completion bonuses in order", () => {
+  it("awards one category win per speed metric", () => {
     const results: SpeedTapPlayerResult[] = [
-      { playerId: "a", completionTimeMs: 5000, tapTimesMs: [200, 300], completed: true },
-      { playerId: "b", completionTimeMs: 3000, tapTimesMs: [150, 250], completed: true },
-      { playerId: "c", completionTimeMs: 7000, tapTimesMs: [400, 500], completed: true },
+      { playerId: "a", completionTimeMs: 4800, tapTimesMs: [100, 700], completed: true },
+      { playerId: "b", completionTimeMs: 3000, tapTimesMs: [300, 300], completed: true },
+      { playerId: "c", completionTimeMs: 5600, tapTimesMs: [160, 160], completed: true },
     ];
     const scores = scoreSpeedTapRound(results);
 
-    // b is fastest (3000ms) → 300 points completion
-    // a is second (5000ms) → 200 points completion
-    // c is third (7000ms) → 100 points completion
-    expect(scores.get("b")!).toBeGreaterThan(scores.get("a")!);
-    expect(scores.get("a")!).toBeGreaterThan(scores.get("c")!);
+    expect(scores.get("a")).toBe(100); // fastest individual tap
+    expect(scores.get("b")).toBe(100); // fastest completion
+    expect(scores.get("c")).toBe(100); // fastest average tap
   });
 
-  it("awards per-tap points", () => {
+  it("awards ties the full category bonus", () => {
     const results: SpeedTapPlayerResult[] = [
-      { playerId: "a", completionTimeMs: 5000, tapTimesMs: [200, 300, 400], completed: false },
+      { playerId: "a", completionTimeMs: 4000, tapTimesMs: [200, 200], completed: true },
+      { playerId: "b", completionTimeMs: 4000, tapTimesMs: [200, 200], completed: true },
     ];
+
     const scores = scoreSpeedTapRound(results);
-    // 3 taps × 10 = 30, plus fastest tap bonus (100), minus slowest tap (-50)
-    // Total: 30 + 100 - 50 = 80
-    expect(scores.get("a")).toBe(80);
+
+    expect(scores.get("a")).toBe(300);
+    expect(scores.get("b")).toBe(300);
   });
 
-  it("awards fastest tap bonus", () => {
+  it("ignores unfinished runs for completion and average categories", () => {
     const results: SpeedTapPlayerResult[] = [
-      { playerId: "a", completionTimeMs: 5000, tapTimesMs: [500, 600], completed: true },
-      { playerId: "b", completionTimeMs: 4000, tapTimesMs: [100, 700], completed: true },
+      { playerId: "a", completionTimeMs: 2500, tapTimesMs: [120, 130], completed: false },
+      { playerId: "b", completionTimeMs: 3100, tapTimesMs: [300, 320], completed: true },
     ];
-    const scores = scoreSpeedTapRound(results);
-    // b has the fastest individual tap (100ms) → +100 bonus
-    // But b also has the slowest (700ms) → -50 penalty
-    // b gets fastest completion bonus too (300 vs 200)
-    expect(scores.has("a")).toBe(true);
-    expect(scores.has("b")).toBe(true);
-  });
 
-  it("penalizes slowest tap", () => {
-    const results: SpeedTapPlayerResult[] = [
-      { playerId: "a", completionTimeMs: 5000, tapTimesMs: [100, 2000], completed: true },
-    ];
     const scores = scoreSpeedTapRound(results);
-    // Completion: 300 (only player), taps: 2×10=20, fastest: +100, slowest: -50
-    // Total: 300 + 20 + 100 - 50 = 370
-    expect(scores.get("a")).toBe(370);
+
+    expect(scores.get("a")).toBe(100); // fastest single tap only
+    expect(scores.get("b")).toBe(200); // fastest completion + fastest average
   });
 
   it("handles empty results", () => {
     const scores = scoreSpeedTapRound([]);
     expect(scores.size).toBe(0);
-  });
-
-  it("handles single player who did not complete", () => {
-    const results: SpeedTapPlayerResult[] = [
-      { playerId: "a", completionTimeMs: 10000, tapTimesMs: [500], completed: false },
-    ];
-    const scores = scoreSpeedTapRound(results);
-    // No completion bonus, 1 tap × 10 = 10, fastest: +100, slowest: -50
-    expect(scores.get("a")).toBe(60);
   });
 });
 

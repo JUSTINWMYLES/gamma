@@ -57,6 +57,12 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer throughout `registry-43-medical-story` once the game begins
   - Changes: none
 
+- "Ouroboros" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer during `registry-10-grid-tap-colors` active round gameplay
+  - Changes: none
+
 ### Sound Effects
 
 - Cash Register — kiddpark
