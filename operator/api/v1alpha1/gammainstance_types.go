@@ -78,6 +78,12 @@ type ClientSpec struct {
 	// Resource requirements for client pods.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// ServerURL overrides the public Colyseus base URL consumed by browsers.
+	// This value is injected into the client container at runtime and should
+	// point at a browser-reachable endpoint such as wss://gamma.example.com/ws.
+	// When omitted, the client derives the URL from window.location.
+	// +optional
+	ServerURL string `json:"serverUrl,omitempty"`
 }
 
 // RedisSpec defines the desired state for the Redis component.

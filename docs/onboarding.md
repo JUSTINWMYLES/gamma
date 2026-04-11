@@ -35,7 +35,7 @@ cp .env.example .env
 # Edit .env if you need non-default ports or keys
 ```
 
-`.env.example` documents every variable. The only one you normally need to change for local development is `VITE_SERVER_URL`, which defaults to `ws://localhost:2567`.
+`.env.example` documents every variable. The main one you normally change for local development is `VITE_SERVER_URL`, which defaults to `ws://localhost:2567`.
 
 ---
 
@@ -131,7 +131,7 @@ docker compose up --build
 docker compose down
 ```
 
-The compose file wires the server and client together and passes `VITE_SERVER_URL` at build time.
+The compose file wires the server and client together for local development. Kubernetes deployments use runtime client config instead of baking the public server URL into the image.
 
 ---
 
@@ -273,6 +273,6 @@ npx playwright test --headed --debug
 |---------|-------------|-----|
 | `Cannot find module 'colyseus.js'` | Dependencies not installed | `npm install` |
 | Tailwind classes not applied | PostCSS config missing | `client/app/` includes its own `postcss.config.cjs` and `tailwind.config.cjs` |
-| `__SERVER_URL__ is not defined` | Vite `define` not injecting | Set `VITE_SERVER_URL` before running `vite build` |
+| Client connects to the wrong local server | Wrong local override | Set `VITE_SERVER_URL` before running `vite build` or use the default `ws://localhost:2567` |
 | Room join fails with 404 | Server not running | Start the server first (`npm run dev:server`) |
 | E2E tests time out | Ports already in use | Kill any existing dev servers before running Playwright |

@@ -408,7 +408,7 @@ Reconcile(GammaInstance)
 ├── 4. Reconcile Client Deployment
 │   ├── Build Deployment spec
 │   │   ├── Set image, replicas, resources
-│   │   └── Inject VITE_SERVER_URL pointing to server Service
+│   │   └── Inject runtime GAMMA_SERVER_URL or derive it from ingress host
 │   ├── Create or Update Deployment
 │   └── Ensure Service (ClusterIP)
 │
@@ -1053,7 +1053,7 @@ on the previous one.
 
 - [ ] Implement client Deployment reconciliation:
   - Set image, replicas, resources from CR spec.
-  - Inject `VITE_SERVER_URL` pointing to server Service.
+  - Inject runtime `GAMMA_SERVER_URL` from `spec.client.serverUrl` or derive it from ingress.
 - [ ] Implement client Service reconciliation.
 - [ ] Add `ClientReady` condition to status update.
 - [ ] Write unit tests for client reconciliation.

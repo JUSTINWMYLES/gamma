@@ -1,0 +1,3 @@
+window.__GAMMA_CONFIG__ = {
+  serverUrl: "${GAMMA_SERVER_URL}"
+};

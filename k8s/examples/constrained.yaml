@@ -26,6 +26,8 @@ spec:
   client:
     image: ghcr.io/gamma/gamma-client:latest
     replicas: 1
+    # Optional when the app is served from the same public host and can derive /ws.
+    # serverUrl: wss://gamma.example.com/ws
     resources:
       requests:
         cpu: "25m"

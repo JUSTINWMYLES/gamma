@@ -115,6 +115,9 @@ spec:
                           properties:
                             cpu: { type: string, default: "100m" }
                             memory: { type: string, default: "64Mi" }
+                    serverUrl:
+                      type: string
+                      description: Browser-reachable Colyseus base URL injected into the client at runtime (for example wss://gamma.example.com/ws).
                 redis:
                   type: object
                   properties:

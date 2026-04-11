@@ -99,7 +99,7 @@ Development runs over plain `ws://`. In production you **must** terminate TLS at
 - [ ] TLS certificate on the WebSocket endpoint (Let's Encrypt via cert-manager or cloud provider).
 - [ ] HTTP → HTTPS redirect on all ingress routes.
 - [ ] HSTS header on HTTP responses.
-- [ ] `VITE_SERVER_URL` set to `wss://your-domain` at client build time.
+- [ ] `GAMMA_SERVER_URL` injected as the public `wss://your-domain/ws` runtime value for the client container, or equivalent origin-based routing in place.
 
 ---
 

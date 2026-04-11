@@ -195,6 +195,22 @@
     void syncTrackPlayback();
   }
 
+  function describeError(e: unknown): string {
+    if (e instanceof Error) return e.message;
+
+    if (typeof e === "object" && e !== null) {
+      const maybeEvent = e as { type?: string; message?: unknown };
+      if (maybeEvent.type === "error" || maybeEvent.type === "timeout") {
+        return "Could not reach the game server. Check the public server URL and ingress routing.";
+      }
+      if (typeof maybeEvent.message === "string" && maybeEvent.message.length > 0) {
+        return maybeEvent.message;
+      }
+    }
+
+    return String(e);
+  }
+
   // ── Role selection handlers ───────────────────────────────────────
 
   async function selectViewer() {
@@ -212,7 +228,7 @@
       connecting = false;
       saveSession({ roomCode: roomCode.toUpperCase(), name: "", role: "viewer" });
     } catch (e) {
-      error = `Could not join room: ${String(e)}`;
+      error = `Could not join room: ${describeError(e)}`;
       connecting = false;
     }
   }
@@ -266,7 +282,7 @@
       playerView = "room";
       saveSession({ roomCode: roomCode.toUpperCase(), name, role: "player" });
     } catch (e) {
-      error = String(e);
+      error = describeError(e);
       throw e;
     }
   }
@@ -282,7 +298,7 @@
         saveSession({ roomCode, name, role: "player" });
       }
     } catch (e) {
-      error = String(e);
+      error = describeError(e);
       playerView = "landing";
     }
   }

@@ -60,7 +60,7 @@ single-replica in-memory mode.
   if a Service is misconfigured it is corrected on the next reconcile.
 - **Reduces configuration surface.** Users declare *what* they want (`image`,
   `replicas`, `host`) rather than *how* to wire it up. The operator derives
-  `REDIS_URL`, `VITE_SERVER_URL`, ingress annotations, sticky-session config,
+  `REDIS_URL`, runtime client server URL, ingress annotations, sticky-session config,
   etc. from the single CR.
 - **Lifecycle coupling.** All child resources (Deployments, StatefulSet, Service,
   Ingress, HPA) are owned by the `GammaInstance` via owner references, so
