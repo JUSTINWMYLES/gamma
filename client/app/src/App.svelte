@@ -105,14 +105,13 @@
     ouroboros:      { file: "/ouroboros.mp3",        volume: 0.36, attribution: '"Ouroboros" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
   };
 
-  /** Map of track ID → Audio element, initialised in onMount. */
-  const tracks = new Map<TrackId, HTMLAudioElement>();
+  let musicAudio: HTMLAudioElement | null = null;
   let currentTrack: TrackId | null = null;
   let audioBlocked = false;
 
   function pauseAllTracks() {
-    for (const audio of tracks.values()) {
-      audio.pause();
+    if (musicAudio) {
+      musicAudio.pause();
     }
   }
 
@@ -147,37 +146,38 @@
   }
 
   async function syncTrackPlayback() {
-    if (tracks.size === 0) return;
+    if (!musicAudio) return;
 
     const next = desiredTrack();
     if (!next) {
       pauseAllTracks();
+      if (musicAudio) musicAudio.currentTime = 0;
       currentTrack = null;
       return;
     }
 
-    if (next === currentTrack) {
-      const currentAudio = currentTrack ? tracks.get(currentTrack) : null;
-      if (currentAudio && currentAudio.paused) {
-        currentAudio.currentTime = 0;
-        try {
-          await currentAudio.play();
-          audioBlocked = false;
-        } catch {
-          currentTrack = null;
-          audioBlocked = true;
-        }
-      }
+    const config = TRACK_CONFIG[next];
+    const targetSrc = new URL(config.file, window.location.href).href;
+    const sourceChanged = musicAudio.src !== targetSrc;
+
+    musicAudio.loop = true;
+    musicAudio.volume = config.volume;
+    musicAudio.muted = false;
+
+    if (sourceChanged) {
+      musicAudio.pause();
+      musicAudio.src = targetSrc;
+      musicAudio.load();
+      musicAudio.currentTime = 0;
+    }
+
+    if (!sourceChanged && next === currentTrack && !musicAudio.paused) {
+      audioBlocked = false;
       return;
     }
 
-    pauseAllTracks();
-
-    const target = tracks.get(next);
-    if (!target) return;
-    target.currentTime = 0;
     try {
-      await target.play();
+      await musicAudio.play();
       currentTrack = next;
       audioBlocked = false;
     } catch {
@@ -192,6 +192,9 @@
   }
 
   function enableSound() {
+    if (musicAudio) {
+      musicAudio.muted = false;
+    }
     void syncTrackPlayback();
   }
 
@@ -199,9 +202,10 @@
     if (e instanceof Error) return e.message;
 
     if (typeof e === "object" && e !== null) {
-      const maybeEvent = e as { type?: string; message?: unknown };
-      if (maybeEvent.type === "error" || maybeEvent.type === "timeout") {
-        return "Could not reach the game server. Check the public server URL and WebSocket routing.";
+      const maybeEvent = e as { type?: string; message?: unknown; constructor?: { name?: string } };
+      const tag = Object.prototype.toString.call(e);
+      if (maybeEvent.type === "error" || maybeEvent.type === "timeout" || maybeEvent.constructor?.name === "ProgressEvent" || tag === "[object ProgressEvent]") {
+        return "Could not reach the game server. This browser may not support the required connection features, or the public server URL/WebSocket routing may be blocked.";
       }
       if (typeof maybeEvent.message === "string" && maybeEvent.message.length > 0) {
         return maybeEvent.message;
@@ -322,19 +326,10 @@
   }
 
   onMount(() => {
-    // Initialise all music tracks from config
-    const restartOnEnd = (e: Event) => {
-      const audio = e.target as HTMLAudioElement;
-      audio.currentTime = 0;
-      audio.play().catch(() => {});
-    };
-
-    for (const [id, cfg] of Object.entries(TRACK_CONFIG) as [TrackId, typeof TRACK_CONFIG[TrackId]][]) {
-      const audio = new Audio(cfg.file);
-      audio.loop = false;
-      audio.volume = cfg.volume;
-      audio.addEventListener("ended", restartOnEnd);
-      tracks.set(id, audio);
+    if (musicAudio) {
+      musicAudio.preload = "auto";
+      musicAudio.loop = true;
+      musicAudio.playsInline = true;
     }
 
     window.addEventListener("pointerdown", onUserInteraction);
@@ -371,6 +366,10 @@
     window.removeEventListener("keydown", onUserInteraction);
     window.removeEventListener("touchstart", onUserInteraction);
     pauseAllTracks();
+    if (musicAudio) {
+      musicAudio.src = "";
+      musicAudio.load();
+    }
     leavingVoluntarily = true;
     room?.leave();
   });
@@ -407,6 +406,8 @@
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
 <div data-testid="app-root" class="min-h-screen flex flex-col bg-gray-950 text-white">
+
+  <audio bind:this={musicAudio} preload="auto" playsinline webkit-playsinline="true" />
 
   {#if showBackground}
     <FloatingBackground dark={$isDark} />
