@@ -197,9 +197,9 @@ export default class SoundReplicationGame extends BaseGame {
   }
 
   protected override async runRound(round: number): Promise<void> {
-    const players = this._activePlayers();
+    const players = this._recordingEligiblePlayers();
     if (players.length < 1) {
-      this.broadcast("round_skipped", { reason: "No connected players" });
+      this.broadcast("round_skipped", { reason: "No microphone-ready players" });
       return;
     }
 
@@ -904,7 +904,11 @@ export default class SoundReplicationGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
+  }
+
+  private _recordingEligiblePlayers() {
+    return this._activePlayers().filter((p) => this.hasMicPermission(p));
   }
 }

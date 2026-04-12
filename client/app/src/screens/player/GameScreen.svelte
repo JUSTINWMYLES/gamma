@@ -30,6 +30,13 @@
   export let me: PlayerState | undefined;
   export let myId: string;
 
+  type PermissionAwarePlayer = PlayerState & {
+    motionPermission?: string;
+  };
+
+  $: permissionPlayer = me as PermissionAwarePlayer | undefined;
+  $: tiltAllowed = permissionPlayer?.motionPermission === "granted";
+
   // ── Game routing ──────────────────────────────────────────────────
   $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
   $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
@@ -56,19 +63,20 @@
   let controlMode: ControlMode = (localStorage.getItem("gamma_control_mode") as ControlMode) ?? "joystick";
 
   function setControlMode(m: ControlMode) {
+    if (m === "tilt" && !tiltAllowed) {
+      controlMode = "joystick";
+      tiltError = "Enable motion in the lobby before using tilt controls.";
+      stopTilt();
+      localStorage.setItem("gamma_control_mode", "joystick");
+      return;
+    }
+
     controlMode = m;
     localStorage.setItem("gamma_control_mode", m);
     if (m === "tilt") {
-      if (checkTiltNeedsPermission()) {
-        // On iOS we must request permission from a user gesture.
-        // setControlMode is already inside a button click, so request now.
-        tiltNeedsPermission = false;
-        tiltError = "";
-        requestTiltPermission();
-      } else {
-        tiltError = "";
-        startTilt();
-      }
+      tiltNeedsPermission = false;
+      tiltError = "";
+      startTilt();
     } else {
       tiltError = "";
       stopTilt();
@@ -141,44 +149,13 @@
    * Check whether tilt requires an explicit user-gesture permission request
    * (iOS 13+). On Android/desktop, permission is implicit.
    */
-  function checkTiltNeedsPermission(): boolean {
-    return typeof (DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === "function";
-  }
-
-  /**
-   * Request device orientation permission.
-   * MUST be called from a user gesture (click/tap) on iOS.
-   */
-  async function requestTiltPermission() {
-    if (checkTiltNeedsPermission()) {
-      try {
-        const perm = await (DeviceOrientationEvent as unknown as { requestPermission: () => Promise<string> }).requestPermission();
-        if (perm === "granted") {
-          tiltNeedsPermission = false;
-          tiltError = "";
-          startTilt();
-        } else {
-          // Permission denied — fall back to joystick
-          tiltNeedsPermission = false;
-          controlMode = "joystick";
-          localStorage.setItem("gamma_control_mode", "joystick");
-          tiltError = "Motion permission denied. Enable Motion & Orientation Access in Safari settings.";
-        }
-      } catch {
-        tiltNeedsPermission = false;
-        controlMode = "joystick";
-        localStorage.setItem("gamma_control_mode", "joystick");
-        tiltError = "Could not access motion sensors. Use HTTPS and check Safari motion permissions.";
-      }
-    } else {
-      // Android / desktop: no permission needed
-      tiltNeedsPermission = false;
-      tiltError = "";
-      startTilt();
-    }
-  }
-
   function startTilt() {
+    if (!tiltAllowed) {
+      tiltError = "Enable motion in the lobby before using tilt controls.";
+      controlMode = "joystick";
+      localStorage.setItem("gamma_control_mode", "joystick");
+      return;
+    }
     tiltEnabled = true;
     window.addEventListener("deviceorientation", onDeviceOrientation);
   }
@@ -227,15 +204,13 @@
       }
     }, 50);
 
-    // If tilt was saved in localStorage, try to activate it.
-    // On iOS, DeviceOrientationEvent.requestPermission() MUST be called
-    // during a user gesture. We can't do that in onMount, so instead show
-    // a "Tap to enable tilt" button that the user must press.
     if (controlMode === "tilt") {
-      if (checkTiltNeedsPermission()) {
-        tiltNeedsPermission = true; // UI will show a button
+      if (!tiltAllowed) {
+        tiltNeedsPermission = false;
+        controlMode = "joystick";
+        localStorage.setItem("gamma_control_mode", "joystick");
+        tiltError = "Enable motion in the lobby before using tilt controls.";
       } else {
-        // Android/desktop: start immediately, no permission needed
         startTilt();
       }
     }
@@ -377,6 +352,7 @@
             class="px-4 py-2 text-sm font-bold transition-colors
               {controlMode === 'tilt' ? 'bg-indigo-600 text-white' : 'bg-gray-800 text-gray-400'}"
             on:click={() => setControlMode("tilt")}
+            disabled={!tiltAllowed}
           >Tilt</button>
         </div>
 
@@ -402,28 +378,17 @@
         {:else}
           <!-- Tilt indicator -->
           <div class="flex flex-col items-center gap-3">
-            {#if tiltNeedsPermission}
-              <!-- iOS: user must tap to grant DeviceOrientation permission -->
-              <button
-                class="px-6 py-4 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-white font-bold text-lg shadow-lg active:scale-95 transition-transform"
-                on:click={() => requestTiltPermission()}
-              >
-                Tap to Enable Tilt
-              </button>
-              <p class="text-xs text-gray-400 text-center">
-                iOS requires permission for motion sensors
-              </p>
-            {:else}
-              <div
-                class="w-20 h-20 rounded-full border-4 flex items-center justify-center
-                  {tiltEnabled ? 'border-indigo-500 bg-indigo-900/30' : 'border-gray-700 bg-gray-900'}"
-              >
-                <span class="text-3xl">{tiltEnabled ? "" : ""}</span>
-              </div>
-              <p class="text-xs text-gray-500 text-center">
-                {tiltEnabled ? "Tilt your phone to move" : "Starting tilt sensor..."}
-              </p>
-            {/if}
+            <div
+              class="w-20 h-20 rounded-full border-4 flex items-center justify-center
+                {tiltEnabled ? 'border-indigo-500 bg-indigo-900/30' : 'border-gray-700 bg-gray-900'}"
+            >
+              <span class="text-3xl">{tiltEnabled ? "" : ""}</span>
+            </div>
+            <p class="text-xs text-gray-500 text-center">
+              {tiltAllowed
+                ? (tiltEnabled ? 'Tilt your phone to move' : 'Starting tilt sensor...')
+                : 'Motion was not enabled in the lobby'}
+            </p>
             {#if tiltError}
               <p class="text-xs text-red-400 text-center max-w-xs">{tiltError}</p>
             {/if}

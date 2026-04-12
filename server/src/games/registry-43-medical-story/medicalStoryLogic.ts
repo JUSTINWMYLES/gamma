@@ -64,6 +64,23 @@ export const ACTIONS = [
 
 export type Action = (typeof ACTIONS)[number];
 
+export const FUNNY_TESTS = [
+  "Gave it a close look",
+  "Did a long sniff test",
+  "Shook it",
+  "Poked it",
+  "Held it up to the light",
+  "Tapped it with a tiny hammer",
+  "Listened to it dramatically",
+  "Asked it how it was feeling",
+  "Ran the emergency wiggle scan",
+  "Put it in rice for a minute",
+] as const;
+
+export type FunnyTest = (typeof FUNNY_TESTS)[number];
+
+export const MAX_DIAGNOSIS_TESTS = 3;
+
 // ── Submission interface ──────────────────────────────────────────────────────
 
 export interface Submission {
@@ -71,6 +88,7 @@ export interface Submission {
   text: string;
   bodyPart?: string;
   action?: string;
+  tests?: string[];
 }
 
 // ── Timing constants ──────────────────────────────────────────────────────────
@@ -87,8 +105,11 @@ export const VOTING_DURATION_SECS = 30;
 /** Duration to display vote results before advancing (ms). */
 export const RESULTS_DISPLAY_MS = 6_000;
 
+/** Reveal cadence for each recap item (ms). */
+export const RECAP_STEP_MS = 5_000;
+
 /** Duration to display round recap (ms). */
-export const RECAP_DISPLAY_MS = 5_000;
+export const RECAP_DISPLAY_MS = RECAP_STEP_MS * PHASES.length;
 
 /** Maximum length of a submission text. */
 export const MAX_SUBMISSION_LENGTH = 60;
@@ -269,6 +290,31 @@ export function isValidAction(action: string): boolean {
 }
 
 /**
+ * Validate that a funny diagnosis test is from the allowed list.
+ */
+export function isValidFunnyTest(test: string): boolean {
+  return (FUNNY_TESTS as readonly string[]).includes(test);
+}
+
+/**
+ * Normalize selected diagnosis tests: keep valid unique values in order and
+ * clamp to the configured maximum.
+ */
+export function normalizeFunnyTests(tests: string[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+
+  for (const test of tests) {
+    if (!isValidFunnyTest(test) || seen.has(test)) continue;
+    normalized.push(test);
+    seen.add(test);
+    if (normalized.length >= MAX_DIAGNOSIS_TESTS) break;
+  }
+
+  return normalized;
+}
+
+/**
  * Return true when every expected player has responded during the current
  * phase. Unexpected responders are ignored.
  */
@@ -301,8 +347,20 @@ export interface VoteResult {
   bodyPart?: string;
   /** Optional action */
   action?: string;
+  /** Optional funny tests */
+  tests?: string[];
   /** Number of votes received */
   voteCount: number;
+}
+
+/**
+ * Role-specific vote weighting for the matching creative phase.
+ */
+export function getPhaseVoteWeight(role: Role | undefined, phase: Phase): number {
+  if (role === "patient" && phase === "complaint") return 2;
+  if (role === "nurse" && phase === "diagnosis") return 2;
+  if (role === "doctor" && phase === "catchphrase") return 2;
+  return 1;
 }
 
 /**
@@ -315,6 +373,7 @@ export interface VoteResult {
 export function tallySubmissionVotes(
   submissions: Submission[],
   votes: Map<string, string>,
+  voteWeights: Map<string, number> = new Map(),
 ): VoteResult[] {
   // Count votes per submission author
   const voteCounts = new Map<string, number>();
@@ -322,9 +381,10 @@ export function tallySubmissionVotes(
     voteCounts.set(sub.playerId, 0);
   }
 
-  for (const targetId of votes.values()) {
+  for (const [voterId, targetId] of votes.entries()) {
     if (voteCounts.has(targetId)) {
-      voteCounts.set(targetId, (voteCounts.get(targetId) ?? 0) + 1);
+      const weight = Math.max(1, Math.floor(voteWeights.get(voterId) ?? 1));
+      voteCounts.set(targetId, (voteCounts.get(targetId) ?? 0) + weight);
     }
   }
 
@@ -334,6 +394,7 @@ export function tallySubmissionVotes(
     text: sub.text,
     bodyPart: sub.bodyPart,
     action: sub.action,
+    tests: sub.tests,
     voteCount: voteCounts.get(sub.playerId) ?? 0,
   }));
 

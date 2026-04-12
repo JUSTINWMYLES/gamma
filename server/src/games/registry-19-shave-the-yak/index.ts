@@ -125,7 +125,7 @@ export default class ShaveYakGame extends BaseGame {
     // If bracket mode, build the bracket
     if (this.room.state.gameConfig.matchMode === "1v1_bracket") {
       const playerIds = [...this.room.state.players.values()]
-        .filter((p) => p.isConnected)
+        .filter((p) => this.isPlayerActive(p))
         .map((p) => p.id);
       const heatSize = playerIds.length <= 6 ? 2 : 3;
       const bracket = buildBracket(playerIds, this.bracketSeed, { heatSize, advanceCount: 1 });
@@ -145,8 +145,12 @@ export default class ShaveYakGame extends BaseGame {
 
     const bracket = this.room.state.bracket;
 
+    if (this.hasPracticeRound()) {
+      await this._runBracketPracticeRound();
+    }
+
     this.broadcast("bracket_init", {
-      totalPlayers: [...this.room.state.players.values()].filter((p) => p.isConnected).length,
+      totalPlayers: [...this.room.state.players.values()].filter((p) => this.isPlayerActive(p)).length,
       heatSize: bracket.heatSize,
     });
 
@@ -243,6 +247,7 @@ export default class ShaveYakGame extends BaseGame {
       }
     }
 
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
   }
@@ -252,7 +257,7 @@ export default class ShaveYakGame extends BaseGame {
 
     // Initialise a fresh fur mask for each player
     for (const p of this.room.state.players.values()) {
-      if (!p.isConnected) continue;
+      if (!this.isPlayerActive(p)) continue;
       const mask = createYakMask(YAK_W, YAK_H);
       this.playerRounds.set(p.id, {
         mask,
@@ -307,6 +312,25 @@ export default class ShaveYakGame extends BaseGame {
     }));
 
     this.broadcast("round_result", { results, rankings });
+  }
+
+  private async _runBracketPracticeRound(): Promise<void> {
+    this.room.state.currentRound = 0;
+    this.room.state.isPracticeRound = true;
+
+    this.setPhase("countdown");
+    await this.delay(3000);
+
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    await this.delay(500);
+
+    await this.runRound(1);
+
+    this.setPhase("round_end");
+    await this.delay(4000);
+
+    this.room.state.isPracticeRound = false;
   }
 
   override handleInput(client: Client, data: unknown): void {

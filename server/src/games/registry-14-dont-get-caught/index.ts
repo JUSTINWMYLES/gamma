@@ -57,7 +57,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
 } from "../../utils/tilemap";
-import { canGuardSeeTarget } from "../../utils/los";
+import { canGuardSeeTarget, hasLineOfSight } from "../../utils/los";
 import { GuardState } from "../../schema/GuardState";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -204,7 +204,7 @@ export default class DontGetCaughtGame extends BaseGame {
     // If bracket mode, build the bracket
     if (this.room.state.gameConfig.matchMode === "1v1_bracket") {
       const playerIds = [...this.room.state.players.values()]
-        .filter((p) => p.isConnected)
+        .filter((p) => this.isPlayerActive(p))
         .map((p) => p.id);
       // Use 3-4 player heats depending on count
       const heatSize = playerIds.length <= 6 ? 2 : playerIds.length <= 12 ? 3 : 4;
@@ -225,8 +225,12 @@ export default class DontGetCaughtGame extends BaseGame {
 
     const bracket = this.room.state.bracket;
 
+    if (this.hasPracticeRound()) {
+      await this._runBracketPracticeRound();
+    }
+
     this.broadcast("bracket_init", {
-      totalPlayers: [...this.room.state.players.values()].filter((p) => p.isConnected).length,
+      totalPlayers: [...this.room.state.players.values()].filter((p) => this.isPlayerActive(p)).length,
       heatSize: bracket.heatSize,
     });
 
@@ -345,6 +349,7 @@ export default class DontGetCaughtGame extends BaseGame {
       }
     }
 
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
   }
@@ -595,10 +600,7 @@ export default class DontGetCaughtGame extends BaseGame {
         // Only accept wander offset if the resulting target is walkable.
         // This prevents guards from heading towards a point inside a wall,
         // which causes them to get stuck on wall edges.
-        const waypointForCheck = patrolPath[
-          ((guard.patrolIndex * rt.patrolDir) % patrolPath.length + patrolPath.length) %
-          patrolPath.length
-        ];
+        const waypointForCheck = patrolPath[this._normalizePatrolIndex(guard.patrolIndex, patrolPath.length)];
         if (waypointForCheck) {
           const testX = waypointForCheck.x + 0.5 + candidateWX;
           const testY = waypointForCheck.y + 0.5 + candidateWY;
@@ -614,9 +616,7 @@ export default class DontGetCaughtGame extends BaseGame {
       }
 
       // Patrol: move towards current waypoint + wander
-      const waypointIdx =
-        ((guard.patrolIndex * rt.patrolDir) % patrolPath.length + patrolPath.length) %
-        patrolPath.length;
+      const waypointIdx = this._normalizePatrolIndex(guard.patrolIndex, patrolPath.length);
       const waypoint = patrolPath[waypointIdx % patrolPath.length];
       if (!waypoint) continue;
 
@@ -633,7 +633,14 @@ export default class DontGetCaughtGame extends BaseGame {
       }
 
       // Try direct movement first; if blocked, use BFS pathfinding
-      const moveResult = this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt);
+      const hasDirectRoute = hasLineOfSight(
+        GAME_MAP,
+        { x: guard.x, y: guard.y },
+        { x: targetX, y: targetY },
+      );
+      const moveResult = hasDirectRoute
+        ? this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt)
+        : { arrived: false, blocked: true };
 
       // ── Stuck detection: track position delta across ticks ──
       const posDx = guard.x - rt.prevX;
@@ -726,9 +733,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
     if (dist < 0.05) return { arrived: true, blocked: false };
 
-    // Lerp facing angle toward travel direction — eliminates twitching
     const desiredAngle = Math.atan2(dy, dx);
-    entity.facingAngle = lerpAngle(entity.facingAngle, desiredAngle, ANGLE_LERP_RATE);
 
     let moveX: number;
     let moveY: number;
@@ -740,20 +745,68 @@ export default class DontGetCaughtGame extends BaseGame {
       moveY = entity.y + (dy / dist) * speed;
     }
 
-    // Wall collision with axis-sliding (same approach as player movement)
     if (this._guardPositionWalkable(moveX, moveY)) {
+      entity.facingAngle = lerpAngle(entity.facingAngle, desiredAngle, ANGLE_LERP_RATE);
       entity.x = moveX;
       entity.y = moveY;
-    } else if (this._guardPositionWalkable(moveX, entity.y)) {
-      entity.x = moveX;
-    } else if (this._guardPositionWalkable(entity.x, moveY)) {
-      entity.y = moveY;
-    } else {
-      // Fully blocked — no movement at all
+      return { arrived: dist <= speed, blocked: false };
+    }
+
+    const candidates: Array<{ x: number; y: number; angle: number; score: number }> = [];
+
+    if (this._guardPositionWalkable(moveX, moveY)) {
+      candidates.push({
+        x: moveX,
+        y: moveY,
+        angle: desiredAngle,
+        score: this._scoreGuardMoveCandidate(entity.x, entity.y, moveX, moveY, desiredAngle, targetX, targetY),
+      });
+    }
+
+    if (this._guardPositionWalkable(moveX, entity.y)) {
+      candidates.push({
+        x: moveX,
+        y: entity.y,
+        angle: Math.atan2(0, moveX - entity.x),
+        score: this._scoreGuardMoveCandidate(entity.x, entity.y, moveX, entity.y, desiredAngle, targetX, targetY),
+      });
+    }
+
+    if (this._guardPositionWalkable(entity.x, moveY)) {
+      candidates.push({
+        x: entity.x,
+        y: moveY,
+        angle: Math.atan2(moveY - entity.y, 0),
+        score: this._scoreGuardMoveCandidate(entity.x, entity.y, entity.x, moveY, desiredAngle, targetX, targetY),
+      });
+    }
+
+    for (const offset of [Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2]) {
+      const turnAngle = desiredAngle + offset;
+      const candidateX = entity.x + Math.cos(turnAngle) * speed;
+      const candidateY = entity.y + Math.sin(turnAngle) * speed;
+      if (!this._guardPositionWalkable(candidateX, candidateY)) continue;
+
+      candidates.push({
+        x: candidateX,
+        y: candidateY,
+        angle: turnAngle,
+        score: this._scoreGuardMoveCandidate(entity.x, entity.y, candidateX, candidateY, desiredAngle, targetX, targetY),
+      });
+    }
+
+    if (candidates.length === 0) {
       return { arrived: false, blocked: true };
     }
 
-    return { arrived: dist <= speed, blocked: false };
+    candidates.sort((a, b) => b.score - a.score);
+    const bestMove = candidates[0];
+    entity.facingAngle = lerpAngle(entity.facingAngle, bestMove.angle, ANGLE_LERP_RATE);
+    entity.x = bestMove.x;
+    entity.y = bestMove.y;
+
+    const remainingDist = Math.hypot(targetX - entity.x, targetY - entity.y);
+    return { arrived: remainingDist < 0.05, blocked: false };
   }
 
   /**
@@ -768,6 +821,39 @@ export default class DontGetCaughtGame extends BaseGame {
       isWalkable(Math.floor(x - h), Math.floor(y + h)) &&
       isWalkable(Math.floor(x + h), Math.floor(y + h))
     );
+  }
+
+  private _scoreGuardMoveCandidate(
+    startX: number,
+    startY: number,
+    nextX: number,
+    nextY: number,
+    desiredAngle: number,
+    targetX: number,
+    targetY: number,
+  ): number {
+    const currentDist = Math.hypot(targetX - startX, targetY - startY);
+    const nextDist = Math.hypot(targetX - nextX, targetY - nextY);
+    const moveAngle = Math.atan2(nextY - startY, nextX - startX);
+    const anglePenalty = Math.abs(this._normalizeAngle(moveAngle - desiredAngle));
+    const probeDistance = 0.35;
+    const probeX = nextX + Math.cos(moveAngle) * probeDistance;
+    const probeY = nextY + Math.sin(moveAngle) * probeDistance;
+    const clearanceBonus = this._guardPositionWalkable(probeX, probeY) ? 0.35 : 0;
+
+    return (currentDist - nextDist) * 4 + clearanceBonus - anglePenalty;
+  }
+
+  private _normalizeAngle(angle: number): number {
+    let normalized = angle;
+    while (normalized > Math.PI) normalized -= Math.PI * 2;
+    while (normalized < -Math.PI) normalized += Math.PI * 2;
+    return normalized;
+  }
+
+  private _normalizePatrolIndex(index: number, length: number): number {
+    if (length <= 0) return 0;
+    return ((index % length) + length) % length;
   }
 
   // ── Detection ─────────────────────────────────────────────────────────────
@@ -837,7 +923,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
   private _applyPlayerCollisions(): void {
     const players = [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
 
     for (let i = 0; i < players.length; i++) {
@@ -1021,7 +1107,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
   private _checkRoundEnd(): void {
     const active = [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
     if (active.length === 0) {
       this._endRound();
@@ -1038,5 +1124,32 @@ export default class DontGetCaughtGame extends BaseGame {
       this.roundResolve();
       this.roundResolve = null;
     }
+  }
+
+  private async _runBracketPracticeRound(): Promise<void> {
+    this.room.state.currentRound = 0;
+    this.room.state.isPracticeRound = true;
+
+    this.setPhase("countdown");
+    await this.delay(3000);
+
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    await this.delay(500);
+
+    await this.runRound(1);
+
+    for (const p of this.room.state.players.values()) {
+      p.isEliminated = false;
+      p.isDetected = false;
+      p.detectionMeter = 0;
+      p.timesCaught = 0;
+    }
+    this.caughtThisRound.clear();
+
+    this.setPhase("round_end");
+    await this.delay(4000);
+
+    this.room.state.isPracticeRound = false;
   }
 }

@@ -250,7 +250,7 @@ export default class PaintMatchGame extends BaseGame {
   /** Return connected, non-eliminated players. */
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
   }
 

@@ -12,7 +12,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
-  import { TILE_SIZE_PX, TILE } from "../../../../shared/types";
+  import { TILE_SIZE_PX, TILE, getRoundProgressLabel } from "../../../../shared/types";
   import OddOneOutTV from "../../games/viewer/OddOneOutTV.svelte";
   import ShaveYakTV from "../../games/viewer/ShaveYakTV.svelte";
   import AudioOverlayTV from "../../games/viewer/AudioOverlayTV.svelte";
@@ -276,7 +276,7 @@
         class="text-4xl font-black font-mono {timeLeft < 10 ? 'text-red-400' : 'text-white'}"
         data-testid="timer"
       >{Math.ceil(timeLeft)}</p>
-      <p class="text-xs text-gray-400">Round {state.currentRound} of {state.gameConfig.roundCount}</p>
+      <p class="text-xs text-gray-400">{getRoundProgressLabel(state)}</p>
     </div>
 
     <!-- Player scores -->

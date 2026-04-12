@@ -614,7 +614,7 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
     {
       heading: "Four Rounds of Chaos",
-      body: "Describe the complaint, invent a diagnosis, devise a procedure, and finish the doctor's catchphrase!",
+      body: "Describe the complaint, invent a diagnosis with funny tests, devise a procedure, and finish the doctor's brag!",
       bgClass: "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
       headingColor: "text-emerald-300",
       bodyColor: "text-emerald-100",

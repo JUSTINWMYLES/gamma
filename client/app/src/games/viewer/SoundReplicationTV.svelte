@@ -14,6 +14,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -491,13 +492,14 @@
       <h1 class="text-3xl font-bold text-center text-purple-400">Round Results</h1>
 
       <div class="space-y-2">
-        {#each leaderboard as entry, i}
-          <div class="flex items-center gap-3 bg-gray-800 rounded-xl px-5 py-3">
-            <span class="w-8 text-center text-2xl font-black
-              {i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500'}">
-              {entry.rank}
-            </span>
-            <span class="flex-1 text-xl font-bold text-white">{entry.playerName}</span>
+          {#each leaderboard as entry, i}
+            <div class="flex items-center gap-3 bg-gray-800 rounded-xl px-5 py-3">
+              <span class="w-8 text-center text-2xl font-black
+                {i === 0 ? 'text-yellow-400' : i === 1 ? 'text-gray-300' : i === 2 ? 'text-amber-600' : 'text-gray-500'}">
+                {entry.rank}
+              </span>
+              <PlayerIcon player={state.players.get(entry.playerId)} size={30} />
+              <span class="flex-1 text-xl font-bold text-white">{entry.playerName}</span>
 
             <!-- Score bar mini -->
             <div class="w-32 h-6 bg-gray-700 rounded-full overflow-hidden">
@@ -524,6 +526,7 @@
           {#each sortedPlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+              <PlayerIcon player={p} size={24} />
               <span class="flex-1 truncate font-semibold text-white">{p.name}</span>
               <span class="font-mono text-lg font-bold text-white">{p.score}</span>
             </div>

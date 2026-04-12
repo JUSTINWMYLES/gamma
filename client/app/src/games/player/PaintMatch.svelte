@@ -18,6 +18,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
 
   export let room: Room;
   export let state: RoomState;
@@ -63,12 +64,13 @@
    */
   function localMixToRGB(r: number, y: number, b: number, w: number, k: number): string {
     const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * clamp01(t);
     r = clamp01(r); y = clamp01(y); b = clamp01(b); w = clamp01(w); k = clamp01(k);
 
-    const total = r + y + b + w + k;
+    const chromatic = r + y + b;
+    const total = chromatic + w + k;
     if (total === 0) return "rgb(255,255,255)";
 
-    const chromatic = r + y + b;
     let baseR: number, baseG: number, baseB: number;
 
     if (chromatic === 0) {
@@ -93,18 +95,25 @@
         return c0*(1-bn) + c1*bn;
       }
 
-      baseR = interp(cubeR);
-      baseG = interp(cubeG);
-      baseB = interp(cubeB);
+      const hueR = interp(cubeR);
+      const hueG = interp(cubeG);
+      const hueB = interp(cubeB);
+      const pigmentStrength = clamp01(chromatic);
+
+      baseR = lerp(255, hueR, pigmentStrength);
+      baseG = lerp(255, hueG, pigmentStrength);
+      baseB = lerp(255, hueB, pigmentStrength);
     }
 
-    const cf = chromatic / total;
-    const wf = w / total;
-    const kf = k / total;
+    const whiteWeight = chromatic + w > 0 ? w / (chromatic + w) : 0;
+    const withWhiteR = lerp(baseR, 255, whiteWeight);
+    const withWhiteG = lerp(baseG, 255, whiteWeight);
+    const withWhiteB = lerp(baseB, 255, whiteWeight);
 
-    const fr = Math.round(Math.max(0, Math.min(255, baseR*cf + 255*wf)));
-    const fg = Math.round(Math.max(0, Math.min(255, baseG*cf + 255*wf)));
-    const fb = Math.round(Math.max(0, Math.min(255, baseB*cf + 255*wf)));
+    const blackWeight = total > 0 ? k / total : 0;
+    const fr = Math.round(Math.max(0, Math.min(255, lerp(withWhiteR, 0, blackWeight))));
+    const fg = Math.round(Math.max(0, Math.min(255, lerp(withWhiteG, 0, blackWeight))));
+    const fb = Math.round(Math.max(0, Math.min(255, lerp(withWhiteB, 0, blackWeight))));
 
     return `rgb(${fr},${fg},${fb})`;
   }
@@ -213,8 +222,8 @@
 <div class="flex-1 flex flex-col bg-gray-950 select-none" data-testid="paint-match-player">
   <!-- Top bar: timer + submit count -->
   <div class="px-4 py-2 bg-gray-900 flex items-center justify-between">
-    <div class="flex items-center gap-2">
-      <span class="text-xs text-gray-400 uppercase tracking-wider">Round {state.currentRound}/{state.gameConfig.roundCount}</span>
+      <div class="flex items-center gap-2">
+      <span class="text-xs text-gray-400 uppercase tracking-wider">{getRoundProgressLabel(state)}</span>
     </div>
     <div class="flex items-center gap-3">
       <span class="text-xs text-gray-400">{submitCount}/{totalPlayers} submitted</span>

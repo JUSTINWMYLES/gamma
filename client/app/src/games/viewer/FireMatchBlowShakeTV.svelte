@@ -3,6 +3,7 @@
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
   import CampfireCanvas from "../shared/CampfireCanvas.svelte";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -228,8 +229,10 @@
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-3">
           <p class="text-xs uppercase tracking-widest text-gray-400 mb-3">Results</p>
           {#each roundResults as r, rank}
+            {@const player = state.players.get(r.playerId)}
             <div class="flex items-center gap-3">
               <span class="w-6 text-right font-mono text-gray-500 text-sm">{rank + 1}.</span>
+              {#if player}<PlayerIcon player={player} size={22} />{/if}
               <span class="flex-1 font-semibold {r.finished ? 'text-green-300' : 'text-gray-300'} truncate">{r.playerName}</span>
               <span class="text-xs text-gray-400">{r.stagesCompleted}/{totalStages} stages</span>
               {#if r.finished}

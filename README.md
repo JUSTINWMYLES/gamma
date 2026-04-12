@@ -18,7 +18,7 @@ A networked multiplayer party game framework where phones are controllers and a 
 ---
 
 > [!NOTE] 
-> This is a hobby project maintained in my spare time. The game framework and individual games are currently bundled together — splitting them out is on the roadmap but not a priority. A Kubernetes operator-based deployment is the intended production path, but cloud pricing is rough out there so I'll deal with that later.
+> This is a hobby project maintained in my spare time. The game framework and individual games are currently bundled together — splitting them out is on the roadmap but not a priority. The kubernetes operator has been tested and works real well.
 
 ---
 

@@ -326,7 +326,8 @@
     if (musicAudio) {
       musicAudio.preload = "auto";
       musicAudio.loop = true;
-      musicAudio.playsInline = true;
+      musicAudio.setAttribute("playsinline", "");
+      musicAudio.setAttribute("webkit-playsinline", "true");
     }
 
     window.addEventListener("pointerdown", onUserInteraction);
@@ -404,7 +405,7 @@
 
 <div data-testid="app-root" class="min-h-screen flex flex-col bg-gray-950 text-white">
 
-  <audio bind:this={musicAudio} preload="auto" playsinline webkit-playsinline="true" />
+  <audio bind:this={musicAudio} preload="auto" />
 
   {#if showBackground}
     <FloatingBackground dark={$isDark} />
@@ -429,6 +430,13 @@
         <path fill-rule="evenodd" d="M13.293 9.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 14H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
       </svg>
     </button>
+  {/if}
+
+  {#if role === "viewer" && state && !error && viewerView === "room"}
+    <div class="fixed top-3 right-3 z-50 rounded-lg bg-black/45 border border-white/10 px-3 py-1.5 text-right backdrop-blur-sm">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-gray-400">Room</p>
+      <p class="font-mono text-base font-black tracking-[0.25em] text-white" data-testid="persistent-room-code">{state.roomCode}</p>
+    </div>
   {/if}
 
   <!-- ── Leave confirmation dialog ─────────────────────────────── -->

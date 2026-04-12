@@ -194,9 +194,9 @@
   onMount(() => {
     scene = new THREE.Scene();
 
-    camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
-    camera.position.set(0, 0.55, 6.2);
-    camera.lookAt(0, 0.45, 0);
+    camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    camera.position.set(0, 0.15, 7.2);
+    camera.lookAt(0, 0.1, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -227,10 +227,10 @@
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
         const height = Math.max(size.y, 0.001);
-        const scale = 3.9 / height;
+        const scale = 3.4 / height;
         model.scale.setScalar(scale);
         const scaledCenter = center.multiplyScalar(scale);
-        model.position.set(-scaledCenter.x, -scaledCenter.y - 1.05, -scaledCenter.z);
+        model.position.set(-scaledCenter.x, -scaledCenter.y - 0.35, -scaledCenter.z);
 
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {
