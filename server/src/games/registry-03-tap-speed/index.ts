@@ -36,6 +36,9 @@ import { BaseGame } from "../BaseGame";
 import { buildBracket, advanceBracket, getMatchPlayers, resolveHeat1v1 } from "../../utils/bracket";
 import { BracketState, Heat } from "../../schema/BracketState";
 
+const RECONNECT_GRACE_SECONDS = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60);
+const RECONNECT_GRACE_MS = RECONNECT_GRACE_SECONDS * 1000;
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Minimum tap duration per match (ms). */
@@ -84,6 +87,16 @@ interface MatchState {
   durationMs: number;
   startedAt: number;
   ended: boolean;
+  player1DisconnectedAt: number;
+  player2DisconnectedAt: number;
+}
+
+interface MatchOutcome {
+  winnerId: string;
+  loserId: string;
+  winnerTaps: number;
+  loserTaps: number;
+  forfeitedPlayerId: string;
 }
 
 // ── Input types ───────────────────────────────────────────────────────────────
@@ -171,6 +184,11 @@ export default class TapSpeedGame extends BaseGame {
     // Brief pause to show bracket overview
     await this.delay(3000);
 
+    if (this.hasPracticeRound()) {
+      await this._runPracticeBracketRound();
+      this.room.state.isPracticeRound = false;
+    }
+
     while (true) {
       const bracketRoundIndex = bracket.currentRound;
       const currentBracketRound = bracket.rounds[bracketRoundIndex];
@@ -243,20 +261,8 @@ export default class TapSpeedGame extends BaseGame {
 
         // Determine winner
         const cm = this.currentMatch!;
-        let winnerId: string;
-        let loserId: string;
-
-        if (cm.player1Taps > cm.player2Taps) {
-          winnerId = cm.player1Id;
-          loserId = cm.player2Id;
-        } else if (cm.player2Taps > cm.player1Taps) {
-          winnerId = cm.player2Id;
-          loserId = cm.player1Id;
-        } else {
-          // Tie: random winner (extremely rare in a tap game)
-          winnerId = Math.random() < 0.5 ? cm.player1Id : cm.player2Id;
-          loserId = winnerId === cm.player1Id ? cm.player2Id : cm.player1Id;
-        }
+        const outcome = this._resolveMatchOutcome(cm);
+        const { winnerId, loserId, winnerTaps, loserTaps } = outcome;
 
         // Record winner in bracket state
         resolveHeat1v1(heat, winnerId);
@@ -266,9 +272,6 @@ export default class TapSpeedGame extends BaseGame {
         if (loser) loser.isEliminated = true;
 
         // Award scores
-        const winnerTaps = winnerId === cm.player1Id ? cm.player1Taps : cm.player2Taps;
-        const loserTaps = loserId === cm.player1Id ? cm.player1Taps : cm.player2Taps;
-
         this._addScore(winnerId, MATCH_WIN_POINTS + winnerTaps * POINTS_PER_TAP);
         this._addScore(loserId, loserTaps * POINTS_PER_TAP);
 
@@ -282,6 +285,7 @@ export default class TapSpeedGame extends BaseGame {
           loserName: loser?.name ?? "Unknown",
           winnerTaps,
           loserTaps,
+          forfeitedPlayerId: outcome.forfeitedPlayerId,
           durationMs: cm.durationMs,
         });
 
@@ -340,6 +344,7 @@ export default class TapSpeedGame extends BaseGame {
     this._applyScores();
 
     // Show scoreboard
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
   }
@@ -405,6 +410,27 @@ export default class TapSpeedGame extends BaseGame {
     this.pendingScores.clear();
   }
 
+  override onPlayerReconnected(oldId: string, newId: string, _client: Client): void {
+    if (this.currentMatch) {
+      if (this.currentMatch.player1Id === oldId) {
+        this.currentMatch.player1Id = newId;
+        this.currentMatch.player1DisconnectedAt = 0;
+      }
+      if (this.currentMatch.player2Id === oldId) {
+        this.currentMatch.player2Id = newId;
+        this.currentMatch.player2DisconnectedAt = 0;
+      }
+    }
+
+    if (this.pendingScores.has(oldId)) {
+      const points = this.pendingScores.get(oldId) ?? 0;
+      this.pendingScores.delete(oldId);
+      this.pendingScores.set(newId, (this.pendingScores.get(newId) ?? 0) + points);
+    }
+
+    this._replaceBracketPlayerId(oldId, newId);
+  }
+
   // ── Match runner ──────────────────────────────────────────────────────────
 
   /**
@@ -433,6 +459,8 @@ export default class TapSpeedGame extends BaseGame {
       durationMs,
       startedAt: now,
       ended: false,
+      player1DisconnectedAt: 0,
+      player2DisconnectedAt: 0,
     };
 
     // Update room state for client-side timer display
@@ -484,13 +512,25 @@ export default class TapSpeedGame extends BaseGame {
     const p2 = this.room.state.players.get(cm.player2Id);
 
     if (p1 && !p1.isConnected) {
-      // Player 1 disconnected — player 2 auto-wins by getting max taps
-      cm.player1Taps = -1; // ensures player 2 wins
+      if (cm.player1DisconnectedAt === 0) {
+        cm.player1DisconnectedAt = Date.now();
+      }
+    } else {
+      cm.player1DisconnectedAt = 0;
+    }
+    if (p2 && !p2.isConnected) {
+      if (cm.player2DisconnectedAt === 0) {
+        cm.player2DisconnectedAt = Date.now();
+      }
+    } else {
+      cm.player2DisconnectedAt = 0;
+    }
+
+    if (this._disconnectExceededGrace(cm.player1DisconnectedAt)) {
       this._endMatch();
       return;
     }
-    if (p2 && !p2.isConnected) {
-      cm.player2Taps = -1;
+    if (this._disconnectExceededGrace(cm.player2DisconnectedAt)) {
       this._endMatch();
       return;
     }
@@ -527,6 +567,150 @@ export default class TapSpeedGame extends BaseGame {
     this.pendingScores.set(playerId, current + points);
   }
 
+  private _disconnectExceededGrace(disconnectedAt: number): boolean {
+    return disconnectedAt > 0 && Date.now() - disconnectedAt >= RECONNECT_GRACE_MS;
+  }
+
+  private async _runPracticeBracketRound(): Promise<void> {
+    const practiceRound = this.room.state.bracket.rounds[0];
+    if (!practiceRound) return;
+
+    this.room.state.currentRound = 0;
+    this.room.state.isPracticeRound = true;
+
+    const practiceHeats = practiceRound.heats.filter((heat: Heat) => {
+      const [, player2Id] = getMatchPlayers(heat);
+      return !!player2Id;
+    });
+
+    for (let index = 0; index < practiceHeats.length; index++) {
+      const heat = practiceHeats[index];
+      const [heatP1, heatP2] = getMatchPlayers(heat);
+      if (!heatP1 || !heatP2) continue;
+
+      const p1 = this.room.state.players.get(heatP1);
+      const p2 = this.room.state.players.get(heatP2);
+      if (p1) p1.currentMatchOpponentId = heatP2;
+      if (p2) p2.currentMatchOpponentId = heatP1;
+
+      this.broadcast("tap_match_start", {
+        matchId: `practice-${heat.id}`,
+        player1Id: heatP1,
+        player1Name: p1?.name ?? "Unknown",
+        player2Id: heatP2,
+        player2Name: p2?.name ?? "Unknown",
+        bracketRound: 0,
+      });
+
+      await this.delay(2000);
+      this.broadcast("tap_countdown", { seconds: 3 });
+      await this.delay(3000);
+
+      await this._runMatch(`practice-${heat.id}`, heatP1, heatP2);
+
+      const cm = this.currentMatch;
+      if (!cm) continue;
+
+      const outcome = this._resolveMatchOutcome(cm);
+      const loser = this.room.state.players.get(outcome.loserId);
+      const winner = this.room.state.players.get(outcome.winnerId);
+
+      this.broadcast("tap_match_result", {
+        matchId: `practice-${heat.id}`,
+        winnerId: outcome.winnerId,
+        winnerName: winner?.name ?? "Unknown",
+        loserId: outcome.loserId,
+        loserName: loser?.name ?? "Unknown",
+        winnerTaps: outcome.winnerTaps,
+        loserTaps: outcome.loserTaps,
+        forfeitedPlayerId: outcome.forfeitedPlayerId,
+        durationMs: cm.durationMs,
+      });
+
+      if (p1) p1.currentMatchOpponentId = "";
+      if (p2) p2.currentMatchOpponentId = "";
+      this.currentMatch = null;
+
+      await this.delay(MATCH_RESULT_DELAY_MS);
+
+      if (index < practiceHeats.length - 1) {
+        await this.delay(INTER_MATCH_DELAY_MS);
+      }
+    }
+  }
+
+  private _resolveMatchOutcome(cm: MatchState): MatchOutcome {
+    const player1Forfeited = this._disconnectExceededGrace(cm.player1DisconnectedAt);
+    const player2Forfeited = this._disconnectExceededGrace(cm.player2DisconnectedAt);
+
+    if (player1Forfeited !== player2Forfeited) {
+      return player1Forfeited
+        ? {
+            winnerId: cm.player2Id,
+            loserId: cm.player1Id,
+            winnerTaps: cm.player2Taps,
+            loserTaps: cm.player1Taps,
+            forfeitedPlayerId: cm.player1Id,
+          }
+        : {
+            winnerId: cm.player1Id,
+            loserId: cm.player2Id,
+            winnerTaps: cm.player1Taps,
+            loserTaps: cm.player2Taps,
+            forfeitedPlayerId: cm.player2Id,
+          };
+    }
+
+    if (cm.player1Taps > cm.player2Taps) {
+      return {
+        winnerId: cm.player1Id,
+        loserId: cm.player2Id,
+        winnerTaps: cm.player1Taps,
+        loserTaps: cm.player2Taps,
+        forfeitedPlayerId: "",
+      };
+    }
+
+    if (cm.player2Taps > cm.player1Taps) {
+      return {
+        winnerId: cm.player2Id,
+        loserId: cm.player1Id,
+        winnerTaps: cm.player2Taps,
+        loserTaps: cm.player1Taps,
+        forfeitedPlayerId: "",
+      };
+    }
+
+    const winnerId = Math.random() < 0.5 ? cm.player1Id : cm.player2Id;
+    const loserId = winnerId === cm.player1Id ? cm.player2Id : cm.player1Id;
+
+    return {
+      winnerId,
+      loserId,
+      winnerTaps: winnerId === cm.player1Id ? cm.player1Taps : cm.player2Taps,
+      loserTaps: loserId === cm.player1Id ? cm.player1Taps : cm.player2Taps,
+      forfeitedPlayerId: "",
+    };
+  }
+
+  private _replaceBracketPlayerId(oldId: string, newId: string): void {
+    const bracket = this.room.state.bracket;
+    for (const round of bracket.rounds) {
+      for (const heat of round.heats) {
+        for (let i = 0; i < heat.playerIds.length; i++) {
+          if (heat.playerIds[i] === oldId) {
+            heat.playerIds[i] = newId;
+          }
+        }
+        for (let i = 0; i < heat.advancingIds.length; i++) {
+          if (heat.advancingIds[i] === oldId) {
+            heat.advancingIds[i] = newId;
+          }
+        }
+      }
+    }
+  }
+
   /** Apply all pending scores to room state. */
   private _applyScores(): void {
     for (const [playerId, points] of this.pendingScores.entries()) {
@@ -541,7 +725,7 @@ export default class TapSpeedGame extends BaseGame {
   /** Return connected, non-eliminated players. */
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
   }
 

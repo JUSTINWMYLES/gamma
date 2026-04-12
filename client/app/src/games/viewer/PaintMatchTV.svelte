@@ -13,6 +13,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -94,6 +96,7 @@
       <!-- Rankings grid -->
       <div class="flex flex-wrap justify-center gap-4 max-w-4xl">
         {#each rankings as result}
+          {@const player = state.players.get(result.playerId)}
           <div
             class="flex flex-col items-center gap-2 p-4 rounded-xl bg-gray-900 border
               {result.rank === 1 ? 'border-amber-500 ring-2 ring-amber-500/30' :
@@ -112,9 +115,12 @@
             </span>
 
             <!-- Player name -->
-            <p class="text-sm font-bold text-white truncate max-w-[120px]">
-              {getPlayerName(result.playerId)}
-            </p>
+            <div class="flex items-center gap-2 max-w-[120px]">
+              {#if player}<PlayerIcon player={player} size={24} />{/if}
+              <p class="text-sm font-bold text-white truncate">
+                {getPlayerName(result.playerId)}
+              </p>
+            </div>
 
             <!-- Colour swatch -->
             <div
@@ -164,7 +170,7 @@
         <span class="text-sm text-gray-400">{submitCount}/{totalPlayers} submitted</span>
       </div>
 
-      <p class="text-xs text-gray-500">Round {state.currentRound} of {state.gameConfig.roundCount}</p>
+      <p class="text-xs text-gray-500">{getRoundProgressLabel(state)}</p>
     </div>
 
   {:else}

@@ -23,6 +23,9 @@ export class PlayerState extends Schema {
   /** True while the WebSocket session is open. */
   @type("boolean") isConnected: boolean = true;
 
+  /** Epoch ms when the current disconnect window started. Zero while connected. */
+  @type("number") disconnectedAt: number = 0;
+
   /** True once the player has been eliminated in the current game. */
   @type("boolean") isEliminated: boolean = false;
 
@@ -41,6 +44,15 @@ export class PlayerState extends Schema {
 
   /** Background color for the player's icon circle (Tailwind-compatible hex). */
   @type("string") iconBgColor: string = "";
+
+  /** Structured custom icon designer payload (JSON string). */
+  @type("string") iconDesign: string = "";
+
+  /** Microphone permission state captured in the lobby. */
+  @type("string") micPermission: "unknown" | "granted" | "denied" = "unknown";
+
+  /** Motion/orientation permission state captured in the lobby. */
+  @type("string") motionPermission: "unknown" | "granted" | "denied" = "unknown";
 
   // ── registry-14 specific fields ───────────────────────────────────────────
   /** World-space X position (tile units). */

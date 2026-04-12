@@ -13,6 +13,9 @@ export class GameConfig extends Schema {
   /** Number of rounds to play. Default per-game; host can override. */
   @type("number") roundCount: number = 1;
 
+  /** If true, play an unscored warm-up round before round 1. */
+  @type("boolean") practiceRoundEnabled: boolean = false;
+
   /** Per-round time limit in seconds. */
   @type("number") timeLimitSecs: number = 60;
 

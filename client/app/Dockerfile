@@ -17,6 +17,7 @@ COPY svelte.config.js tailwind.config.cjs postcss.config.cjs ./
 
 # Audio assets bundled into the build via the extraStaticDir Vite plugin
 COPY audio/ ./audio/
+COPY models/ ./models/
 
 # Install app dependencies via workspace
 RUN npm install --workspace=client/app --ignore-scripts

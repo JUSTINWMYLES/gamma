@@ -135,6 +135,10 @@ export default class FireMatchBlowShakeGame extends BaseGame {
 
     const bracket = this.room.state.bracket;
 
+    if (this.hasPracticeRound()) {
+      await this._runBracketPracticeRound();
+    }
+
     this.broadcast("bracket_init", {
       totalPlayers: this._activePlayers().length,
       heatSize: bracket.heatSize,
@@ -240,6 +244,7 @@ export default class FireMatchBlowShakeGame extends BaseGame {
       }
     }
 
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
   }
@@ -353,6 +358,25 @@ export default class FireMatchBlowShakeGame extends BaseGame {
     }
   }
 
+  private async _runBracketPracticeRound(): Promise<void> {
+    this.room.state.currentRound = 0;
+    this.room.state.isPracticeRound = true;
+
+    this.setPhase("countdown");
+    await this.delay(3000);
+
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    await this.delay(500);
+
+    await this.runRound(1);
+
+    this.setPhase("round_end");
+    await this.delay(4000);
+
+    this.room.state.isPracticeRound = false;
+  }
+
   override handleInput(client: Client, data: unknown): void {
     if (this.room.state.phase !== "in_round") return;
 
@@ -378,6 +402,8 @@ export default class FireMatchBlowShakeGame extends BaseGame {
 
     // Only accept actions valid for the player's current stage.
     if (!cfg.actions.includes(input.action)) return;
+    if (stage === "blow" && !this.hasMicPermission(player)) return;
+    if (stage === "shake" && !this.hasMotionPermission(player)) return;
 
     let gain = 0;
 
@@ -445,7 +471,9 @@ export default class FireMatchBlowShakeGame extends BaseGame {
         });
       } else {
         // Set target for next stage — we need the stageTargets. Compute inline.
-        const round = this.room.state.currentRound;
+        const round = this.room.state.isPracticeRound
+          ? 1
+          : Math.max(1, this.room.state.currentRound);
         const nextStage = STAGE_ORDER[pp.stageIndex];
         const nextCfg = STAGE_CONFIGS[nextStage];
         pp.target = Math.round(nextCfg.baseTarget + (round - 1) * nextCfg.perRound);
@@ -476,7 +504,7 @@ export default class FireMatchBlowShakeGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p) && this.hasMicPermission(p) && this.hasMotionPermission(p),
     );
   }
 

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Room } from "colyseus.js";
-  import type { RoomState, PlayerState, GameMeta } from "../../../../shared/types";
+  import type { RoomState, PlayerState, GameMeta, DevicePermissionState } from "../../../../shared/types";
   import { GAME_REGISTRY, getGameUnavailableReason } from "../../../../shared/types";
   import { onMount } from "svelte";
   import GameCardGrid from "../../components/GameCardGrid.svelte";
@@ -27,9 +27,43 @@
   }
   let permResult: PermissionResult | null = null;
 
+  type PermissionRequester = {
+    requestPermission?: () => Promise<string>;
+  };
+
+  function getSensorPermissionRequesters(): Array<() => Promise<string>> {
+    const requesters: Array<() => Promise<string>> = [];
+    const motion = DeviceMotionEvent as unknown as PermissionRequester;
+    const orientation = DeviceOrientationEvent as unknown as PermissionRequester;
+
+    if (typeof motion.requestPermission === "function") {
+      requesters.push(() => motion.requestPermission!());
+    }
+    if (typeof orientation.requestPermission === "function") {
+      requesters.push(() => orientation.requestPermission!());
+    }
+
+    return requesters;
+  }
+
   function needsMotionPermission(): boolean {
-    const dm = DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> };
-    return typeof dm.requestPermission === "function";
+    return getSensorPermissionRequesters().length > 0;
+  }
+
+  async function requestMotionPermissions(): Promise<PermissionResult["motion"]> {
+    const requesters = getSensorPermissionRequesters();
+    if (requesters.length === 0) return "not_needed";
+
+    for (const requestPermission of requesters) {
+      try {
+        const permission = await requestPermission();
+        if (permission !== "granted") return "denied";
+      } catch {
+        return "denied";
+      }
+    }
+
+    return "granted";
   }
 
   async function requestAllPermissions() {
@@ -47,18 +81,10 @@
       result.mic = "denied";
     }
 
-    // ── Device Motion (iOS requires user-gesture-gated requestPermission) ──
-    if (needsMotionPermission()) {
-      try {
-        const dm = DeviceMotionEvent as unknown as { requestPermission: () => Promise<string> };
-        const perm = await dm.requestPermission();
-        result.motion = perm === "granted" ? "granted" : "denied";
-      } catch {
-        result.motion = "denied";
-      }
-    }
+    result.motion = await requestMotionPermissions();
 
     permResult = result;
+    syncPermissionsToServer(result);
     try {
       localStorage.setItem(CONSENT_KEY, JSON.stringify(result));
     } catch {}
@@ -66,10 +92,34 @@
   }
 
   function skipConsent() {
+    permResult = { mic: "skipped", motion: needsMotionPermission() ? "skipped" : "not_needed" };
+    syncPermissionsToServer(permResult);
     try {
       localStorage.setItem(CONSENT_KEY, "skipped");
     } catch {}
     showConsent = false;
+  }
+
+  function syncPermissionsToServer(result: PermissionResult | null) {
+    if (!result) return;
+    room.send("update_permissions", {
+      mic: toPermissionState(result.mic),
+      motion: result.motion === "not_needed" ? "granted" : toPermissionState(result.motion),
+    });
+  }
+
+  function toPermissionState(
+    value: "granted" | "denied" | "skipped",
+  ): DevicePermissionState {
+    return value === "granted" ? "granted" : value === "denied" ? "denied" : "unknown";
+  }
+
+  function permissionSummary(value: DevicePermissionState): string {
+    return value === "granted"
+      ? "Enabled"
+      : value === "denied"
+        ? "Denied"
+        : "Not enabled";
   }
 
   // ── Touch discrimination ────────────────────────────────────────────────
@@ -143,6 +193,9 @@
   $: canStart = !!state.selectedGame && state.players.size >= 1 && allPlayersReady;
   $: hasQueue = (state.gameQueue?.length ?? 0) > 0;
   $: availableGames = GAME_REGISTRY.filter((g) => !getGameUnavailableReason(g, state));
+  $: isLowballFunnyMessages =
+    state.selectedGame === "registry-25-lowball-marketplace" &&
+    state.gameConfig.gameMode === "funny_messages";
 
   const SETUP_STEP_LABELS: Record<number, string> = {
     1: "Host is choosing location…",
@@ -234,6 +287,12 @@
       const saved = localStorage.getItem(CONSENT_KEY);
       if (!saved) {
         showConsent = true;
+      } else if (saved === "skipped") {
+        permResult = { mic: "skipped", motion: needsMotionPermission() ? "skipped" : "not_needed" };
+        syncPermissionsToServer(permResult);
+      } else {
+        permResult = JSON.parse(saved) as PermissionResult;
+        syncPermissionsToServer(permResult);
       }
     } catch {
       showConsent = true;
@@ -249,7 +308,7 @@
       <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl">
         <h3 class="text-lg font-bold text-white">Enable Game Features</h3>
         <p class="text-sm text-gray-400 leading-relaxed">
-          Some games use your microphone (blow to extinguish a fire) and motion sensors (shake to fan flames). Grant access now so games start smoothly.
+          Some games use your microphone plus motion and tilt sensors. Grant access here so you never have to approve them mid-game.
         </p>
         <button
           class="w-full py-3 rounded-xl text-base font-bold bg-indigo-600 text-white active:bg-indigo-500 transition-colors"
@@ -455,6 +514,25 @@
           </li>
         {/each}
       </ul>
+
+      {#if me}
+        <div class="mt-3 pt-3 border-t border-gray-700 space-y-1 text-xs text-gray-400">
+          <div class="flex items-center justify-between">
+            <span>Microphone</span>
+            <span class={me.micPermission === 'granted' ? 'text-green-400' : 'text-gray-400'}>{permissionSummary(me.micPermission)}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>Motion</span>
+            <span class={me.motionPermission === 'granted' ? 'text-green-400' : 'text-gray-400'}>{permissionSummary(me.motionPermission)}</span>
+          </div>
+          {#if me.micPermission !== 'granted' || me.motionPermission !== 'granted'}
+            <button
+              class="w-full mt-2 py-2 rounded-lg bg-gray-700 text-gray-200 font-semibold active:bg-indigo-700 transition-colors"
+              on:click={() => (showConsent = true)}
+            >Enable device permissions</button>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <!-- Host: start button. Non-host: ready button. -->
@@ -623,15 +701,31 @@
               on:change={(e) => updateConfig({ roundCount: Number(e.currentTarget.value) })}
             />
           </label>
-          <label class="flex items-center justify-between">
-            <span class="text-sm text-gray-300">Time Limit (s)</span>
+          {#if isLowballFunnyMessages}
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-300">Funny Message Time</span>
+              <span class="text-sm font-semibold text-white">Fixed 180s</span>
+            </div>
+          {:else}
+            <label class="flex items-center justify-between">
+              <span class="text-sm text-gray-300">Time Limit (s)</span>
+              <input
+                type="number"
+                min="10"
+                max="120"
+                value={state.gameConfig.timeLimitSecs}
+                class="w-14 bg-gray-700 text-white text-center rounded px-2 py-1 text-sm"
+                on:change={(e) => updateConfig({ timeLimitSecs: Number(e.currentTarget.value) })}
+              />
+            </label>
+          {/if}
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-300">Practice Round</span>
             <input
-              type="number"
-              min="10"
-              max="120"
-              value={state.gameConfig.timeLimitSecs}
-              class="w-14 bg-gray-700 text-white text-center rounded px-2 py-1 text-sm"
-              on:change={(e) => updateConfig({ timeLimitSecs: Number(e.currentTarget.value) })}
+              type="checkbox"
+              checked={state.gameConfig.practiceRoundEnabled}
+              class="w-5 h-5 accent-indigo-500"
+              on:change={(e) => updateConfig({ practiceRoundEnabled: e.currentTarget.checked })}
             />
           </label>
 
@@ -645,6 +739,30 @@
               >
                 <option value="classic">Classic Bidding</option>
                 <option value="funny_messages">Funny Messages</option>
+              </select>
+            </label>
+          {:else if state.selectedGame === "registry-26-audio-overlay"}
+            <label class="flex items-center justify-between gap-3">
+              <span class="text-sm text-gray-300">Mode</span>
+              <select
+                class="bg-gray-700 text-white rounded px-2 py-1 text-sm"
+                value={state.gameConfig.gameMode === "record_own" ? "record_own" : "randomized"}
+                on:change={(e) => updateConfig({ gameMode: e.currentTarget.value })}
+              >
+                <option value="randomized">Random GIF Swap</option>
+                <option value="record_own">Record Own GIF</option>
+              </select>
+            </label>
+          {:else if state.selectedGame === "registry-04-escape-maze"}
+            <label class="flex items-center justify-between gap-3">
+              <span class="text-sm text-gray-300">Mode</span>
+              <select
+                class="bg-gray-700 text-white rounded px-2 py-1 text-sm"
+                value={state.gameConfig.gameMode === "team" ? "team" : "individual"}
+                on:change={(e) => updateConfig({ gameMode: e.currentTarget.value })}
+              >
+                <option value="individual">Individual</option>
+                <option value="team">Teams of 4</option>
               </select>
             </label>
           {/if}

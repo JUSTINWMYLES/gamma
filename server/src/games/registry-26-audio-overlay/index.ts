@@ -27,15 +27,16 @@
  * Server messages → clients:
  *   "category_selection_start" { chooserId, chooserName, categories, durationMs, serverTimestamp }
  *   "category_chosen"          { category, chooserName }
- *   "gif_selection_start"      { gifs, category, searchTerm, durationMs, serverTimestamp }
+ *   "gif_selection_start"      { gifs, category, searchTerm, durationMs, serverTimestamp, totalSelectors }
  *   "gif_selection_update"     { submitted, total }
  *   "gif_search_results"       { gifs, query }
- *   "gif_assigned"             { gifUrl, gifLabel, originalPicker, durationMs, serverTimestamp }
- *   "recording_turn"           { playerId, playerName, durationMs, serverTimestamp }
+ *   "gif_assigned"             { gifUrl, gifLabel, originalPicker, maxClipDurationMs, mode }
+ *   "recording_prepare"        { playerId, playerName, durationMs, serverTimestamp }
+ *   "recording_turn"           { playerId, playerName, durationMs, serverTimestamp, maxClipDurationMs, mode }
  *   "recording_submitted"      { playerId }
- *   "playback_entry"           { playerId, playerName, gifUrl, gifLabel, audioBase64 }
+ *   "playback_entry"           { playerId, playerName, gifUrl, gifLabel, audioBase64, audioDurationMs, introDurationMs, postDurationMs }
  *   "playback_done"            {}
- *   "voting_start"             { durationMs, entries, serverTimestamp }
+ *   "voting_start"             { durationMs, entries, serverTimestamp, totalVoters }
  *   "vote_confirmed"           { targetId }
  *   "vote_count_update"        { votesIn, totalVoters }
  *   "round_result"             { winner, scores, entries, category }
@@ -44,7 +45,7 @@
  *   { action: "select_category", category }
  *   { action: "select_gif", gifUrl, gifLabel }
  *   { action: "search_gifs", query }
- *   { action: "submit_recording", audioBase64 }
+ *   { action: "submit_recording", audioBase64, durationSecs }
  *   { action: "vote", targetId }
  */
 
@@ -61,8 +62,16 @@ const CATEGORY_REVEAL_DELAY_MS = 3_000;
 const GIF_SELECTION_DURATION_MS = 120_000;
 /** Time each player has to record their audio (ms). */
 const RECORDING_DURATION_MS = 60_000;
-/** Time each playback entry is displayed (ms). */
-const PLAYBACK_ENTRY_DISPLAY_MS = 8_000;
+/** Warning before a player's recording turn starts (ms). */
+const RECORDING_PREPARE_MS = 5_000;
+/** Small breather between recording turns (ms). */
+const RECORDING_TURN_BREAK_MS = 2_500;
+/** Max length of a single submitted audio clip (ms). */
+const MAX_RECORDING_CLIP_MS = 10_000;
+/** Silent GIF intro before the audio starts (ms). */
+const PLAYBACK_INTRO_MS = 5_000;
+/** Pause after each playback entry finishes (ms). */
+const PLAYBACK_POST_ENTRY_MS = 5_000;
 /** Voting duration (ms). */
 const VOTING_DURATION_MS = 30_000;
 /** Results display (ms). */
@@ -99,6 +108,8 @@ export interface CategoryInfo {
   icon: string;
   description: string;
 }
+
+type AudioOverlayMode = "randomized" | "record_own";
 
 const CATEGORIES: CategoryInfo[] = [
   { id: "evil_laughs", name: "Evil Laughs", icon: "devil", description: "Villains, evil schemes, and maniacal laughter" },
@@ -254,6 +265,8 @@ interface GifAssignment {
   originalPicker: string;
   /** Recorded audio as base64 (filled during recording phase). */
   audioBase64: string;
+  /** Client-reported audio duration in seconds, clamped server-side. */
+  audioDurationSecs: number;
 }
 
 interface SessionData {
@@ -296,6 +309,10 @@ export default class AudioOverlayGame extends BaseGame {
 
   private session: SessionData | null = null;
 
+  private currentMode(): AudioOverlayMode {
+    return this.room.state.gameConfig.gameMode === "record_own" ? "record_own" : "randomized";
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
@@ -311,9 +328,10 @@ export default class AudioOverlayGame extends BaseGame {
    * (category → select → record → playback → vote) is one continuous session.
    */
   protected override async runRound(_round: number): Promise<void> {
-    const players = this._activePlayers();
+    const players = this._recordingEligiblePlayers();
+    const mode = this.currentMode();
     if (players.length < 2) {
-      this.broadcast("round_skipped", { reason: "Need at least 2 players" });
+      this.broadcast("round_skipped", { reason: "Need at least 2 microphone-ready players" });
       return;
     }
 
@@ -381,10 +399,11 @@ export default class AudioOverlayGame extends BaseGame {
       searchTerm,
       durationMs: GIF_SELECTION_DURATION_MS,
       serverTimestamp: Date.now(),
+      totalSelectors: players.length,
     });
 
     // Reset ready flags for selection tracking
-    for (const p of this.room.state.players.values()) {
+    for (const p of players) {
       p.isReady = false;
     }
 
@@ -394,7 +413,7 @@ export default class AudioOverlayGame extends BaseGame {
     // Auto-assign a random GIF to anyone who didn't pick
     // Use all allowed GIF URLs (initial results + any search results)
     const allAllowed = [...this.session.allowedGifUrls];
-    for (const p of this._activePlayers()) {
+    for (const p of players) {
       if (!this.session.selections.has(p.id)) {
         if (allAllowed.length > 0) {
           const randomUrl = allAllowed[Math.floor(Math.random() * allAllowed.length)];
@@ -422,25 +441,38 @@ export default class AudioOverlayGame extends BaseGame {
       const assignment = this.session.assignments.get(playerId);
       if (!assignment) continue;
 
-      // Tell everyone whose turn it is (TV shows "recording in progress", no GIF)
+      this.send(playerId, "gif_assigned", {
+        gifUrl: assignment.gifUrl,
+        gifLabel: assignment.gifLabel,
+        originalPicker: assignment.originalPicker,
+        maxClipDurationMs: MAX_RECORDING_CLIP_MS,
+        mode,
+      });
+
+      this.broadcast("recording_prepare", {
+        playerId: assignment.playerId,
+        playerName: assignment.playerName,
+        durationMs: RECORDING_PREPARE_MS,
+        serverTimestamp: Date.now(),
+      });
+
+      await this.delay(RECORDING_PREPARE_MS);
+      if (!this.session) return;
+
       this.broadcast("recording_turn", {
         playerId: assignment.playerId,
         playerName: assignment.playerName,
         durationMs: RECORDING_DURATION_MS,
         serverTimestamp: Date.now(),
-      });
-
-      // Send private message to the recorder with their assignment
-      this.send(playerId, "gif_assigned", {
-        gifUrl: assignment.gifUrl,
-        gifLabel: assignment.gifLabel,
-        originalPicker: assignment.originalPicker,
-        durationMs: RECORDING_DURATION_MS,
-        serverTimestamp: Date.now(),
+        maxClipDurationMs: MAX_RECORDING_CLIP_MS,
+        mode,
       });
 
       // Wait for recording submission or timeout
       await this._waitForRecordingOrTimeout(playerId, RECORDING_DURATION_MS);
+      if (!this.session) return;
+
+      await this.delay(RECORDING_TURN_BREAK_MS);
     }
 
     if (!this.session) return; // Room disposed during recordings
@@ -452,14 +484,22 @@ export default class AudioOverlayGame extends BaseGame {
 
     for (const entry of assignments) {
       if (!this.session) return;
+      const audioDurationMs = Math.min(
+        MAX_RECORDING_CLIP_MS,
+        Math.max(250, Math.round((entry.audioDurationSecs || MAX_RECORDING_CLIP_MS / 1000) * 1000)),
+      );
+
       this.broadcast("playback_entry", {
         playerId: entry.playerId,
         playerName: entry.playerName,
         gifUrl: entry.gifUrl,
         gifLabel: entry.gifLabel,
         audioBase64: entry.audioBase64,
+        audioDurationMs,
+        introDurationMs: PLAYBACK_INTRO_MS,
+        postDurationMs: PLAYBACK_POST_ENTRY_MS,
       });
-      await this.delay(PLAYBACK_ENTRY_DISPLAY_MS);
+      await this.delay(PLAYBACK_INTRO_MS + audioDurationMs + PLAYBACK_POST_ENTRY_MS);
     }
     if (!this.session) return;
     this.broadcast("playback_done", {});
@@ -469,9 +509,12 @@ export default class AudioOverlayGame extends BaseGame {
       this.broadcast("voting_start", {
         durationMs: VOTING_DURATION_MS,
         serverTimestamp: Date.now(),
+        totalVoters: this._recordingEligiblePlayers().length,
         entries: assignments.map((a) => ({
           playerId: a.playerId,
           playerName: a.playerName,
+          gifUrl: a.gifUrl,
+          gifLabel: a.gifLabel,
         })),
       });
 
@@ -503,6 +546,7 @@ export default class AudioOverlayGame extends BaseGame {
       gifUrl?: string;
       gifLabel?: string;
       audioBase64?: string;
+      durationSecs?: number;
       targetId?: string;
       category?: string;
       query?: string;
@@ -520,7 +564,7 @@ export default class AudioOverlayGame extends BaseGame {
         this._handleGifSearch(client, input.query);
         break;
       case "submit_recording":
-        this._handleRecordingSubmission(client, input.audioBase64);
+        this._handleRecordingSubmission(client, input.audioBase64, input.durationSecs);
         break;
       case "vote":
         this._handleVote(client, input.targetId);
@@ -565,6 +609,7 @@ export default class AudioOverlayGame extends BaseGame {
     if (!this.session || !gifUrl) return;
     const player = this.room.state.players.get(client.sessionId);
     if (!player) return;
+    if (!this.hasMicPermission(player)) return;
 
     // Validate that the GIF was shown to this player (initial search or player searches)
     if (!this.session.allowedGifUrls.has(gifUrl)) return;
@@ -585,7 +630,7 @@ export default class AudioOverlayGame extends BaseGame {
     // Broadcast progress
     this.broadcast("gif_selection_update", {
       submitted: this.session.selections.size,
-      total: this._activePlayers().length,
+      total: this._recordingEligiblePlayers().length,
     });
   }
 
@@ -596,6 +641,8 @@ export default class AudioOverlayGame extends BaseGame {
    */
   private async _handleGifSearch(client: Client, query?: string): Promise<void> {
     if (!this.session || !query) return;
+    const player = this.room.state.players.get(client.sessionId);
+    if (!this.hasMicPermission(player)) return;
     // Sanitize: trim, cap length, must have content
     const q = query.trim().slice(0, 80);
     if (q.length < 2) return;
@@ -608,8 +655,14 @@ export default class AudioOverlayGame extends BaseGame {
     this.send(client.sessionId, "gif_search_results", { gifs: results, query: q });
   }
 
-  private _handleRecordingSubmission(client: Client, audioBase64?: string): void {
+  private _handleRecordingSubmission(
+    client: Client,
+    audioBase64?: string,
+    durationSecs?: number,
+  ): void {
     if (!this.session || !audioBase64) return;
+    const player = this.room.state.players.get(client.sessionId);
+    if (!this.hasMicPermission(player)) return;
 
     // Only accept from the current recorder
     const currentId = this.session.recordingOrder[this.session.currentRecorderIndex];
@@ -622,6 +675,10 @@ export default class AudioOverlayGame extends BaseGame {
     if (!assignment) return;
 
     assignment.audioBase64 = audioBase64;
+    assignment.audioDurationSecs =
+      Number.isFinite(durationSecs) && (durationSecs as number) > 0
+        ? Math.min(MAX_RECORDING_CLIP_MS / 1000, durationSecs as number)
+        : MAX_RECORDING_CLIP_MS / 1000;
 
     this.broadcast("recording_submitted", { playerId: client.sessionId });
 
@@ -634,6 +691,8 @@ export default class AudioOverlayGame extends BaseGame {
 
   private _handleVote(client: Client, targetId?: string): void {
     if (!this.session || !targetId) return;
+    const player = this.room.state.players.get(client.sessionId);
+    if (!this.hasMicPermission(player)) return;
     if (targetId === client.sessionId) return; // can't vote for self
     if (this.session.votes.has(client.sessionId)) return; // already voted
     if (!this.session.assignments.has(targetId)) return; // target must exist
@@ -647,7 +706,7 @@ export default class AudioOverlayGame extends BaseGame {
 
     this.broadcast("vote_count_update", {
       votesIn: this.session.votes.size,
-      totalVoters: this._activePlayers().length,
+      totalVoters: this._recordingEligiblePlayers().length,
     });
   }
 
@@ -660,12 +719,15 @@ export default class AudioOverlayGame extends BaseGame {
   private _redistributeGifs(): void {
     if (!this.session) return;
 
+    const mode = this.currentMode();
     const playerIds = [...this.session.selections.keys()];
     const selections = [...this.session.selections.values()];
 
-    // Create a derangement of indices
     const n = playerIds.length;
-    const deranged = this._derangement(n);
+    const assignmentIndexes =
+      mode === "record_own"
+        ? Array.from({ length: n }, (_, i) => i)
+        : this._derangement(n);
 
     const order: string[] = [];
 
@@ -673,7 +735,7 @@ export default class AudioOverlayGame extends BaseGame {
       const assigneeId = playerIds[i];
       const assigneeName =
         this.room.state.players.get(assigneeId)?.name ?? "Player";
-      const source = selections[deranged[i]]; // The GIF they'll dub (someone else's pick)
+      const source = selections[assignmentIndexes[i]];
 
       this.session.assignments.set(assigneeId, {
         playerId: assigneeId,
@@ -682,6 +744,7 @@ export default class AudioOverlayGame extends BaseGame {
         gifLabel: source.gifLabel,
         originalPicker: source.playerName,
         audioBase64: "",
+        audioDurationSecs: 0,
       });
 
       order.push(assigneeId);
@@ -721,8 +784,12 @@ export default class AudioOverlayGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
+  }
+
+  private _recordingEligiblePlayers() {
+    return this._activePlayers().filter((p) => this.hasMicPermission(p));
   }
 
   private async _waitForCategoryOrTimeout(timeoutMs: number): Promise<void> {
@@ -746,7 +813,7 @@ export default class AudioOverlayGame extends BaseGame {
   private async _waitForAllSelectionsOrTimeout(timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
       const check = setInterval(() => {
-        const active = this._activePlayers();
+        const active = this._recordingEligiblePlayers();
         const allSelected = active.every((p) =>
           this.session?.selections.has(p.id),
         );
@@ -790,7 +857,7 @@ export default class AudioOverlayGame extends BaseGame {
   private async _waitForAllVotesOrTimeout(timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
       const check = setInterval(() => {
-        const active = this._activePlayers();
+        const active = this._recordingEligiblePlayers();
         const allVoted = active.every((p) => this.session?.votes.has(p.id));
         if (allVoted) {
           clearInterval(check);

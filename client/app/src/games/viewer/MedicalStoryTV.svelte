@@ -17,7 +17,9 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundLabel, getRoundProgressLabel } from "../../../../shared/types";
   import MedicalStoryBodyModel from "../../components/MedicalStoryBodyModel.svelte";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -31,13 +33,17 @@
     | "voting"
     | "phase_result"
     | "round_recap";
+  type GamePhase = "complaint" | "diagnosis" | "procedure" | "catchphrase";
   type VotingSubmission = {
     playerId: string;
     text: string;
     bodyPart?: string;
     action?: string;
+    tests?: string[];
   };
   type PhaseResult = VotingSubmission & { voteCount: number };
+  type PhaseHistoryEntry = { phase: GamePhase; winner: PhaseResult | null };
+  type RecapTimelineEntry = { phase: GamePhase; revealAtMs: number; winner: PhaseResult | null };
   let subPhase: SubPhase = "waiting";
 
   // ── Role voting ──────────────────────────────────────────────────────
@@ -51,11 +57,14 @@
   let roles: Record<string, string> = {};
 
   // ── Submission phase ─────────────────────────────────────────────────
-  let currentPhase: "complaint" | "diagnosis" | "procedure" | "catchphrase" = "complaint";
+  let currentPhase: GamePhase = "complaint";
   let submissionDurationMs = 45_000;
   let submissionTimeLeft = 0;
   let submissionEndTime = 0;
   let submissionTimer: ReturnType<typeof setInterval> | null = null;
+  let phaseHistory: PhaseHistoryEntry[] = [];
+  let funnyTests: string[] = [];
+  let catchphraseExamples: string[] = [];
 
   // 3D placeholder data
   let scene3dPlaceholder: { type: string; description: string } | null = null;
@@ -76,6 +85,10 @@
   let phaseWinners: Record<string, PhaseResult | null> = {};
   let roundScores: Record<string, number> = {};
   let recapRoles: Record<string, string> = {};
+  let recapTimeline: RecapTimelineEntry[] = [];
+  let recapStartTime = 0;
+  let recapTimer: ReturnType<typeof setInterval> | null = null;
+  let revealedRecapPhases = new Set<GamePhase>();
 
   // ── Round skipped ────────────────────────────────────────────────────
   let roundSkipped = false;
@@ -91,9 +104,9 @@
 
   const phasePrompts: Record<string, string> = {
     complaint: "What is the patient's primary complaint?",
-    diagnosis: "Invent a hilariously fake medical term!",
+    diagnosis: "Invent a hilariously fake medical term and optionally add some funny tests.",
     procedure: "Devise an emergency procedure!",
-    catchphrase: '"Well that\'s why they call me the ___ doctor in the country"',
+    catchphrase: '"That\'s why they call me ___."',
   };
 
   const phaseIcons: Record<string, string> = {
@@ -102,6 +115,8 @@
     procedure: "🏥",
     catchphrase: "🎤",
   };
+
+  const allPhases: GamePhase[] = ["complaint", "diagnosis", "procedure", "catchphrase"];
 
   // ── Message handlers ─────────────────────────────────────────────────
 
@@ -127,12 +142,18 @@
     phase: typeof currentPhase;
     durationMs: number;
     scene3dPlaceholder?: { type: string; description: string };
+    history?: PhaseHistoryEntry[];
+    tests?: string[];
+    promptExamples?: string[];
   }) {
     subPhase = "submission";
     currentPhase = data.phase;
     submissionDurationMs = data.durationMs;
     submissionEndTime = Date.now() + data.durationMs;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
+    phaseHistory = data.history ?? [];
+    funnyTests = data.tests ?? [];
+    catchphraseExamples = data.promptExamples ?? [];
 
     clearAllTimers();
     submissionTimer = setInterval(() => {
@@ -145,6 +166,7 @@
     submissions: typeof votingSubmissions;
     durationMs: number;
     scene3dPlaceholder?: { type: string; description: string };
+    history?: PhaseHistoryEntry[];
   }) {
     subPhase = "voting";
     currentPhase = data.phase;
@@ -152,6 +174,7 @@
     votingEndTime = Date.now() + data.durationMs;
     votingSubmissions = data.submissions;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
+    phaseHistory = data.history ?? phaseHistory;
 
     clearAllTimers();
     votingTimer = setInterval(() => {
@@ -165,6 +188,7 @@
     phaseWinner: typeof phaseWinner;
     points: Record<string, number>;
     scene3dPlaceholder?: { type: string; description: string };
+    history?: PhaseHistoryEntry[];
   }) {
     subPhase = "phase_result";
     currentPhase = data.phase;
@@ -172,6 +196,7 @@
     phaseWinner = data.phaseWinner;
     phasePoints = data.points;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
+    phaseHistory = data.history ?? phaseHistory;
     clearAllTimers();
   }
 
@@ -179,12 +204,26 @@
     phaseWinners: typeof phaseWinners;
     scores: Record<string, number>;
     roles: Record<string, string>;
+    history?: PhaseHistoryEntry[];
+    recapTimeline?: RecapTimelineEntry[];
   }) {
     subPhase = "round_recap";
     phaseWinners = data.phaseWinners;
     roundScores = data.scores;
     recapRoles = data.roles;
+    phaseHistory = data.history ?? phaseHistory;
+    recapTimeline = data.recapTimeline ?? [];
+    recapStartTime = Date.now();
+    revealedRecapPhases = new Set();
     clearAllTimers();
+    recapTimer = setInterval(() => {
+      const elapsedMs = Date.now() - recapStartTime;
+      revealedRecapPhases = new Set(
+        recapTimeline
+          .filter((entry) => elapsedMs >= entry.revealAtMs)
+          .map((entry) => entry.phase),
+      );
+    }, 200);
   }
 
   function onRoundSkipped(data: { reason: string }) {
@@ -198,6 +237,7 @@
     if (roleVoteTimer) { clearInterval(roleVoteTimer); roleVoteTimer = null; }
     if (submissionTimer) { clearInterval(submissionTimer); submissionTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    if (recapTimer) { clearInterval(recapTimer); recapTimer = null; }
   }
 
   function getPlayerName(id: string): string {
@@ -212,6 +252,25 @@
       bystander: "👀",
     };
     return emojis[role] ?? "👤";
+  }
+
+  function getPhaseVoteBoost(phase: GamePhase): string {
+    if (phase === "complaint") return "Patient votes count double this phase.";
+    if (phase === "diagnosis") return "Nurse votes count double this phase.";
+    if (phase === "catchphrase") return "Doctor votes count double this phase.";
+    return "";
+  }
+
+  function hasRecapReveal(phase: GamePhase): boolean {
+    return revealedRecapPhases.has(phase);
+  }
+
+  function phaseHasBodyModel(phase: GamePhase): boolean {
+    return phase === "complaint";
+  }
+
+  function getHistoryEntry(phase: GamePhase): PhaseHistoryEntry | undefined {
+    return phaseHistory.find((entry) => entry.phase === phase);
   }
 
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
@@ -234,6 +293,38 @@
 </script>
 
 <div class="flex-1 flex" data-testid="medical-story-tv">
+  <div class="w-72 border-r border-gray-800 bg-gray-900/70 p-4 flex flex-col gap-3 flex-shrink-0">
+    <div>
+      <p class="text-xs text-gray-400 uppercase tracking-widest">Story So Far</p>
+      <p class="mt-1 text-sm text-gray-500">Winning entries stay visible all round.</p>
+    </div>
+
+    {#each allPhases as phase}
+      <div class="rounded-2xl border p-4 transition-all
+        {getHistoryEntry(phase)?.winner
+          ? 'border-emerald-600/60 bg-emerald-950/30'
+          : 'border-gray-800 bg-gray-950/40'}">
+        <p class="text-xs uppercase tracking-widest text-gray-500">{phaseIcons[phase]} {phaseLabels[phase]}</p>
+        {#if getHistoryEntry(phase)?.winner}
+          <p class="mt-2 text-sm font-semibold text-white">
+            "{getHistoryEntry(phase)?.winner?.text}"
+          </p>
+          {#if getHistoryEntry(phase)?.winner?.bodyPart}
+            <p class="mt-1 text-xs text-gray-300">📍 {getHistoryEntry(phase)?.winner?.bodyPart}</p>
+          {/if}
+          {#if getHistoryEntry(phase)?.winner?.tests && getHistoryEntry(phase)?.winner?.tests?.length}
+            <p class="mt-1 text-xs text-gray-300">🧪 {getHistoryEntry(phase)?.winner?.tests?.join(", ")}</p>
+          {/if}
+          {#if getHistoryEntry(phase)?.winner?.action}
+            <p class="mt-1 text-xs text-gray-300">⚡ {getHistoryEntry(phase)?.winner?.action}</p>
+          {/if}
+        {:else}
+          <p class="mt-2 text-sm text-gray-600">Waiting for this phase.</p>
+        {/if}
+      </div>
+    {/each}
+  </div>
+
   <!-- Main content area -->
   <div class="flex-1 flex flex-col items-center justify-center p-8">
 
@@ -301,6 +392,9 @@
         <p class="text-6xl">{phaseIcons[currentPhase]}</p>
         <h2 class="text-4xl font-black text-amber-400">{phaseLabels[currentPhase]}</h2>
         <p class="text-xl text-gray-300">{phasePrompts[currentPhase]}</p>
+        {#if getPhaseVoteBoost(currentPhase)}
+          <p class="text-sm font-semibold uppercase tracking-widest text-amber-300">{getPhaseVoteBoost(currentPhase)}</p>
+        {/if}
 
         <p class="text-6xl font-mono font-black text-white">
           {Math.ceil(submissionTimeLeft)}
@@ -308,12 +402,37 @@
 
         <p class="text-lg text-gray-400">Submit your answers on your phones!</p>
 
-        {#if currentPhase === "complaint" || currentPhase === "diagnosis"}
+        {#if currentPhase === "complaint"}
           <div class="space-y-3">
             <MedicalStoryBodyModel />
             <p class="text-sm text-gray-400">
               {scene3dPlaceholder?.description ?? "Players are choosing a complaint location on the body model."}
             </p>
+          </div>
+        {:else if currentPhase === "diagnosis"}
+          <div class="w-full rounded-3xl border border-cyan-700/40 bg-cyan-950/20 px-6 py-8 text-center">
+            <p class="text-lg font-semibold text-white">Optional funny tests</p>
+            <div class="mt-4 flex flex-wrap justify-center gap-2">
+              {#each funnyTests as test}
+                <span class="rounded-full border border-cyan-700/50 bg-cyan-900/40 px-3 py-1 text-sm text-cyan-100">{test}</span>
+              {/each}
+            </div>
+            <p class="mt-4 text-sm text-gray-400">
+              {scene3dPlaceholder?.description ?? "Players can add up to 3 ridiculous tests to support their fake diagnosis."}
+            </p>
+          </div>
+        {:else if currentPhase === "catchphrase"}
+          <div class="w-full rounded-3xl border border-violet-700/40 bg-violet-950/20 px-6 py-8 text-center">
+            <p class="text-lg font-semibold text-white">Prompt examples</p>
+            <p class="mt-2 text-3xl font-black text-violet-100">"That's why they call me ..."</p>
+            {#if catchphraseExamples.length > 0}
+              <div class="mt-4 flex flex-wrap justify-center gap-2">
+                {#each catchphraseExamples as example}
+                  <span class="rounded-full border border-violet-700/50 bg-violet-900/40 px-3 py-1 text-sm text-violet-100">{example}</span>
+                {/each}
+              </div>
+            {/if}
+            <p class="mt-4 text-sm text-gray-400">{scene3dPlaceholder?.description ?? "Players are turning the doctor boast into anything they want."}</p>
           </div>
         {:else}
           <div class="w-full rounded-3xl border border-gray-700/60 bg-white/5 px-6 py-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
@@ -330,6 +449,9 @@
       <div class="text-center space-y-6 w-full max-w-3xl">
         <p class="text-5xl">{phaseIcons[currentPhase]}</p>
         <h2 class="text-3xl font-black text-indigo-400">Vote: {phaseLabels[currentPhase]}</h2>
+        {#if getPhaseVoteBoost(currentPhase)}
+          <p class="text-sm font-semibold uppercase tracking-widest text-indigo-300">{getPhaseVoteBoost(currentPhase)}</p>
+        {/if}
 
         <p class="text-5xl font-mono font-black text-white">
           {Math.ceil(votingTimeLeft)}
@@ -347,6 +469,9 @@
               {#if sub.action}
                 <p class="text-sm text-gray-400 mt-1">⚡ {sub.action}</p>
               {/if}
+              {#if sub.tests && sub.tests.length > 0}
+                <p class="text-sm text-gray-400 mt-1">🧪 {sub.tests.join(", ")}</p>
+              {/if}
               <p class="text-xs text-gray-500 mt-2">by {getPlayerName(sub.playerId)}</p>
             </div>
           {/each}
@@ -362,9 +487,9 @@
         {#if phaseWinner}
           <div
             class="grid gap-6 items-center w-full max-w-5xl mx-auto"
-            style={phaseWinner.bodyPart ? "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);" : ""}
+            style={phaseHasBodyModel(currentPhase) && phaseWinner.bodyPart ? "grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);" : ""}
           >
-            {#if phaseWinner.bodyPart}
+            {#if phaseHasBodyModel(currentPhase) && phaseWinner.bodyPart}
               <div class="space-y-3">
                 <MedicalStoryBodyModel selectedPart={phaseWinner.bodyPart} />
                 <p class="text-sm text-gray-400">
@@ -379,6 +504,9 @@
               {/if}
               {#if phaseWinner.action}
                 <p class="text-lg text-amber-200">⚡ {phaseWinner.action}</p>
+              {/if}
+              {#if phaseWinner.tests && phaseWinner.tests.length > 0}
+                <p class="text-lg text-amber-200">🧪 {phaseWinner.tests.join(", ")}</p>
               {/if}
               <p class="text-lg text-gray-300 mt-2">by {getPlayerName(phaseWinner.playerId)}</p>
               <p class="text-xl text-amber-300 font-bold mt-1">
@@ -413,16 +541,24 @@
 
         <!-- Phase winners summary -->
         <div class="grid grid-cols-2 gap-4">
-          {#each ["complaint", "diagnosis", "procedure", "catchphrase"] as phase}
-            <div class="bg-gray-800 rounded-2xl p-5 text-left border border-gray-700">
+          {#each allPhases as phase}
+            <div class="bg-gray-800 rounded-2xl p-5 text-left border transition-all
+              {hasRecapReveal(phase)
+                ? 'border-fuchsia-500 opacity-100 scale-100'
+                : 'border-gray-700 opacity-30 scale-95'}">
               <p class="text-sm text-gray-400 uppercase tracking-widest mb-2">
                 {phaseIcons[phase]} {phaseLabels[phase]}
               </p>
-              {#if phaseWinners[phase]}
+              {#if hasRecapReveal(phase) && phaseWinners[phase]}
                 <p class="text-lg font-bold text-white">"{phaseWinners[phase]?.text}"</p>
+                {#if phaseWinners[phase]?.tests && phaseWinners[phase]?.tests?.length}
+                  <p class="text-sm text-gray-300 mt-1">🧪 {phaseWinners[phase]?.tests?.join(", ")}</p>
+                {/if}
                 <p class="text-sm text-gray-400 mt-1">by {getPlayerName(phaseWinners[phase]?.playerId ?? '')}</p>
-              {:else}
+              {:else if hasRecapReveal(phase)}
                 <p class="text-lg text-gray-600">No winner</p>
+              {:else}
+                <p class="text-lg text-gray-600">Revealing soon...</p>
               {/if}
             </div>
           {/each}
@@ -435,20 +571,21 @@
   <div class="w-64 bg-gray-800 p-4 flex flex-col gap-4 flex-shrink-0">
     <div class="text-center">
       <p class="text-xs text-gray-400 uppercase tracking-widest">Round</p>
-      <p class="text-2xl font-black text-white">{state.currentRound} / {state.gameConfig.roundCount}</p>
+      <p class="text-2xl font-black text-white">{getRoundProgressLabel(state)}</p>
     </div>
 
     <div>
-      <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Leaderboard</p>
-      <ul class="space-y-1">
-        {#each sortedPlayers as p, i}
-          <li class="flex items-center gap-2 rounded px-2 py-1.5 bg-gray-900">
-            <span class="w-5 text-xs text-gray-500 font-mono">{i + 1}.</span>
-            <span class="flex-1 text-sm truncate text-gray-200">{p.name}</span>
-            <span class="text-sm font-mono font-bold text-white">{p.score}</span>
-          </li>
-        {/each}
-      </ul>
+        <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Leaderboard</p>
+        <ul class="space-y-1">
+          {#each sortedPlayers as p, i}
+            <li class="flex items-center gap-2 rounded px-2 py-1.5 bg-gray-900">
+              <span class="w-5 text-xs text-gray-500 font-mono">{i + 1}.</span>
+              <PlayerIcon player={p} size={20} />
+              <span class="flex-1 text-sm truncate text-gray-200">{p.name}</span>
+              <span class="text-sm font-mono font-bold text-white">{p.score}</span>
+            </li>
+          {/each}
+        </ul>
     </div>
   </div>
 </div>

@@ -12,6 +12,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -102,13 +104,7 @@
       exitX = msg.exitX;
       exitY = msg.exitY;
       escapeEvents = [];
-
-      // Parse tile data from room state
-      try {
-        mazeTiles = JSON.parse(state.mapTiles || "[]");
-      } catch {
-        mazeTiles = [];
-      }
+      mazeTiles = Array.isArray(msg.tiles) ? msg.tiles : [];
     });
 
     room.onMessage("maze_teams", (msg) => {
@@ -162,11 +158,6 @@
   function draw() {
     animFrame = requestAnimationFrame(draw);
     if (!ctx || mazeWidth === 0) return;
-
-    // Re-parse tiles if they changed (room state update)
-    if (mazeTiles.length === 0 && state.mapTiles) {
-      try { mazeTiles = JSON.parse(state.mapTiles); } catch { /* ignore */ }
-    }
 
     // Calculate tile size to fit the canvas
     const maxCanvasW = canvas.parentElement?.clientWidth ?? 800;
@@ -303,7 +294,7 @@
         class="text-4xl font-black font-mono {timeLeftSecs < 10 ? 'text-red-400' : 'text-white'}"
       >{timeLeftSecs}</p>
       <p class="text-xs text-gray-400">
-        Round {state.currentRound} of {state.gameConfig.roundCount}
+        {getRoundProgressLabel(state)}
       </p>
     </div>
 
@@ -343,6 +334,7 @@
               class="w-3 h-3 rounded-full flex-shrink-0"
               style="background:{PLAYER_COLORS[i % PLAYER_COLORS.length]}"
             ></span>
+            <PlayerIcon player={p} size={20} />
             <span class="flex-1 text-sm truncate text-white">{p.name}</span>
             <span class="text-xs font-mono text-gray-300">{p.score}</span>
           </li>

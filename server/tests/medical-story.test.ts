@@ -3,11 +3,14 @@ import {
   PHASES,
   BODY_PARTS,
   ACTIONS,
+  FUNNY_TESTS,
+  MAX_DIAGNOSIS_TESTS,
   ROLE_VOTE_DURATION_SECS,
   SUBMISSION_DURATION_SECS,
   VOTING_DURATION_SECS,
   RESULTS_DISPLAY_MS,
   RECAP_DISPLAY_MS,
+  RECAP_STEP_MS,
   MAX_SUBMISSION_LENGTH,
   MIN_PLAYERS,
   MAX_PLAYERS,
@@ -18,9 +21,12 @@ import {
   normalizeSubmission,
   isValidBodyPart,
   isValidAction,
+  isValidFunnyTest,
+  normalizeFunnyTests,
   haveAllExpectedPlayersResponded,
   tallySubmissionVotes,
   computePhasePoints,
+  getPhaseVoteWeight,
   type Role,
   type Submission,
 } from "../src/games/registry-43-medical-story/medicalStoryLogic";
@@ -64,6 +70,15 @@ describe("ACTIONS", () => {
   });
 });
 
+describe("FUNNY_TESTS", () => {
+  it("includes the requested baseline tests", () => {
+    expect(FUNNY_TESTS).toContain("Gave it a close look");
+    expect(FUNNY_TESTS).toContain("Did a long sniff test");
+    expect(FUNNY_TESTS).toContain("Shook it");
+    expect(FUNNY_TESTS).toContain("Poked it");
+  });
+});
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 describe("constants", () => {
@@ -84,7 +99,12 @@ describe("constants", () => {
   });
 
   it("RECAP_DISPLAY_MS is 5000", () => {
-    expect(RECAP_DISPLAY_MS).toBe(5_000);
+    expect(RECAP_STEP_MS).toBe(5_000);
+    expect(RECAP_DISPLAY_MS).toBe(RECAP_STEP_MS * PHASES.length);
+  });
+
+  it("MAX_DIAGNOSIS_TESTS is 3", () => {
+    expect(MAX_DIAGNOSIS_TESTS).toBe(3);
   });
 
   it("MAX_SUBMISSION_LENGTH is 60", () => {
@@ -291,6 +311,42 @@ describe("isValidAction", () => {
   });
 });
 
+describe("isValidFunnyTest", () => {
+  it("returns true for valid tests", () => {
+    expect(isValidFunnyTest("Gave it a close look")).toBe(true);
+    expect(isValidFunnyTest("Put it in rice for a minute")).toBe(true);
+  });
+
+  it("returns false for invalid tests", () => {
+    expect(isValidFunnyTest("X-rayed the moon")).toBe(false);
+  });
+});
+
+describe("normalizeFunnyTests", () => {
+  it("keeps valid unique tests in order", () => {
+    expect(
+      normalizeFunnyTests([
+        "Gave it a close look",
+        "Gave it a close look",
+        "Poked it",
+        "Did a long sniff test",
+      ]),
+    ).toEqual(["Gave it a close look", "Poked it", "Did a long sniff test"]);
+  });
+
+  it("drops invalid tests and clamps to max", () => {
+    expect(
+      normalizeFunnyTests([
+        "bad",
+        "Gave it a close look",
+        "Did a long sniff test",
+        "Shook it",
+        "Poked it",
+      ]),
+    ).toEqual(["Gave it a close look", "Did a long sniff test", "Shook it"]);
+  });
+});
+
 describe("haveAllExpectedPlayersResponded", () => {
   it("returns true when every expected player responds", () => {
     expect(haveAllExpectedPlayersResponded(["p1", "p2", "p3"], ["p3", "p1", "p2"])).toBe(
@@ -386,6 +442,53 @@ describe("tallySubmissionVotes", () => {
     const results = tallySubmissionVotes(submissions, new Map());
     expect(results[0].bodyPart).toBe("left knee");
     expect(results[0].action).toBe("Shake");
+  });
+
+  it("preserves funny tests in results", () => {
+    const submissions: Submission[] = [
+      { playerId: "p1", text: "Acute Honk Fever", tests: ["Poked it", "Shook it"] },
+    ];
+
+    const results = tallySubmissionVotes(submissions, new Map());
+    expect(results[0].tests).toEqual(["Poked it", "Shook it"]);
+  });
+
+  it("applies weighted votes", () => {
+    const submissions: Submission[] = [
+      { playerId: "p1", text: "A" },
+      { playerId: "p2", text: "B" },
+    ];
+    const votes = new Map([
+      ["patient", "p1"],
+      ["nurse", "p2"],
+      ["bystander", "p2"],
+    ]);
+    const weights = new Map([
+      ["patient", 2],
+      ["nurse", 1],
+      ["bystander", 1],
+    ]);
+
+    const results = tallySubmissionVotes(submissions, votes, weights);
+
+    expect(results[0].playerId).toBe("p1");
+    expect(results[0].voteCount).toBe(2);
+    expect(results[1].voteCount).toBe(2);
+  });
+});
+
+describe("getPhaseVoteWeight", () => {
+  it("doubles the patient vote in complaint", () => {
+    expect(getPhaseVoteWeight("patient", "complaint")).toBe(2);
+    expect(getPhaseVoteWeight("patient", "diagnosis")).toBe(1);
+  });
+
+  it("doubles the nurse vote in diagnosis", () => {
+    expect(getPhaseVoteWeight("nurse", "diagnosis")).toBe(2);
+  });
+
+  it("doubles the doctor vote in catchphrase", () => {
+    expect(getPhaseVoteWeight("doctor", "catchphrase")).toBe(2);
   });
 });
 

@@ -25,6 +25,9 @@
   $: selectedGameMeta = GAME_REGISTRY.find((g) => g.id === state.selectedGame);
   $: allPlayersReady = [...state.players.values()].every((p) => !p.isConnected || p.isReady);
   $: hasQueue = (state.gameQueue?.length ?? 0) > 0;
+  $: connectedPlayers = [...state.players.values()].filter((p) => p.isConnected);
+  $: micReadyCount = connectedPlayers.filter((p) => p.micPermission === "granted").length;
+  $: motionReadyCount = connectedPlayers.filter((p) => p.motionPermission === "granted").length;
 
   // ── Game detail overlay ─────────────────────────────────────────────────
   let detailGameId: string | null = null;
@@ -97,6 +100,12 @@
           </span>
           <span class="px-3 py-1 bg-gray-800 rounded-full text-sm text-gray-300">
             {state.hasSecondaryDisplay ? "With TV" : "Phone only"}
+          </span>
+          <span class="px-3 py-1 bg-gray-800 rounded-full text-sm text-gray-300">
+            Mic {micReadyCount}/{connectedPlayers.length}
+          </span>
+          <span class="px-3 py-1 bg-gray-800 rounded-full text-sm text-gray-300">
+            Motion {motionReadyCount}/{connectedPlayers.length}
           </span>
         </div>
         <div>

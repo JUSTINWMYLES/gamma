@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -316,7 +317,10 @@
           <p class="mb-2 text-xs uppercase tracking-widest text-gray-500">Round Scores</p>
           {#each sortedPlayers as player}
             <div class="mb-1 flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
-              <span class="text-sm text-white">{player.name}</span>
+              <div class="flex items-center gap-2 text-sm text-white">
+                <PlayerIcon player={player} size={22} />
+                <span>{player.name}</span>
+              </div>
               <div class="text-right">
                 {#if roundScores[player.id] !== undefined}
                   <span class="text-xs font-bold text-cyan-400">+{roundScores[player.id]}</span>
@@ -333,6 +337,7 @@
         {#each sortedPlayers.slice(0, 8) as player, index}
           <div class="flex items-center gap-2 px-2 py-1">
             <span class="w-4 font-mono text-xs text-gray-500">{index + 1}.</span>
+            <PlayerIcon player={player} size={20} />
             <span class="flex-1 truncate text-sm text-gray-300">{player.name}</span>
             <span class="font-mono text-xs text-gray-400">{player.score}</span>
           </div>

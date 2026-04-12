@@ -15,6 +15,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -204,7 +206,7 @@
 
   <!-- Round header -->
   <p class="text-sm text-gray-400 uppercase tracking-widest">
-    Hot Potato — Round {state.currentRound} of {state.gameConfig.roundCount}
+    Hot Potato — {getRoundProgressLabel(state)}
   </p>
 
   {#if roundSkipped}
@@ -369,6 +371,7 @@
           {#each sortedPlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+              <PlayerIcon player={p} size={24} />
               <span class="flex-1 truncate font-semibold text-white
                 {p.id === resultLoserId ? 'text-red-400' : ''}">
                 {p.name}

@@ -112,7 +112,7 @@
   let fmRevealItemName = "";
   let fmRevealMessage = "";
 
-  let fmVotableEntries: { playerId: string; playerName: string }[] = [];
+  let fmVotableEntries: { playerId: string; playerName: string; item: FmItem; message: string }[] = [];
   let fmVotingTimeLeft = 0;
   let fmVotingEndTime = 0;
   let fmVotingTimer: ReturnType<typeof setInterval> | null = null;
@@ -350,7 +350,8 @@
   function onFmVotingStart(data: {
     durationMs: number;
     serverTimestamp: number;
-    entries: { playerId: string; playerName: string }[];
+    totalVoters: number;
+    entries: { playerId: string; playerName: string; item: FmItem; message: string }[];
   }) {
     subPhase = "fm_voting";
     clearAllTimers();
@@ -361,7 +362,7 @@
     fmMyVote = null;
     fmVoteConfirmed = false;
     fmVotesIn = 0;
-    fmTotalVoters = data.entries.length;
+    fmTotalVoters = data.totalVoters;
 
     fmVotingTimer = setInterval(() => {
       fmVotingTimeLeft = Math.max(0, (fmVotingEndTime - Date.now()) / 1000);
@@ -979,14 +980,27 @@
         <div class="space-y-2">
           {#each fmVotableEntries as entry}
             <button
-              class="w-full text-left px-4 py-3 rounded-lg border transition-colors active:scale-[0.98]
+              class="w-full text-left px-4 py-3 rounded-xl border transition-colors active:scale-[0.98]
                 {fmMyVote === entry.playerId
                   ? 'border-emerald-500 bg-emerald-900 text-white'
                   : 'border-gray-700 bg-gray-800 text-gray-300 active:border-emerald-500'}"
               on:click={() => fmCastVote(entry.playerId)}
               disabled={!!fmMyVote}
             >
-              <p class="font-semibold">{entry.playerName}</p>
+              <div class="flex items-start gap-3">
+                <div class="w-14 h-14 rounded-xl bg-gray-700 border border-gray-600 flex items-center justify-center flex-shrink-0">
+                  <span class="text-3xl">{emojiFor(entry.item.imageHint)}</span>
+                </div>
+                <div class="flex-1 min-w-0 space-y-1">
+                  <div class="flex items-center gap-2">
+                    <p class="font-semibold text-white truncate">{entry.playerName}</p>
+                    <span class="text-[10px] uppercase tracking-widest text-emerald-400">{entry.item.category}</span>
+                  </div>
+                  <p class="text-sm font-bold text-gray-100 truncate">{entry.item.name}</p>
+                  <p class="text-xs text-gray-400 line-clamp-2">{entry.item.description}</p>
+                  <p class="text-sm text-gray-200 italic line-clamp-3">"{entry.message}"</p>
+                </div>
+              </div>
             </button>
           {/each}
         </div>

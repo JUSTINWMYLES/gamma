@@ -27,6 +27,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -129,7 +131,7 @@
   let fmRevealStepTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Voting phase
-  let fmVotingEntries: { playerId: string; playerName: string }[] = [];
+  let fmVotingEntries: { playerId: string; playerName: string; item: FmItem; message: string }[] = [];
   let fmVotingTimeLeft = 0;
   let fmVotingEndTime = 0;
   let fmVotingTimer: ReturnType<typeof setInterval> | null = null;
@@ -384,20 +386,12 @@
       message: data.message,
     }];
 
-    // Structured reveal animation:
-    // Step 0: "Player X commented on..." intro text
-    fmRevealStep = 0;
-
-    // Step 1: Show the full listing card after 1.2s
+    // Show the ad immediately, then reveal the message after 5 seconds.
+    fmRevealStep = 1;
     fmRevealStepTimer = setTimeout(() => {
-      fmRevealStep = 1;
-
-      // Step 2: Pop up the message below after another 1.5s
-      fmRevealStepTimer = setTimeout(() => {
-        fmRevealStep = 2;
-        fmRevealStepTimer = null;
-      }, 1500);
-    }, 1200);
+      fmRevealStep = 2;
+      fmRevealStepTimer = null;
+    }, 5000);
   }
 
   function onFmRevealDone() {
@@ -407,13 +401,14 @@
   function onFmVotingStart(data: {
     durationMs: number;
     serverTimestamp: number;
-    entries: { playerId: string; playerName: string }[];
+    totalVoters: number;
+    entries: { playerId: string; playerName: string; item: FmItem; message: string }[];
   }) {
     subPhase = "fm_voting";
     clearAllTimers();
     fmVotingEntries = data.entries;
     fmVotesIn = 0;
-    fmTotalVoters = data.entries.length;
+    fmTotalVoters = data.totalVoters;
 
     fmVotingEndTime = data.serverTimestamp + data.durationMs;
     fmVotingTimeLeft = Math.max(0, (fmVotingEndTime - Date.now()) / 1000);
@@ -488,7 +483,7 @@
 
   <!-- Round header -->
   <p class="text-sm text-gray-400 uppercase tracking-widest">
-    Lowball Marketplace — Round {state.currentRound} of {state.gameConfig.roundCount}
+    Lowball Marketplace — {getRoundProgressLabel(state)}
   </p>
 
   {#if roundSkipped}
@@ -759,6 +754,7 @@
           {#each sortedPlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+              <PlayerIcon player={p} size={24} />
               <span class="flex-1 truncate font-semibold text-white">{p.name}</span>
               <span class="font-mono text-lg font-bold text-white">{p.score}</span>
             </div>
@@ -816,6 +812,9 @@
                     : ps.status === 'writing'
                       ? 'bg-yellow-400 animate-pulse'
                       : 'bg-gray-500'}"></div>
+                {#if state.players.get(ps.playerId)}
+                  <PlayerIcon player={state.players.get(ps.playerId)} size={22} />
+                {/if}
                 <span class="flex-1 text-sm font-semibold text-white truncate">{ps.playerName}</span>
                 <span class="text-xs flex-shrink-0
                   {ps.status === 'submitted'
@@ -908,15 +907,22 @@
       </div>
 
       <!-- Candidates list -->
-      <div class="space-y-3 max-w-lg mx-auto">
+      <div class="space-y-3 max-w-2xl mx-auto">
         {#each fmVotingEntries as entry}
-          <div class="bg-gray-800 border border-gray-700 rounded-xl px-6 py-4 flex items-center gap-4">
-            <div class="w-10 h-10 bg-emerald-900 border border-emerald-700 rounded-full flex items-center justify-center">
-              <span class="text-lg font-bold text-emerald-400">
-                {entry.playerName.charAt(0).toUpperCase()}
-              </span>
+          <div class="bg-gray-800 border border-gray-700 rounded-2xl px-6 py-4 flex items-start gap-4">
+            <PlayerIcon player={state.players.get(entry.playerId)} size={36} />
+            <div class="w-20 h-20 rounded-xl bg-gray-700 border border-gray-600 flex items-center justify-center flex-shrink-0">
+              <span class="text-5xl">{emojiFor(entry.item.imageHint)}</span>
             </div>
-            <span class="flex-1 text-lg font-semibold text-white text-left">{entry.playerName}</span>
+            <div class="flex-1 text-left space-y-1 min-w-0">
+              <div class="flex items-center gap-3">
+                <span class="text-lg font-semibold text-white">{entry.playerName}</span>
+                <span class="text-[10px] uppercase tracking-widest text-emerald-400">{entry.item.category}</span>
+              </div>
+              <p class="text-xl font-black text-white">{entry.item.name}</p>
+              <p class="text-sm text-gray-400 line-clamp-2">{entry.item.description}</p>
+              <p class="text-lg text-gray-100 italic line-clamp-3">"{entry.message}"</p>
+            </div>
           </div>
         {/each}
       </div>
@@ -1003,6 +1009,7 @@
             {#each sortedPlayers as p, i}
               <div class="flex items-center gap-3">
                 <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+                <PlayerIcon player={p} size={24} />
                 <span class="flex-1 truncate font-semibold text-white">{p.name}</span>
                 <span class="font-mono text-lg font-bold text-white">{p.score}</span>
               </div>

@@ -20,6 +20,13 @@
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
+  type PermissionAwarePlayer = PlayerState & {
+    micPermission?: string;
+  };
+
+  $: permissionPlayer = me as PermissionAwarePlayer | undefined;
+  $: micGranted = permissionPlayer?.micPermission === "granted";
+
   // ── Sub-phase ────────────────────────────────────────────────────
 
   type SubPhase =
@@ -88,6 +95,11 @@
   // ── Mic helpers ──────────────────────────────────────────────────
 
   async function requestMic(): Promise<boolean> {
+    if (!micGranted) {
+      micAllowed = false;
+      micError = "Enable microphone in the lobby to join recording rounds.";
+      return false;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       micAllowed = false;
       micError = "Microphone unavailable. Use Safari/Chrome on HTTPS.";
@@ -390,20 +402,13 @@
         </div>
       </div>
 
-      <!-- Mic permission prompt -->
-      {#if !micAllowed}
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3 mt-4">
-          <p class="text-gray-200 font-semibold text-sm">You'll need your microphone!</p>
-          {#if micError}
-            <p class="text-red-400 text-sm">{micError}</p>
-          {/if}
-          <button
-            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
-            on:click={() => requestMic()}
-          >Allow Microphone</button>
-        </div>
+      {#if micGranted}
+        <p class="text-green-400 text-xs mt-2">Microphone enabled in lobby</p>
       {:else}
-        <p class="text-green-400 text-xs mt-2">Mic ready</p>
+        <div class="bg-red-950/60 border border-red-700 rounded-xl p-4 space-y-2 mt-4">
+          <p class="text-red-200 font-semibold text-sm">Microphone not enabled</p>
+          <p class="text-red-300/90 text-sm">Use the lobby permission button if you want to participate in recording rounds.</p>
+        </div>
       {/if}
     </div>
 
@@ -418,16 +423,10 @@
       </p>
       <p class="text-xs text-gray-600">Watch the TV!</p>
 
-      {#if !micAllowed}
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3 mt-4">
-          <p class="text-gray-200 font-semibold text-sm">Your turn is coming up!</p>
-          {#if micError}
-            <p class="text-red-400 text-sm">{micError}</p>
-          {/if}
-          <button
-            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
-            on:click={() => requestMic()}
-          >Allow Microphone</button>
+      {#if !micGranted}
+        <div class="bg-red-950/60 border border-red-700 rounded-xl p-4 space-y-2 mt-4">
+          <p class="text-red-200 font-semibold text-sm">Your turn will be skipped without mic access</p>
+          <p class="text-red-300/90 text-sm">Enable microphone in the lobby before the next round if you want to record.</p>
         </div>
       {/if}
     </div>
@@ -451,6 +450,12 @@
     <div class="w-full max-w-sm text-center space-y-4">
       <h2 class="text-2xl font-black text-red-400">Recording!</h2>
       <p class="text-sm text-gray-400">Make the sound!</p>
+
+      {#if !micGranted}
+        <div class="rounded-xl border border-red-700 bg-red-950/60 px-4 py-3 text-sm text-red-200">
+          Microphone access was not enabled in the lobby, so this recording turn cannot start.
+        </div>
+      {/if}
 
       <!-- Timer -->
       <p class="text-4xl font-mono font-black text-white">{Math.ceil(recordingTimeLeft)}</p>

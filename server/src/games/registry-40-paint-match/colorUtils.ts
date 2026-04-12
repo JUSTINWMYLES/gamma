@@ -81,8 +81,9 @@ const MAX_GEN_ATTEMPTS = 50;
  *   RYB (0,1,1) → RGB (0,128,0)      green
  *   RYB (1,1,1) → RGB (0,0,0)        dark (near black)
  *
- * After the RYB→RGB conversion, white and black proportions shift the
- * result towards pure white / pure black.
+ * Small chromatic amounts intentionally stay pastel instead of immediately
+ * snapping to a fully saturated hue. This keeps slider movement expressive
+ * across the full range and matches player expectations on mobile.
  */
 export function mixToRGB(mix: PaintMix): RGB {
   // Clamp each channel to [0, 1]
@@ -92,12 +93,9 @@ export function mixToRGB(mix: PaintMix): RGB {
   const w = clamp01(mix.white);
   const k = clamp01(mix.black);
 
-  // Total paint poured — if zero, return white (empty canvas)
-  const total = r + y + b + w + k;
-  if (total === 0) return [255, 255, 255];
-
-  // Normalise RYB proportions out of the chromatic portion
   const chromatic = r + y + b;
+  const total = chromatic + w + k;
+  if (total === 0) return [255, 255, 255];
 
   let baseR: number, baseG: number, baseB: number;
 
@@ -107,25 +105,31 @@ export function mixToRGB(mix: PaintMix): RGB {
     baseG = 255;
     baseB = 255;
   } else {
-    // Normalised RYB coordinates in [0, 1]
+    // Normalised RYB coordinates control hue only; chromatic amount controls saturation.
     const rn = r / chromatic;
     const yn = y / chromatic;
     const bn = b / chromatic;
 
     // Trilinear interpolation across the RYB cube corners
-    baseR = cubicInterp(rn, yn, bn, RYB_CUBE_R);
-    baseG = cubicInterp(rn, yn, bn, RYB_CUBE_G);
-    baseB = cubicInterp(rn, yn, bn, RYB_CUBE_B);
+    const hueR = cubicInterp(rn, yn, bn, RYB_CUBE_R);
+    const hueG = cubicInterp(rn, yn, bn, RYB_CUBE_G);
+    const hueB = cubicInterp(rn, yn, bn, RYB_CUBE_B);
+    const pigmentStrength = clamp01(chromatic);
+
+    baseR = lerp(255, hueR, pigmentStrength);
+    baseG = lerp(255, hueG, pigmentStrength);
+    baseB = lerp(255, hueB, pigmentStrength);
   }
 
-  // Apply white (tint) and black (shade) as proportions of total
-  const chromaticFrac = chromatic / total;
-  const whiteFrac = w / total;
-  const blackFrac = k / total;
+  const whiteWeight = chromatic + w > 0 ? w / (chromatic + w) : 0;
+  const withWhiteR = lerp(baseR, 255, whiteWeight);
+  const withWhiteG = lerp(baseG, 255, whiteWeight);
+  const withWhiteB = lerp(baseB, 255, whiteWeight);
 
-  const finalR = Math.round(baseR * chromaticFrac + 255 * whiteFrac + 0 * blackFrac);
-  const finalG = Math.round(baseG * chromaticFrac + 255 * whiteFrac + 0 * blackFrac);
-  const finalB = Math.round(baseB * chromaticFrac + 255 * whiteFrac + 0 * blackFrac);
+  const blackWeight = total > 0 ? k / total : 0;
+  const finalR = lerp(withWhiteR, 0, blackWeight);
+  const finalG = lerp(withWhiteG, 0, blackWeight);
+  const finalB = lerp(withWhiteB, 0, blackWeight);
 
   return [
     clamp255(finalR),
@@ -308,4 +312,8 @@ function clamp01(v: number): number {
 
 function clamp255(v: number): number {
   return Math.max(0, Math.min(255, Math.round(v)));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * clamp01(t);
 }
