@@ -45,7 +45,14 @@
     spine: { position: [0, 0.82, -0.22], size: [0.14, 0.78, 0.12] },
     spleen: { position: [-0.2, 0.72, 0.2], size: [0.16, 0.16, 0.14] },
   };
-  const HITBOX_Y_OFFSET = -0.24;
+  const MODEL_VIEW_BOUNDS = {
+    minX: -0.95,
+    maxX: 0.95,
+    minY: -1.28,
+    maxY: 2.08,
+    minZ: -0.4,
+    maxZ: 0.45,
+  };
 
   let container: HTMLDivElement;
   let renderer: THREE.WebGLRenderer | null = null;
@@ -111,7 +118,7 @@
         metalness: 0.15,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(target.position[0], target.position[1] + HITBOX_Y_OFFSET, target.position[2]);
+      mesh.position.set(target.position[0], target.position[1], target.position[2]);
       mesh.userData.bodyPart = part;
       hitboxGroup.add(mesh);
       hitboxMap.set(part, mesh);
@@ -195,8 +202,8 @@
     scene = new THREE.Scene();
 
     camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
-    camera.position.set(0, 0.15, 7.2);
-    camera.lookAt(0, 0.1, 0);
+    camera.position.set(0, 0.42, 8.8);
+    camera.lookAt(0, 0.42, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -226,11 +233,29 @@
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
-        const height = Math.max(size.y, 0.001);
-        const scale = 3.4 / height;
+        const width = Math.max(MODEL_VIEW_BOUNDS.maxX - MODEL_VIEW_BOUNDS.minX, 0.001);
+        const height = Math.max(MODEL_VIEW_BOUNDS.maxY - MODEL_VIEW_BOUNDS.minY, 0.001);
+        const depth = Math.max(MODEL_VIEW_BOUNDS.maxZ - MODEL_VIEW_BOUNDS.minZ, 0.001);
+        const scale = Math.min(1.9 / Math.max(size.x, 0.001), 3.36 / Math.max(size.y, 0.001), 0.85 / Math.max(size.z, 0.001));
         model.scale.setScalar(scale);
-        const scaledCenter = center.multiplyScalar(scale);
-        model.position.set(-scaledCenter.x, -scaledCenter.y - 0.35, -scaledCenter.z);
+
+        const scaledCenter = center.clone().multiplyScalar(scale);
+        const scaledMin = new THREE.Vector3(
+          MODEL_VIEW_BOUNDS.minX,
+          MODEL_VIEW_BOUNDS.minY,
+          MODEL_VIEW_BOUNDS.minZ,
+        );
+        const scaledMax = new THREE.Vector3(
+          MODEL_VIEW_BOUNDS.maxX,
+          MODEL_VIEW_BOUNDS.maxY,
+          MODEL_VIEW_BOUNDS.maxZ,
+        );
+        const targetCenter = scaledMin.clone().add(scaledMax).multiplyScalar(0.5);
+        model.position.set(
+          targetCenter.x - scaledCenter.x,
+          targetCenter.y - scaledCenter.y,
+          targetCenter.z - scaledCenter.z,
+        );
 
         model.traverse((child) => {
           if (child instanceof THREE.Mesh) {

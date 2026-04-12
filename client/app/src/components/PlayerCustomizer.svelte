@@ -8,8 +8,6 @@
     DEFAULT_BRUSH_COLOR,
     DEFAULT_ICON_BG,
     DEFAULT_STICKER_SIZE,
-    DEFAULT_TEXT_COLOR,
-    DEFAULT_TEXT_SIZE,
     designFromPlayer,
     MAX_ICON_STICKERS,
     serializeIconDesign,
@@ -58,18 +56,36 @@
     ["🏆", "🎯", "🚀", "💥", "🌊", "🍀"],
   ];
 
-  let design: IconDesign = designFromPlayer(me);
+  type IconSource = {
+    iconDesign?: string;
+    iconEmoji?: string;
+    iconText?: string;
+    iconBgColor?: string;
+  };
+
+  function getInitialDesign(): IconDesign {
+    const iconSource = me as IconSource | undefined;
+    const playerDesign = me
+      ? designFromPlayer({
+          iconDesign: iconSource?.iconDesign ?? "",
+          iconEmoji: iconSource?.iconEmoji ?? "",
+          iconText: iconSource?.iconText ?? "",
+          iconBgColor: iconSource?.iconBgColor ?? DEFAULT_ICON_BG,
+        })
+      : createEmptyIconDesign(DEFAULT_ICON_BG);
+    return { ...playerDesign, text: null };
+  }
+
+  let design: IconDesign = getInitialDesign();
   let brushColor = DEFAULT_BRUSH_COLOR;
   let brushSize = 8;
-  let textValue = design.text?.value ?? me?.iconText ?? "";
-  let textColor = design.text?.color ?? DEFAULT_TEXT_COLOR;
-  let textSize = design.text?.size ?? DEFAULT_TEXT_SIZE;
   let selectedEmoji = "😎";
   let placingEmoji = false;
   let drawingStroke: IconStroke | null = null;
   let canvasEl: HTMLDivElement | null = null;
   let pointerActive = false;
   let activePointerId: number | null = null;
+  let designHistory: IconDesign[] = [];
 
   $: previewPlayer = {
     ...(me ?? {} as PlayerState),
@@ -77,15 +93,17 @@
     iconEmoji: "",
     iconText: "",
     iconBgColor: design.bgColor,
-    iconDesign: serializeIconDesign({ ...design, text: textValue.trim() ? { value: textValue.trim().slice(0, 12), color: textColor, size: textSize, x: 50, y: 58 } : null }),
+    iconDesign: serializeIconDesign({ ...design, text: null }),
   } as PlayerState;
 
   function resetDesign() {
     design = createEmptyIconDesign(DEFAULT_ICON_BG);
-    textValue = "";
-    textColor = DEFAULT_TEXT_COLOR;
-    textSize = DEFAULT_TEXT_SIZE;
     placingEmoji = false;
+    designHistory = [];
+  }
+
+  function pushHistorySnapshot() {
+    designHistory = [...designHistory, JSON.parse(serializeIconDesign({ ...design, text: null })) as IconDesign];
   }
 
   function startStroke(event: PointerEvent) {
@@ -93,6 +111,7 @@
     pointerActive = true;
     activePointerId = event.pointerId;
     canvasEl.setPointerCapture(event.pointerId);
+    pushHistorySnapshot();
     const point = eventToPercent(event);
     drawingStroke = {
       color: brushColor,
@@ -121,6 +140,7 @@
   function placeEmoji(event: PointerEvent) {
     if (!placingEmoji || !canvasEl) return;
     if (design.stickers.length >= MAX_ICON_STICKERS) return;
+    pushHistorySnapshot();
     const point = eventToPercent(event);
     design = {
       ...design,
@@ -153,35 +173,29 @@
     placingEmoji = false;
   }
 
-  function undoStroke() {
-    if (design.strokes.length === 0) return;
-    design = { ...design, strokes: design.strokes.slice(0, -1) };
+  function setBackgroundColor(color: string) {
+    if (design.bgColor === color) return;
+    pushHistorySnapshot();
+    design = { ...design, bgColor: color };
   }
 
-  function removeLastSticker() {
-    if (design.stickers.length === 0) return;
-    design = { ...design, stickers: design.stickers.slice(0, -1) };
+  function undoLastChange() {
+    const previous = designHistory[designHistory.length - 1];
+    if (!previous) return;
+    design = { ...previous, text: null };
+    designHistory = designHistory.slice(0, -1);
   }
 
   function saveCustomization() {
-    const trimmedText = textValue.trim().slice(0, 12);
     const finalDesign: IconDesign = {
       ...design,
       bgColor: design.bgColor || DEFAULT_ICON_BG,
-      text: trimmedText
-        ? {
-            value: trimmedText,
-            color: textColor,
-            size: textSize,
-            x: 50,
-            y: 58,
-          }
-        : null,
+      text: null,
     };
 
     room.send("customize_player", {
       iconEmoji: "",
-      iconText: trimmedText.slice(0, 3),
+      iconText: "",
       iconBgColor: finalDesign.bgColor,
       iconDesign: serializeIconDesign(finalDesign),
     });
@@ -205,8 +219,8 @@
     <div class="flex justify-center">
       <div
         bind:this={canvasEl}
-        class="relative w-56 h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner bg-gray-800 touch-none"
-        style="background-color:{design.bgColor}"
+        class="relative w-56 h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none"
+        style="background:{design.bgColor};background-color:{design.bgColor};"
         on:pointerdown={(event) => placingEmoji ? placeEmoji(event) : startStroke(event)}
         on:pointermove={moveStroke}
         on:pointerup={endStroke}
@@ -232,13 +246,6 @@
             style="left:calc({sticker.x}% - {sticker.size / 2}px);top:calc({sticker.y}% - {sticker.size / 2}px);font-size:{sticker.size}px;"
           >{sticker.emoji}</span>
         {/each}
-
-        {#if textValue.trim()}
-          <span
-            class="absolute font-black leading-none tracking-tight pointer-events-none whitespace-nowrap"
-            style="left:50%;top:58%;transform:translate(-50%, -50%);font-size:{textSize}px;color:{textColor};text-shadow:0 1px 2px rgba(0,0,0,0.45);"
-          >{textValue.trim().slice(0, 12)}</span>
-        {/if}
       </div>
     </div>
 
@@ -249,47 +256,24 @@
           <button
             class="w-full aspect-square rounded-full border-2 {design.bgColor === color ? 'border-white scale-110' : 'border-transparent'}"
             style="background-color:{color};"
-            on:click={() => (design = { ...design, bgColor: color })}
+            on:click={() => setBackgroundColor(color)}
           ></button>
         {/each}
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-3">
-      <div class="space-y-2">
-        <p class="text-xs text-gray-500 uppercase tracking-widest">Brush</p>
-        <div class="flex gap-2 flex-wrap">
-          {#each PALETTE as color}
-            <button
-              class="w-8 h-8 rounded-full border-2 {brushColor === color ? 'border-white scale-110' : 'border-gray-600'}"
-              style="background-color:{color};"
-              on:click={() => (brushColor = color)}
-            ></button>
-          {/each}
-        </div>
-        <input type="range" min="4" max="18" bind:value={brushSize} class="w-full" />
+    <div class="space-y-2">
+      <p class="text-xs text-gray-500 uppercase tracking-widest">Brush</p>
+      <div class="flex gap-2 flex-wrap">
+        {#each PALETTE as color}
+          <button
+            class="w-8 h-8 rounded-full border-2 {brushColor === color ? 'border-white scale-110' : 'border-gray-600'}"
+            style="background-color:{color};"
+            on:click={() => (brushColor = color)}
+          ></button>
+        {/each}
       </div>
-
-      <div class="space-y-2">
-        <p class="text-xs text-gray-500 uppercase tracking-widest">Text</p>
-        <input
-          type="text"
-          maxlength="12"
-          bind:value={textValue}
-          placeholder={me?.name?.slice(0, 8).toUpperCase() ?? "GAMMA"}
-          class="w-full text-center text-sm font-black bg-gray-800 text-white rounded-lg px-3 py-2 border border-gray-700 focus:border-indigo-500 focus:outline-none uppercase tracking-wider"
-        />
-        <div class="flex gap-2 flex-wrap">
-          {#each PALETTE as color}
-            <button
-              class="w-7 h-7 rounded-full border-2 {textColor === color ? 'border-white scale-110' : 'border-gray-600'}"
-              style="background-color:{color};"
-              on:click={() => (textColor = color)}
-            ></button>
-          {/each}
-        </div>
-        <input type="range" min="14" max="36" bind:value={textSize} class="w-full" />
-      </div>
+      <input type="range" min="4" max="18" bind:value={brushSize} class="w-full" />
     </div>
 
     <div class="space-y-2">
@@ -307,9 +291,8 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-3 gap-2">
-      <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={undoStroke}>Undo Draw</button>
-      <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={removeLastSticker}>Undo Emoji</button>
+    <div class="grid grid-cols-2 gap-2">
+      <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={undoLastChange}>Undo</button>
       <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={resetDesign}>Reset</button>
     </div>
   </div>

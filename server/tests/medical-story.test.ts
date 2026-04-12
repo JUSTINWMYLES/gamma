@@ -8,6 +8,7 @@ import {
   ROLE_VOTE_DURATION_SECS,
   SUBMISSION_DURATION_SECS,
   VOTING_DURATION_SECS,
+  RESULTS_PENDING_MS,
   RESULTS_DISPLAY_MS,
   RECAP_DISPLAY_MS,
   RECAP_STEP_MS,
@@ -94,8 +95,9 @@ describe("constants", () => {
     expect(VOTING_DURATION_SECS).toBe(30);
   });
 
-  it("RESULTS_DISPLAY_MS is 6000", () => {
-    expect(RESULTS_DISPLAY_MS).toBe(6_000);
+  it("uses a 5s results interstitial and 10s winner reveal", () => {
+    expect(RESULTS_PENDING_MS).toBe(5_000);
+    expect(RESULTS_DISPLAY_MS).toBe(10_000);
   });
 
   it("RECAP_DISPLAY_MS is 5000", () => {

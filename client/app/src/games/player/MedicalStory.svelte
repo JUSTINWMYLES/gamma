@@ -3,15 +3,15 @@
    * Phone game component for "Medical Story" (registry-43).
    *
    * Sub-phases during `in_round`:
-   *   role_voting → roles_assigned → submission → voting → phase_result → round_recap
+ *   role_voting → roles_assigned → submission → voting → results_pending → phase_result → round_recap
    *
    * The game cycles through four creative phases:
    *   complaint → diagnosis → procedure → catchphrase
    *
    * Server messages listened:
-   *   ms_role_phase, ms_roles_assigned, ms_submission_phase,
-   *   ms_submit_ack, ms_voting_phase, ms_vote_ack,
-   *   ms_phase_result, ms_round_recap, round_skipped
+ *   ms_role_phase, ms_roles_assigned, ms_submission_phase,
+ *   ms_submit_ack, ms_voting_phase, ms_vote_ack,
+ *   ms_results_pending, ms_phase_result, ms_round_recap, round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
@@ -29,6 +29,7 @@
     | "roles_assigned"
     | "submission"
     | "voting"
+    | "results_pending"
     | "phase_result"
     | "round_recap";
   type GamePhase = "complaint" | "diagnosis" | "procedure" | "catchphrase";
@@ -72,6 +73,7 @@
   let selectedAction = "";
   let selectedTests: string[] = [];
   let submitted = false;
+  let submitting = false;
   let submitError = "";
 
   let bodyParts: string[] = [];
@@ -133,10 +135,11 @@
     { role: "nurse", emoji: "👩‍⚕️", label: "Nurse", bind: "selectedNurse" },
   ];
 
-  const roleSelectionClasses: Record<string, string> = {
-    patient: "border-red-400 bg-red-600 text-white shadow-[0_0_0_1px_rgba(248,113,113,0.45)]",
-    doctor: "border-blue-400 bg-blue-600 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.45)]",
-    nurse: "border-pink-400 bg-pink-600 text-white shadow-[0_0_0_1px_rgba(244,114,182,0.45)]",
+  const roleBonusCopy: Record<string, string> = {
+    patient: "Your votes count double during Patient's Complaint.",
+    nurse: "Your votes count double during Diagnosis.",
+    doctor: "Your votes count double during Catchphrase.",
+    bystander: "You do not get a double-vote bonus, but you still submit and vote every phase.",
   };
 
   // ── Message handlers ─────────────────────────────────────────────────
@@ -187,6 +190,7 @@
     selectedAction = "";
     selectedTests = [];
     submitted = false;
+    submitting = false;
     submitError = "";
 
     clearAllTimers();
@@ -196,6 +200,7 @@
   }
 
   function onSubmitAck(data: { accepted: boolean; reason?: string }) {
+    submitting = false;
     if (data.accepted) {
       submitted = true;
       submitError = "";
@@ -227,6 +232,12 @@
 
   function onVoteAck() {
     voteSubmitted = true;
+  }
+
+  function onResultsPending(data: { phase: typeof currentPhase }) {
+    subPhase = "results_pending";
+    currentPhase = data.phase;
+    clearAllTimers();
   }
 
   function onPhaseResult(data: {
@@ -278,7 +289,10 @@
   }
 
   function submitEntry() {
-    if (!submissionText.trim()) return;
+    if (!canSubmitEntry || submitted || submitting) return;
+
+    submitError = "";
+    submitting = true;
 
     room.send("game_input", {
       action: "ms_submit",
@@ -306,38 +320,10 @@
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
   }
 
-  function getRoleSelection(bind: RoleSelectionKey): string {
-    if (bind === "selectedPatient") return selectedPatient;
-    if (bind === "selectedDoctor") return selectedDoctor;
-    return selectedNurse;
-  }
-
   function setRoleSelection(bind: RoleSelectionKey, playerId: string) {
     if (bind === "selectedPatient") selectedPatient = playerId;
     else if (bind === "selectedDoctor") selectedDoctor = playerId;
     else selectedNurse = playerId;
-  }
-
-  function isPickedForAnotherRole(bind: RoleSelectionKey, playerId: string): boolean {
-    return (
-      (bind !== "selectedPatient" && selectedPatient === playerId) ||
-      (bind !== "selectedDoctor" && selectedDoctor === playerId) ||
-      (bind !== "selectedNurse" && selectedNurse === playerId)
-    );
-  }
-
-  function isRoleChoiceDisabled(bind: RoleSelectionKey, playerId: string): boolean {
-    return getRoleSelection(bind) !== playerId && isPickedForAnotherRole(bind, playerId);
-  }
-
-  function getRoleChoiceClass(role: string, bind: RoleSelectionKey, playerId: string): string {
-    if (getRoleSelection(bind) === playerId) {
-      return roleSelectionClasses[role] ?? "border-blue-400 bg-blue-600 text-white";
-    }
-    if (isRoleChoiceDisabled(bind, playerId)) {
-      return "border-gray-800 bg-gray-900/70 text-gray-600 cursor-not-allowed opacity-60";
-    }
-    return "border-gray-700 bg-gray-800 text-gray-300 active:border-blue-500";
   }
 
   function toggleFunnyTest(test: string) {
@@ -405,6 +391,7 @@
     room.onMessage("ms_submit_ack", onSubmitAck);
     room.onMessage("ms_voting_phase", onVotingPhase);
     room.onMessage("ms_vote_ack", onVoteAck);
+    room.onMessage("ms_results_pending", onResultsPending);
     room.onMessage("ms_phase_result", onPhaseResult);
     room.onMessage("ms_round_recap", onRoundRecap);
     room.onMessage("round_skipped", onRoundSkipped);
@@ -438,6 +425,9 @@
         <p class="text-sm text-gray-400 mt-1">
           {Math.ceil(roleVoteTimeLeft)}s remaining
         </p>
+        <p class="mt-2 text-xs text-gray-500">
+          Pick one player for each job. Once someone is chosen, they are locked out of the other roles.
+        </p>
       </div>
 
       {#if roleVoteSubmitted}
@@ -453,13 +443,38 @@
             </p>
             <div class="flex flex-wrap gap-2">
               {#each playerList as player}
+                {@const currentSelection = roleOption.bind === "selectedPatient"
+                  ? selectedPatient
+                  : roleOption.bind === "selectedDoctor"
+                    ? selectedDoctor
+                    : selectedNurse}
+                {@const isSelected = currentSelection === player.id}
+                {@const isDisabled = !isSelected && (
+                  (roleOption.bind !== "selectedPatient" && selectedPatient === player.id) ||
+                  (roleOption.bind !== "selectedDoctor" && selectedDoctor === player.id) ||
+                  (roleOption.bind !== "selectedNurse" && selectedNurse === player.id)
+                )}
                 <button
-                  class="px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
-                    {getRoleChoiceClass(roleOption.role, roleOption.bind, player.id)}"
-                  disabled={isRoleChoiceDisabled(roleOption.bind, player.id)}
+                  type="button"
+                  class={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    isSelected
+                      ? roleOption.role === "patient"
+                        ? "border-red-400 bg-red-600 text-white shadow-[0_0_0_1px_rgba(248,113,113,0.45)]"
+                        : roleOption.role === "doctor"
+                          ? "border-blue-400 bg-blue-600 text-white shadow-[0_0_0_1px_rgba(96,165,250,0.45)]"
+                          : "border-pink-400 bg-pink-600 text-white shadow-[0_0_0_1px_rgba(244,114,182,0.45)]"
+                      : isDisabled
+                        ? "border-gray-800 bg-gray-900/70 text-gray-600 cursor-not-allowed opacity-60"
+                        : "border-gray-700 bg-gray-800 text-gray-300 active:border-blue-500"
+                  }`}
+                  aria-pressed={isSelected}
+                  disabled={isDisabled}
                   on:click={() => setRoleSelection(roleOption.bind, player.id)}
                 >
-                  {player.name}
+                  <span>{player.name}</span>
+                  {#if isSelected}
+                    <span class="text-[10px] font-bold uppercase tracking-widest opacity-80">Selected</span>
+                  {/if}
                 </button>
               {/each}
             </div>
@@ -493,6 +508,13 @@
           </div>
         {/each}
       </div>
+      <div class="rounded-xl border border-amber-500/40 bg-amber-950/40 p-4 text-left">
+        <p class="text-xs font-semibold uppercase tracking-widest text-amber-300">Double-vote bonus</p>
+        <p class="mt-1 text-sm text-amber-100">{roleBonusCopy[myRole] ?? roleBonusCopy.bystander}</p>
+        <p class="mt-2 text-xs text-amber-200">
+          Patient doubles complaint votes. Nurse doubles diagnosis votes. Doctor doubles catchphrase votes.
+        </p>
+      </div>
       <p class="text-lg">You are the {getRoleEmoji(myRole)} <span class="font-bold capitalize">{myRole}</span>!</p>
     </div>
 
@@ -522,22 +544,6 @@
             </p>
           {/if}
         </div>
-
-        {#if phaseHistory.length > 0}
-          <div class="space-y-2 rounded-xl border border-gray-700 bg-gray-900/70 p-3">
-            <p class="text-xs text-gray-400 uppercase tracking-widest">Previous Winners</p>
-            {#each phaseHistory as entry}
-              <div class="rounded-lg border border-gray-800 bg-gray-800/90 px-3 py-2">
-                <p class="text-[11px] uppercase tracking-widest text-gray-500">{phaseLabels[entry.phase]}</p>
-                {#if entry.winner}
-                  <p class="text-sm font-semibold text-white">"{entry.winner.text}"</p>
-                {:else}
-                  <p class="text-sm text-gray-500">No winner yet</p>
-                {/if}
-              </div>
-            {/each}
-          </div>
-        {/if}
 
         <!-- Text input -->
         <div class="space-y-2">
@@ -639,14 +645,15 @@
         {/if}
 
         <button
+          type="button"
           class="w-full py-3 rounded-xl font-bold transition-all
-            {canSubmitEntry
+            {canSubmitEntry && !submitting
               ? 'bg-amber-600 text-white active:bg-amber-500 active:scale-95'
               : 'bg-gray-800 text-gray-600 cursor-not-allowed'}"
-          disabled={!canSubmitEntry}
+          disabled={!canSubmitEntry || submitting}
           on:click={submitEntry}
         >
-          Submit
+          {submitting ? 'Submitting...' : 'Submit'}
         </button>
         {#if requiresBodyPart && !selectedBodyPart}
           <p class="text-xs text-amber-300 text-center">Pick a body part to finish your answer.</p>
@@ -671,22 +678,6 @@
           </p>
         {/if}
       </div>
-
-      {#if phaseHistory.length > 0}
-        <div class="space-y-2 rounded-xl border border-gray-700 bg-gray-900/70 p-3">
-          <p class="text-xs text-gray-400 uppercase tracking-widest">Current Story</p>
-          {#each phaseHistory as entry}
-            <div class="rounded-lg border border-gray-800 bg-gray-800/90 px-3 py-2">
-              <p class="text-[11px] uppercase tracking-widest text-gray-500">{phaseLabels[entry.phase]}</p>
-              {#if entry.winner}
-                <p class="text-sm font-semibold text-white">"{entry.winner.text}"</p>
-              {:else}
-                <p class="text-sm text-gray-500">No winner yet</p>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {/if}
 
       {#if voteSubmitted}
         <div class="bg-green-900/50 border border-green-600 rounded-xl p-4 text-center">
@@ -720,6 +711,16 @@
           {/each}
         </div>
       {/if}
+    </div>
+
+  {:else if subPhase === "results_pending"}
+    <!-- ── Results pending ─────────────────────────────────────── -->
+    <div class="w-full max-w-sm space-y-4 text-center">
+      <p class="text-4xl">{phaseIcons[currentPhase]}</p>
+      <h2 class="text-2xl font-black text-emerald-300">The results are in...</h2>
+      <p class="text-sm text-gray-400">
+        Revealing the winning {phaseLabels[currentPhase].toLowerCase()} next.
+      </p>
     </div>
 
   {:else if subPhase === "phase_result"}

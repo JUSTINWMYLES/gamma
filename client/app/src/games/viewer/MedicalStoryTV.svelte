@@ -12,12 +12,12 @@
    *
    * Server messages listened:
    *   ms_role_phase, ms_roles_assigned, ms_submission_phase,
-   *   ms_voting_phase, ms_phase_result, ms_round_recap, round_skipped
+ *   ms_voting_phase, ms_results_pending, ms_phase_result, ms_round_recap, round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
-  import { getRoundLabel, getRoundProgressLabel } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
   import MedicalStoryBodyModel from "../../components/MedicalStoryBodyModel.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
@@ -31,6 +31,7 @@
     | "roles_assigned"
     | "submission"
     | "voting"
+    | "results_pending"
     | "phase_result"
     | "round_recap";
   type GamePhase = "complaint" | "diagnosis" | "procedure" | "catchphrase";
@@ -182,6 +183,13 @@
     }, 200);
   }
 
+  function onResultsPending(data: { phase: typeof currentPhase; history?: PhaseHistoryEntry[] }) {
+    subPhase = "results_pending";
+    currentPhase = data.phase;
+    phaseHistory = data.history ?? phaseHistory;
+    clearAllTimers();
+  }
+
   function onPhaseResult(data: {
     phase: typeof currentPhase;
     results: typeof phaseResults;
@@ -261,16 +269,8 @@
     return "";
   }
 
-  function hasRecapReveal(phase: GamePhase): boolean {
-    return revealedRecapPhases.has(phase);
-  }
-
   function phaseHasBodyModel(phase: GamePhase): boolean {
     return phase === "complaint";
-  }
-
-  function getHistoryEntry(phase: GamePhase): PhaseHistoryEntry | undefined {
-    return phaseHistory.find((entry) => entry.phase === phase);
   }
 
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
@@ -282,6 +282,7 @@
     room.onMessage("ms_roles_assigned", onRolesAssigned);
     room.onMessage("ms_submission_phase", onSubmissionPhase);
     room.onMessage("ms_voting_phase", onVotingPhase);
+    room.onMessage("ms_results_pending", onResultsPending);
     room.onMessage("ms_phase_result", onPhaseResult);
     room.onMessage("ms_round_recap", onRoundRecap);
     room.onMessage("round_skipped", onRoundSkipped);
@@ -300,23 +301,24 @@
     </div>
 
     {#each allPhases as phase}
+      {@const historyEntry = phaseHistory.find((entry) => entry.phase === phase)}
       <div class="rounded-2xl border p-4 transition-all
-        {getHistoryEntry(phase)?.winner
+        {historyEntry?.winner
           ? 'border-emerald-600/60 bg-emerald-950/30'
           : 'border-gray-800 bg-gray-950/40'}">
         <p class="text-xs uppercase tracking-widest text-gray-500">{phaseIcons[phase]} {phaseLabels[phase]}</p>
-        {#if getHistoryEntry(phase)?.winner}
+        {#if historyEntry?.winner}
           <p class="mt-2 text-sm font-semibold text-white">
-            "{getHistoryEntry(phase)?.winner?.text}"
+            "{historyEntry.winner.text}"
           </p>
-          {#if getHistoryEntry(phase)?.winner?.bodyPart}
-            <p class="mt-1 text-xs text-gray-300">📍 {getHistoryEntry(phase)?.winner?.bodyPart}</p>
+          {#if historyEntry.winner.bodyPart}
+            <p class="mt-1 text-xs text-gray-300">📍 {historyEntry.winner.bodyPart}</p>
           {/if}
-          {#if getHistoryEntry(phase)?.winner?.tests && getHistoryEntry(phase)?.winner?.tests?.length}
-            <p class="mt-1 text-xs text-gray-300">🧪 {getHistoryEntry(phase)?.winner?.tests?.join(", ")}</p>
+          {#if historyEntry.winner.tests && historyEntry.winner.tests.length}
+            <p class="mt-1 text-xs text-gray-300">🧪 {historyEntry.winner.tests.join(", ")}</p>
           {/if}
-          {#if getHistoryEntry(phase)?.winner?.action}
-            <p class="mt-1 text-xs text-gray-300">⚡ {getHistoryEntry(phase)?.winner?.action}</p>
+          {#if historyEntry.winner.action}
+            <p class="mt-1 text-xs text-gray-300">⚡ {historyEntry.winner.action}</p>
           {/if}
         {:else}
           <p class="mt-2 text-sm text-gray-600">Waiting for this phase.</p>
@@ -534,6 +536,14 @@
         </div>
       </div>
 
+    {:else if subPhase === "results_pending"}
+      <!-- ── Results pending ───────────────────────────────────── -->
+      <div class="text-center space-y-5 w-full max-w-3xl">
+        <p class="text-6xl">{phaseIcons[currentPhase]}</p>
+        <h2 class="text-5xl font-black text-emerald-300">The results are in...</h2>
+        <p class="text-xl text-gray-300">Revealing the winning {phaseLabels[currentPhase].toLowerCase()} in a moment.</p>
+      </div>
+
     {:else if subPhase === "round_recap"}
       <!-- ── Round recap ────────────────────────────────────────── -->
       <div class="text-center space-y-6 w-full max-w-3xl">
@@ -542,20 +552,21 @@
         <!-- Phase winners summary -->
         <div class="grid grid-cols-2 gap-4">
           {#each allPhases as phase}
+            {@const isRevealed = revealedRecapPhases.has(phase)}
             <div class="bg-gray-800 rounded-2xl p-5 text-left border transition-all
-              {hasRecapReveal(phase)
+              {isRevealed
                 ? 'border-fuchsia-500 opacity-100 scale-100'
                 : 'border-gray-700 opacity-30 scale-95'}">
               <p class="text-sm text-gray-400 uppercase tracking-widest mb-2">
                 {phaseIcons[phase]} {phaseLabels[phase]}
               </p>
-              {#if hasRecapReveal(phase) && phaseWinners[phase]}
+              {#if isRevealed && phaseWinners[phase]}
                 <p class="text-lg font-bold text-white">"{phaseWinners[phase]?.text}"</p>
                 {#if phaseWinners[phase]?.tests && phaseWinners[phase]?.tests?.length}
                   <p class="text-sm text-gray-300 mt-1">🧪 {phaseWinners[phase]?.tests?.join(", ")}</p>
                 {/if}
                 <p class="text-sm text-gray-400 mt-1">by {getPlayerName(phaseWinners[phase]?.playerId ?? '')}</p>
-              {:else if hasRecapReveal(phase)}
+              {:else if isRevealed}
                 <p class="text-lg text-gray-600">No winner</p>
               {:else}
                 <p class="text-lg text-gray-600">Revealing soon...</p>

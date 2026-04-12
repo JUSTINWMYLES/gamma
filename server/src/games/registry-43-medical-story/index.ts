@@ -25,6 +25,7 @@
  *   "ms_submit_ack"         { accepted, reason? }
  *   "ms_voting_phase"       { phase, submissions, durationMs, history }
  *   "ms_vote_ack"           {}
+ *   "ms_results_pending"    { phase, history }
  *   "ms_phase_result"       { phase, results, phaseWinner, points, history }
  *   "ms_round_recap"        { phaseWinners, scores, history, recapTimeline }
  *   "round_skipped"         { reason }
@@ -54,6 +55,7 @@ import {
   ROLE_VOTE_DURATION_SECS,
   SUBMISSION_DURATION_SECS,
   VOTING_DURATION_SECS,
+  RESULTS_PENDING_MS,
   RESULTS_DISPLAY_MS,
   RECAP_DISPLAY_MS,
   RECAP_STEP_MS,
@@ -276,10 +278,17 @@ export default class MedicalStoryGame extends BaseGame {
       this.round.phaseWinners.set(phase, winner);
       this.round.history.push({ phase, winner });
 
-      this.broadcast("ms_phase_result", {
-        phase,
-        results,
-        phaseWinner: winner,
+       this.broadcast("ms_results_pending", {
+         phase,
+         history: this._getPhaseHistory(),
+       });
+
+       await this.delay(RESULTS_PENDING_MS);
+
+       this.broadcast("ms_phase_result", {
+         phase,
+         results,
+         phaseWinner: winner,
         points: Object.fromEntries(points),
         history: this._getPhaseHistory(),
         // 3D scene placeholder: winner celebration animation
