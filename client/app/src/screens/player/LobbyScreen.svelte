@@ -15,7 +15,7 @@
 
   // ── Player customization panel ───────────────────────────────────────────
   let showCustomizer = false;
-  $: hasCustomIcon = !!(me?.iconEmoji || me?.iconText);
+  $: hasCustomIcon = !!(me?.iconDesign || me?.iconEmoji || me?.iconText || me?.iconBgColor);
 
   // ── Device permission consent ────────────────────────────────────────────
   const CONSENT_KEY = "gamma-device-consent";
@@ -300,7 +300,7 @@
   });
 </script>
 
-<div class="flex-1 flex flex-col items-center gap-6 p-6 pt-10 overflow-y-auto" data-testid="phone-lobby">
+<div class="flex-1 flex flex-col items-center gap-6 p-6 pt-10 overflow-y-auto touch-manipulation" data-testid="phone-lobby">
 
   <!-- ── Device permission consent overlay ─────────────────────── -->
   {#if showConsent}

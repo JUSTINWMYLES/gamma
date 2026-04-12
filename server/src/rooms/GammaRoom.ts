@@ -510,6 +510,13 @@ export class GammaRoom extends Room<RoomState> {
       this._advanceOrResetToLobby();
     });
 
+    /** Host aborts the current game and sends everyone back to the lobby. */
+    this.onMessage("end_game_to_lobby", (client, _data) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase === "lobby") return;
+      this._resetToLobby();
+    });
+
     /**
      * Host sets the game queue (playlist).
      * Expects { queue: string[] } — array of game registry IDs.

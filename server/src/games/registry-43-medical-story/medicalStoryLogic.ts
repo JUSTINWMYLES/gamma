@@ -102,8 +102,11 @@ export const SUBMISSION_DURATION_SECS = 45;
 /** Duration for each voting phase (seconds). */
 export const VOTING_DURATION_SECS = 30;
 
-/** Duration to display vote results before advancing (ms). */
-export const RESULTS_DISPLAY_MS = 6_000;
+/** Duration to hold on the "results are in" interstitial (ms). */
+export const RESULTS_PENDING_MS = 5_000;
+
+/** Duration to display the revealed winner before advancing (ms). */
+export const RESULTS_DISPLAY_MS = 10_000;
 
 /** Reveal cadence for each recap item (ms). */
 export const RECAP_STEP_MS = 5_000;

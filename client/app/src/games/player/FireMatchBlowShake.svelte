@@ -59,19 +59,10 @@
   // ── Strike (tap) state ────────────────────────────────────────────────────
   let strikeTaps = 0;
 
-  /** Prevent click from firing after touchstart already handled the event. */
-  let lastTouchAt = 0;
-  function wasTouch(): boolean {
-    return Date.now() - lastTouchAt < 400;
-  }
-
   function sendStrike() {
     strikeTaps++;
     room.send("game_input", { action: "fire_strike" });
   }
-
-  function onStrikeTouch() { lastTouchAt = Date.now(); sendStrike(); }
-  function onStrikeClick() { if (!wasTouch()) sendStrike(); }
 
   // ── Blow (microphone) state ───────────────────────────────────────────────
   let micActive = false;
@@ -123,12 +114,6 @@
     micActive = false;
   }
 
-  function sendBlowManual() {
-    room.send("game_input", { action: "fire_blow", amplitude: 1 });
-  }
-  function onBlowTouch() { lastTouchAt = Date.now(); sendBlowManual(); }
-  function onBlowClick() { if (!wasTouch()) sendBlowManual(); }
-
   // ── Shake (accelerometer) state ───────────────────────────────────────────
   let motionEnabled = false;
   let motionMsg = "";
@@ -158,12 +143,6 @@
     motionMsg = "Shake detection ready.";
   }
 
-  function sendShakeManual() {
-    room.send("game_input", { action: "fire_shake", magnitude: 1.2 });
-  }
-  function onShakeTouch() { lastTouchAt = Date.now(); sendShakeManual(); }
-  function onShakeClick() { if (!wasTouch()) sendShakeManual(); }
-
   // ── Extinguish (tap) state ────────────────────────────────────────────────
   let extinguishTaps = 0;
 
@@ -171,8 +150,6 @@
     extinguishTaps++;
     room.send("game_input", { action: "fire_tap" });
   }
-  function onExtinguishTouch() { lastTouchAt = Date.now(); sendExtinguish(); }
-  function onExtinguishClick() { if (!wasTouch()) sendExtinguish(); }
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   function startTimer(totalDurationMs: number, serverTimestamp: number) {
@@ -196,7 +173,7 @@
   };
   const STAGE_INSTRUCTIONS: Record<FireStage, string> = {
     strike: "Tap rapidly to strike the match",
-    blow: "Blow into your mic (or tap the button)",
+    blow: "Blow into your mic to grow the fire",
     shake: "Shake your phone to fan the flames!",
     extinguish: "Tap rapidly to stamp out the fire",
   };
@@ -352,8 +329,7 @@
         <button
           class="w-full py-5 rounded-xl bg-amber-600 text-white font-black text-xl active:scale-95 active:bg-amber-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:touchstart|preventDefault={onStrikeTouch}
-          on:click={onStrikeClick}
+          on:click={sendStrike}
         >
           STRIKE! ({strikeTaps})
         </button>
@@ -365,18 +341,6 @@
               Enable microphone in the lobby to use the blow stage.
             </div>
           {/if}
-          <button
-            class="w-full py-5 rounded-xl font-black text-xl transition-all select-none
-              {micGranted
-                ? 'bg-orange-600 text-white active:scale-95 active:bg-orange-500'
-                : 'bg-gray-800 text-gray-500 cursor-not-allowed'}"
-            style="touch-action:manipulation"
-            on:touchstart|preventDefault={onBlowTouch}
-            on:click={onBlowClick}
-            disabled={!micGranted}
-          >
-            BLOW
-          </button>
           {#if micMsg}
             <p class="text-xs text-center {micActive ? 'text-green-400' : 'text-gray-400'}">{micMsg}</p>
           {/if}
@@ -389,18 +353,6 @@
               Enable motion in the lobby to use the shake stage.
             </div>
           {/if}
-          <button
-            class="w-full py-5 rounded-xl font-black text-xl transition-all select-none
-              {motionGranted
-                ? 'bg-sky-600 text-white active:scale-95 active:bg-sky-500'
-                : 'bg-gray-800 text-gray-500 cursor-not-allowed'}"
-            style="touch-action:manipulation"
-            on:touchstart|preventDefault={onShakeTouch}
-            on:click={onShakeClick}
-            disabled={!motionGranted}
-          >
-            SHAKE
-          </button>
           {#if motionMsg}
             <p class="text-xs text-center {motionEnabled ? 'text-green-400' : 'text-gray-400'}">{motionMsg}</p>
           {/if}
@@ -410,8 +362,7 @@
         <button
           class="w-full py-5 rounded-xl bg-red-600 text-white font-black text-xl active:scale-95 active:bg-red-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:touchstart|preventDefault={onExtinguishTouch}
-          on:click={onExtinguishClick}
+          on:click={sendExtinguish}
         >
           TAP TO EXTINGUISH! ({extinguishTaps})
         </button>

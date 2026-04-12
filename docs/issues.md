@@ -83,3 +83,27 @@ Implement and fix all of the following comments. Don't stop until you are done. 
 ## Don't get caught
 
 - The bots quite often get stuck against walls or start glitching. Make them so much smarter and better at navigating the arena. Use logic to have them avoid walking right into walls and have them decide between turning left or right.
+
+# New issues now
+
+Ok there are now some new issues to address. Review all the items in this list and provide fixes. Do not stop no matter what until you have fixed everything. Don't accidentally pause, I need you to work completely uninterrupted. Problems:
+
+- The room code sits in the same corner as the light mode dark mode button, move it to the top left corner to display the room code. Ensure that all games on the left side allow space for the room code in the top left corner to display on the TV only
+- On the lobby screen view, prevent double taps on mobile devices from zooming in
+- For the drawing circle, the background color isn't working. Also you can get rid of the text portion. The brush can be the full left to right width similar to the background now that the text portion is gone. The undo buttons don't have to be separate, it can be one button to undo the recent change whether its an emoji or a draw
+- The campfire game still has buttons as alternate methods to blowing and shaking. I don't want those buttons to be there at all
+- For paint match don't immediately tell the player their score, let the score be revealed once all players are done. I have to scroll a little bit up and down to view the whole screen, make the box for "your mix" a bit smaller so that I don't have to scroll up and down
+- The button to leave is a bit off, the arrow needs to shift up a bit more to be centered. For the host user ONLY, when they click on the leave button, give them both options to leave, and another option to end the game and exit back to the lobby (this should move all players in that room back to the lobby)
+- When a player selects the same name as someone else in the join room they get the following error message `The name "asd" is already taken in this lobby. Returning to start...`. If they pick the same name as someone, don't force them back to the lobby, just give a small message saying that the name is already taken and leave them on the same page to submit under another name
+- In the medical game I see the following: 
+  - The voting for assigning roles still has issues, the boxes with the players names does not highlight still when pressed
+  - Previous winners displays on each players device, I don't want it on the devices, I want it on the tv only
+  - `Waiting for this phase.` is always shown on the TV for each phase, it never updates. 
+  - The 3D model and the body parts are offset, the model is lower than the actual selection boxes
+  - The 3D model is still way off to the side. Figure out how to center it and zoom it out a lot more
+  - The end when the TV is supposed to give the summary of each event as a "round recap", it just shows as loading the whole time
+  - For the doctors catchphrase, when the submit button is pressed nothing happens
+  - Once the players vote after each stage, show a page that says "The results are in..." and show that page for 5 seconds before revealing the winner. Then show the winning one for 10 seconds before moving to the next round
+  - When the players are assigned their roles, make sure that it is very clear that they will receive double votes for the associated round
+- When a player leaves the lobby voluntarily, they are shown a message that says `Disconnected from server`. I don't want that message to show as the user doesnt care
+- In don't get caught, make it so that guards always start as close to the center as they can be, and the players start as far away from the center as they can be. Also introduce a 5th guard. Sometimes the guards go back and forth from one end to the other a lot and then only turn when they reach a wall, fix that so that they sometimes will turn to the side if possible even around the middle of the screen

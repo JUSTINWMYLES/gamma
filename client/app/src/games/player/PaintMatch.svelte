@@ -36,8 +36,6 @@
   let previewColor = "rgb(255,255,255)";
   let submitted = false;
   let submittedColor = "";
-  let submittedDistance = 0;
-  let submittedScore = 0;
   let submitCount = 0;
   let totalPlayers = 0;
   let showResults = false;
@@ -49,6 +47,7 @@
     score: number;
     rank: number;
   }> = [];
+  let myResult: (typeof rankings)[number] | undefined;
 
   // ── Timer ──────────────────────────────────────────────────────
   let timeLeft = 0;
@@ -157,12 +156,11 @@
       showResults = false;
       red = 0; yellow = 0; blue = 0; white = 0; black = 0;
       rankings = [];
+      submittedColor = "";
     });
 
-    room.onMessage("submit_confirmed", (msg: { mixRGB: [number, number, number]; distance: number; score: number }) => {
+    room.onMessage("submit_confirmed", (msg: { mixRGB: [number, number, number] }) => {
       submittedColor = `rgb(${msg.mixRGB[0]},${msg.mixRGB[1]},${msg.mixRGB[2]})`;
-      submittedDistance = Math.round(msg.distance * 10) / 10;
-      submittedScore = msg.score;
     });
 
     room.onMessage("submit_count", (msg: { submitted: number; total: number }) => {
@@ -187,6 +185,8 @@
     clearInterval(timerInterval);
     if (updateInterval) clearInterval(updateInterval);
   });
+
+  $: myResult = rankings.find((r) => r.playerId === me?.id);
 
   // Bucket definitions for rendering
   const buckets = [
@@ -265,10 +265,12 @@
         </div>
       </div>
 
-      <div class="text-center">
-        <p class="text-3xl font-black text-amber-400">+{submittedScore}</p>
-        <p class="text-xs text-gray-400">Distance: {submittedDistance}</p>
-      </div>
+      {#if myResult}
+        <div class="text-center">
+          <p class="text-3xl font-black text-amber-400">+{myResult.score}</p>
+          <p class="text-xs text-gray-400">Distance: {Math.round(myResult.distance * 10) / 10}</p>
+        </div>
+      {/if}
     </div>
   {:else if !targetRGB}
     <!-- ── Waiting for target ───────────────────────────────────── -->
@@ -277,17 +279,17 @@
     </div>
   {:else}
     <!-- ── Mixing UI ────────────────────────────────────────────── -->
-    <div class="flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
-      <!-- Colour preview -->
-      <div class="flex gap-3 items-stretch">
-        <!-- Preview swatch -->
-        <div class="flex-1 flex flex-col items-center gap-1">
-          <p class="text-xs text-gray-400">Your Mix</p>
-          <div
-            class="w-full aspect-square rounded-xl border-2 border-gray-600 transition-colors"
-            style="background:{previewColor}"
-            data-testid="mix-preview"
-          ></div>
+      <div class="flex-1 flex flex-col p-4 gap-3 overflow-y-auto">
+        <!-- Colour preview -->
+        <div class="flex gap-3 items-start">
+          <!-- Preview swatch -->
+          <div class="flex-1 flex flex-col items-center gap-1">
+            <p class="text-xs text-gray-400">Your Mix</p>
+            <div
+              class="w-full aspect-[0.88] rounded-xl border-2 border-gray-600 transition-colors"
+              style="background:{previewColor}"
+              data-testid="mix-preview"
+            ></div>
         </div>
         <!-- Target swatch (small reference) -->
         <div class="flex flex-col items-center gap-1">
@@ -339,7 +341,7 @@
         </button>
       {:else}
         <div class="mt-2 w-full py-3 rounded-xl text-center font-bold text-lg bg-gray-800 text-green-400">
-          Submitted! Score: {submittedScore}
+          Submitted! Waiting for results...
         </div>
       {/if}
     </div>
