@@ -402,7 +402,7 @@
   $: showHostEndToLobby = isPlayerHost && phase !== "lobby";
   $: themeTogglePositionClass = room && role === "viewer" && viewerView === "room" ? "right-14" : "right-3";
   $: leaveButtonPositionClass = role === "viewer" ? "right-3" : "left-3";
-  $: viewerChromeInsetClass = role === "viewer" && viewerView === "room" ? "pt-16 pl-24" : "";
+  $: viewerChromeInsetClass = "";  // Room code overlay is fixed-position; no padding needed
 
   // Keep viewer music in sync with room phase + selected game.
   $: if (role === "viewer" && !connecting && !error && state) {
@@ -416,6 +416,11 @@
     ? `Music: ${TRACK_CONFIG[currentTrack].attribution}`
     : "";
 
+  // Viewer room mode: lock to viewport height to prevent TV scrolling
+  $: appRootClass = role === "viewer" && viewerView === "room" && state && !error
+    ? "h-screen overflow-hidden flex flex-col bg-gray-950 text-white"
+    : "min-h-screen flex flex-col bg-gray-950 text-white";
+
   // Show floating background on pre-game screens only (not during active games)
   const gamePhases: Phase[] = ["instructions", "countdown", "in_round", "round_end", "scoreboard", "game_over", "game_loading"];
   $: showBackground = !gamePhases.includes(phase);
@@ -426,7 +431,7 @@
 <!-- Template                                                           -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-<div data-testid="app-root" class="min-h-screen flex flex-col bg-gray-950 text-white">
+<div data-testid="app-root" class={appRootClass}>
 
   <audio bind:this={musicAudio} preload="auto" />
 
@@ -448,7 +453,7 @@
       title="Leave room"
       on:click={() => (showLeaveConfirm = true)}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 -translate-y-px" viewBox="0 0 20 20" fill="currentColor">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 -translate-y-[2px]" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 100-2H3z" clip-rule="evenodd"/>
         <path fill-rule="evenodd" d="M13.293 9.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 14H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
       </svg>
@@ -558,7 +563,7 @@
         <p class="text-2xl animate-pulse">Connecting to server...</p>
       </div>
     {:else if state}
-      <div class={`flex-1 min-h-0 ${viewerChromeInsetClass}`}>
+      <div class={`flex-1 min-h-0 flex flex-col ${viewerChromeInsetClass}`}>
         {#if phase === "lobby"}
           <ViewerLobby room={typedRoom} state={typedState} />
         {:else if phase === "game_loading"}

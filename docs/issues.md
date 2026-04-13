@@ -107,3 +107,22 @@ Ok there are now some new issues to address. Review all the items in this list a
   - When the players are assigned their roles, make sure that it is very clear that they will receive double votes for the associated round
 - When a player leaves the lobby voluntarily, they are shown a message that says `Disconnected from server`. I don't want that message to show as the user doesnt care
 - In don't get caught, make it so that guards always start as close to the center as they can be, and the players start as far away from the center as they can be. Also introduce a 5th guard. Sometimes the guards go back and forth from one end to the other a lot and then only turn when they reach a wall, fix that so that they sometimes will turn to the side if possible even around the middle of the screen
+
+
+# Round 3
+
+
+## Medical Story 
+
+- In the medical story game, there is the section on the left now saying `Story So Far`. That section on the left is also messed up on the left side. Also the color scheme is struggling where the writing is dark on dark.
+- The 3D model is a bit more zoomed out, but it is still way off to the right side. I don't know why you cant figure this out but I need you to sort it our and make it centered on the devices.
+- For the story so far section, when doing the reveal of who won each round, the story so far section shows the winner before the game announces the winner, I need it to only show once that winner is fully officially announced
+
+## Other
+
+- The instructions section on the TV view is all messed up now, I think when you added in the room code it may have messed some stuff up. Fix that
+- Some of the games displays are now messed up now too on the TV, antthing that had a bar on the left side is a bit messed up. Please fix that so that it is properly aligned
+- For paint color match, the "your Mix" box is still a bit too tall, I need it to be less tall so I don't have to scroll on my device. I have already asked for this to be completed and it has not been done
+- For the target color, you can move that entirely off the mobile device and display it only on the TV
+- The button to leave the room looks slightly off still. The arrow is not centered and sits a bit too low, it should be centered in the box
+- Something super critical for the TV display is that I should never have to zoom in my screen or scroll up and down, it should always support fitting exactly at 100%. I can see for the Escape maze game that on my laptop it doesnt fit properly. I need to ensure this doesnt happen for other games as well across the board.

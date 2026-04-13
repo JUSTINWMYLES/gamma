@@ -97,7 +97,10 @@ export interface Submission {
 export const ROLE_VOTE_DURATION_SECS = 30;
 
 /** Duration for each submission phase (seconds). */
-export const SUBMISSION_DURATION_SECS = 45;
+export const SUBMISSION_DURATION_SECS = 120;
+
+/** Duration for the phase preview before the countdown starts (seconds). */
+export const PHASE_PREVIEW_SECS = 10;
 
 /** Duration for each voting phase (seconds). */
 export const VOTING_DURATION_SECS = 30;

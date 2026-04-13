@@ -210,6 +210,9 @@
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = false;
     renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.display = "block";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
     container.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0xffffff, 1.4);
