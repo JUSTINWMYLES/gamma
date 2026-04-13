@@ -74,10 +74,18 @@ export function serializeIconDesign(design: IconDesign): string {
 }
 
 export function designFromPlayer(player: Pick<PlayerState, "iconDesign" | "iconEmoji" | "iconText" | "iconBgColor"> | null | undefined): IconDesign {
+  const explicitBgColor = typeof player?.iconBgColor === "string" && player.iconBgColor.length > 0 && player.iconBgColor.length <= 20
+    ? player.iconBgColor
+    : null;
   const fromSaved = parseIconDesign(player?.iconDesign);
-  if (fromSaved) return fromSaved;
+  if (fromSaved) {
+    return {
+      ...fromSaved,
+      bgColor: explicitBgColor ?? fromSaved.bgColor,
+    };
+  }
 
-  const design = createEmptyIconDesign(player?.iconBgColor || DEFAULT_ICON_BG);
+  const design = createEmptyIconDesign(explicitBgColor ?? DEFAULT_ICON_BG);
   if (player?.iconEmoji) {
     design.stickers.push({
       emoji: player.iconEmoji,

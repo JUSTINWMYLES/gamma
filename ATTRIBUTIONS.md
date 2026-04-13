@@ -63,6 +63,18 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer during `registry-10-grid-tap-colors` active round gameplay
   - Changes: none
 
+- "Two Finger Johnny" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer during `registry-26-audio-overlay` while players are browsing / selecting GIFs
+  - Changes: none
+
+- "Pinball Spring 160" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer during `registry-03-tap-speed` instructions, countdown, and active round gameplay
+  - Changes: none
+
 ### Sound Effects
 
 - Cash Register — kiddpark

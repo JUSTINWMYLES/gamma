@@ -251,7 +251,7 @@
 {:else if isOddOneOut}
   <OddOneOutTV {room} {state} />
 {:else if isAudioOverlay}
-  <AudioOverlayTV {room} {state} />
+  <AudioOverlayTV {room} {state} on:musictrackchange />
 {:else if isLowball}
   <LowballMarketplaceTV {room} {state} />
 {:else if isFireMatch}

@@ -14,13 +14,17 @@
    *   voting_start, vote_count_update,
    *   round_result, round_skipped
    */
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
+
+  const dispatch = createEventDispatcher<{
+    musictrackchange: { trackId: "two_finger_johnny" | null };
+  }>();
 
   // ── Sub-phase state ──────────────────────────────────────────────
 
@@ -336,6 +340,18 @@
   $: sortedResults = results?.entries
     ? [...results.entries].sort((a, b) => b.voteCount - a.voteCount)
     : [];
+
+  let activeMusicTrack: "two_finger_johnny" | null = null;
+
+  $: {
+    const nextMusicTrack = !roundSkipped && subPhase === "gif_selection"
+      ? "two_finger_johnny"
+      : null;
+    if (nextMusicTrack !== activeMusicTrack) {
+      activeMusicTrack = nextMusicTrack;
+      dispatch("musictrackchange", { trackId: nextMusicTrack });
+    }
+  }
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="audio-overlay-tv">
