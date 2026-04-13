@@ -21,6 +21,7 @@
  * Server messages → clients:
  *   "ms_role_phase"         { playerList, durationMs }
  *   "ms_roles_assigned"     { roles }
+ *   "ms_phase_preview"      { phase, durationMs, history }
  *   "ms_submission_phase"   { phase, durationMs, bodyParts?, actions?, tests?, history, promptExamples? }
  *   "ms_submit_ack"         { accepted, reason? }
  *   "ms_voting_phase"       { phase, submissions, durationMs, history }
@@ -54,6 +55,7 @@ import {
   PHASES,
   ROLE_VOTE_DURATION_SECS,
   SUBMISSION_DURATION_SECS,
+  PHASE_PREVIEW_SECS,
   VOTING_DURATION_SECS,
   RESULTS_PENDING_MS,
   RESULTS_DISPLAY_MS,
@@ -212,6 +214,14 @@ export default class MedicalStoryGame extends BaseGame {
       this.round.phaseVotes.clear();
       this.round.submittedPlayers.clear();
       this.round.votedPlayers.clear();
+
+      // ── Phase preview (10-second info screen before countdown) ────────
+      this.broadcast("ms_phase_preview", {
+        phase,
+        durationMs: PHASE_PREVIEW_SECS * 1000,
+        history: this._getPhaseHistory(),
+      });
+      await this.delay(PHASE_PREVIEW_SECS * 1000);
 
       // ── Submission phase ──────────────────────────────────────────────
       this.broadcast("ms_submission_phase", {
@@ -463,7 +473,16 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _handleSubmission(client: Client, input: MedicalStoryInput): void {
     const rd = this.round;
-    if (!rd || !this.submissionResolve || !rd.currentPhase) return;
+    if (!rd || !rd.currentPhase) return;
+
+    // Timer already expired — reject gracefully so client doesn't stay stuck
+    if (!this.submissionResolve) {
+      this.send(client.sessionId, "ms_submit_ack", {
+        accepted: false,
+        reason: "Time's up! Submission window has closed.",
+      });
+      return;
+    }
 
     // Already submitted
     if (rd.submittedPlayers.has(client.sessionId)) {

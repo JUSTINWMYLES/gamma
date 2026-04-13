@@ -29,6 +29,7 @@
     | "waiting"
     | "role_voting"
     | "roles_assigned"
+    | "phase_preview"
     | "submission"
     | "voting"
     | "results_pending"
@@ -66,6 +67,22 @@
   let phaseHistory: PhaseHistoryEntry[] = [];
   let funnyTests: string[] = [];
   let catchphraseExamples: string[] = [];
+
+  // Track which phases have had their winner officially revealed
+  // (prevents sidebar from spoiling before the phase_result announcement)
+  let revealedPhaseWinners = new Set<GamePhase>();
+
+  /** Mark prior phases as revealed based on phase ordering */
+  function markPriorPhasesRevealed(current: GamePhase, history: PhaseHistoryEntry[]) {
+    const currentIdx = allPhases.indexOf(current);
+    for (const entry of history) {
+      const entryIdx = allPhases.indexOf(entry.phase);
+      if (entryIdx < currentIdx && entry.winner) {
+        revealedPhaseWinners.add(entry.phase);
+      }
+    }
+    revealedPhaseWinners = revealedPhaseWinners;
+  }
 
   // 3D placeholder data
   let scene3dPlaceholder: { type: string; description: string } | null = null;
@@ -139,6 +156,29 @@
     clearAllTimers();
   }
 
+  // ── Phase preview (info screen before countdown) ────────────────────
+  let previewDurationMs = 10_000;
+  let previewTimeLeft = 0;
+  let previewEndTime = 0;
+  let previewTimer: ReturnType<typeof setInterval> | null = null;
+
+  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number; history?: PhaseHistoryEntry[] }) {
+    subPhase = "phase_preview";
+    currentPhase = data.phase;
+    previewDurationMs = data.durationMs;
+    previewEndTime = Date.now() + data.durationMs;
+    phaseHistory = data.history ?? phaseHistory;
+
+    if (data.history) {
+      markPriorPhasesRevealed(data.phase, data.history);
+    }
+
+    clearAllTimers();
+    previewTimer = setInterval(() => {
+      previewTimeLeft = Math.max(0, (previewEndTime - Date.now()) / 1000);
+    }, 200);
+  }
+
   function onSubmissionPhase(data: {
     phase: typeof currentPhase;
     durationMs: number;
@@ -155,6 +195,11 @@
     phaseHistory = data.history ?? [];
     funnyTests = data.tests ?? [];
     catchphraseExamples = data.promptExamples ?? [];
+
+    // A new submission phase started — all phases in history are from prior reveals
+    if (data.history) {
+      markPriorPhasesRevealed(data.phase, data.history);
+    }
 
     clearAllTimers();
     submissionTimer = setInterval(() => {
@@ -176,6 +221,11 @@
     votingSubmissions = data.submissions;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? phaseHistory;
+
+    // Mark prior phases as safe to show (not the current phase)
+    if (data.history) {
+      markPriorPhasesRevealed(data.phase, data.history);
+    }
 
     clearAllTimers();
     votingTimer = setInterval(() => {
@@ -205,6 +255,11 @@
     phasePoints = data.points;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? phaseHistory;
+
+    // Officially reveal this phase's winner in the sidebar
+    revealedPhaseWinners.add(data.phase);
+    revealedPhaseWinners = revealedPhaseWinners;
+
     clearAllTimers();
   }
 
@@ -223,6 +278,13 @@
     recapTimeline = data.recapTimeline ?? [];
     recapStartTime = Date.now();
     revealedRecapPhases = new Set();
+
+    // Reveal all phases in sidebar during recap
+    for (const p of allPhases) {
+      revealedPhaseWinners.add(p);
+    }
+    revealedPhaseWinners = revealedPhaseWinners;
+
     clearAllTimers();
     recapTimer = setInterval(() => {
       const elapsedMs = Date.now() - recapStartTime;
@@ -246,6 +308,7 @@
     if (submissionTimer) { clearInterval(submissionTimer); submissionTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
     if (recapTimer) { clearInterval(recapTimer); recapTimer = null; }
+    if (previewTimer) { clearInterval(previewTimer); previewTimer = null; }
   }
 
   function getPlayerName(id: string): string {
@@ -280,6 +343,7 @@
   onMount(() => {
     room.onMessage("ms_role_phase", onRolePhase);
     room.onMessage("ms_roles_assigned", onRolesAssigned);
+    room.onMessage("ms_phase_preview", onPhasePreview);
     room.onMessage("ms_submission_phase", onSubmissionPhase);
     room.onMessage("ms_voting_phase", onVotingPhase);
     room.onMessage("ms_results_pending", onResultsPending);
@@ -294,34 +358,35 @@
 </script>
 
 <div class="flex-1 flex" data-testid="medical-story-tv">
-  <div class="w-72 border-r border-gray-800 bg-gray-900/70 p-4 flex flex-col gap-3 flex-shrink-0">
+  <div class="w-72 border-r border-gray-800 bg-gray-900/70 pt-14 px-4 pb-4 flex flex-col gap-3 flex-shrink-0">
     <div>
-      <p class="text-xs text-gray-400 uppercase tracking-widest">Story So Far</p>
-      <p class="mt-1 text-sm text-gray-500">Winning entries stay visible all round.</p>
+      <p class="text-xs text-gray-300 uppercase tracking-widest font-semibold">Story So Far</p>
+      <p class="mt-1 text-sm text-gray-400">Winning entries stay visible all round.</p>
     </div>
 
     {#each allPhases as phase}
       {@const historyEntry = phaseHistory.find((entry) => entry.phase === phase)}
+      {@const canShowWinner = revealedPhaseWinners.has(phase) && historyEntry?.winner}
       <div class="rounded-2xl border p-4 transition-all
-        {historyEntry?.winner
+        {canShowWinner
           ? 'border-emerald-600/60 bg-emerald-950/30'
           : 'border-gray-800 bg-gray-950/40'}">
-        <p class="text-xs uppercase tracking-widest text-gray-500">{phaseIcons[phase]} {phaseLabels[phase]}</p>
-        {#if historyEntry?.winner}
+        <p class="text-xs uppercase tracking-widest text-gray-200">{phaseIcons[phase]} {phaseLabels[phase]}</p>
+        {#if canShowWinner}
           <p class="mt-2 text-sm font-semibold text-white">
             "{historyEntry.winner.text}"
           </p>
           {#if historyEntry.winner.bodyPart}
-            <p class="mt-1 text-xs text-gray-300">📍 {historyEntry.winner.bodyPart}</p>
+            <p class="mt-1 text-xs text-gray-200">📍 {historyEntry.winner.bodyPart}</p>
           {/if}
           {#if historyEntry.winner.tests && historyEntry.winner.tests.length}
-            <p class="mt-1 text-xs text-gray-300">🧪 {historyEntry.winner.tests.join(", ")}</p>
+            <p class="mt-1 text-xs text-gray-200">🧪 {historyEntry.winner.tests.join(", ")}</p>
           {/if}
           {#if historyEntry.winner.action}
-            <p class="mt-1 text-xs text-gray-300">⚡ {historyEntry.winner.action}</p>
+            <p class="mt-1 text-xs text-gray-200">⚡ {historyEntry.winner.action}</p>
           {/if}
         {:else}
-          <p class="mt-2 text-sm text-gray-600">Waiting for this phase.</p>
+          <p class="mt-2 text-sm text-gray-500">Waiting for this phase.</p>
         {/if}
       </div>
     {/each}
@@ -386,6 +451,19 @@
             </div>
           {/each}
         </div>
+      </div>
+
+    {:else if subPhase === "phase_preview"}
+      <!-- ── Phase preview (info before countdown) ──────────────── -->
+      <div class="text-center space-y-6 w-full max-w-3xl">
+        <p class="text-8xl">{phaseIcons[currentPhase]}</p>
+        <h2 class="text-5xl font-black text-amber-400">Next Up</h2>
+        <p class="text-3xl font-bold text-white">{phaseLabels[currentPhase]}</p>
+        <p class="text-xl text-gray-300">{phasePrompts[currentPhase]}</p>
+        {#if getPhaseVoteBoost(currentPhase)}
+          <p class="text-sm font-semibold uppercase tracking-widest text-amber-300">{getPhaseVoteBoost(currentPhase)}</p>
+        {/if}
+        <p class="text-lg text-gray-400">Starting in {Math.ceil(previewTimeLeft)}s...</p>
       </div>
 
     {:else if subPhase === "submission"}

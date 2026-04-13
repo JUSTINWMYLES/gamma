@@ -27,6 +27,7 @@
     | "waiting"
     | "role_voting"
     | "roles_assigned"
+    | "phase_preview"
     | "submission"
     | "voting"
     | "results_pending"
@@ -165,6 +166,22 @@
     roles = data.roles;
     myRole = roles[me?.id ?? ""] ?? "bystander";
     clearAllTimers();
+  }
+
+  // ── Phase preview ───────────────────────────────────────────────────
+  let previewTimeLeft = 0;
+  let previewEndTime = 0;
+  let previewTimer: ReturnType<typeof setInterval> | null = null;
+
+  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number }) {
+    subPhase = "phase_preview";
+    currentPhase = data.phase;
+    previewEndTime = Date.now() + data.durationMs;
+
+    clearAllTimers();
+    previewTimer = setInterval(() => {
+      previewTimeLeft = Math.max(0, (previewEndTime - Date.now()) / 1000);
+    }, 200);
   }
 
   function onSubmissionPhase(data: {
@@ -318,6 +335,7 @@
     if (roleVoteTimer) { clearInterval(roleVoteTimer); roleVoteTimer = null; }
     if (submissionTimer) { clearInterval(submissionTimer); submissionTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    if (previewTimer) { clearInterval(previewTimer); previewTimer = null; }
   }
 
   function setRoleSelection(bind: RoleSelectionKey, playerId: string) {
@@ -387,6 +405,7 @@
   onMount(() => {
     room.onMessage("ms_role_phase", onRolePhase);
     room.onMessage("ms_roles_assigned", onRolesAssigned);
+    room.onMessage("ms_phase_preview", onPhasePreview);
     room.onMessage("ms_submission_phase", onSubmissionPhase);
     room.onMessage("ms_submit_ack", onSubmitAck);
     room.onMessage("ms_voting_phase", onVotingPhase);
@@ -405,16 +424,20 @@
 <div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto p-4 pb-24 sm:justify-center" data-testid="medical-story">
   {#if roundSkipped}
     <!-- ── Round skipped ────────────────────────────────────────── -->
-    <div class="text-center space-y-3">
-      <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>
-      <p class="text-gray-300">{skipReason}</p>
+    <div class="flex-1 flex items-center justify-center">
+      <div class="text-center space-y-3">
+        <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>
+        <p class="text-gray-300">{skipReason}</p>
+      </div>
     </div>
 
   {:else if subPhase === "waiting"}
     <!-- ── Waiting ──────────────────────────────────────────────── -->
-    <div class="text-center space-y-2">
-      <p class="text-4xl">🚑</p>
-      <p class="text-gray-400">A patient is arriving...</p>
+    <div class="flex-1 flex items-center justify-center">
+      <div class="text-center space-y-2">
+        <p class="text-4xl">🚑</p>
+        <p class="text-gray-400">A patient is arriving...</p>
+      </div>
     </div>
 
   {:else if subPhase === "role_voting"}
@@ -481,6 +504,16 @@
           </div>
         {/each}
 
+        {#if selectedPatient || selectedDoctor || selectedNurse}
+          <button
+            type="button"
+            class="w-full py-2 rounded-xl text-sm font-medium text-gray-400 border border-gray-700 bg-gray-800/60 active:bg-gray-700 active:scale-95 transition-all"
+            on:click={() => { selectedPatient = ""; selectedDoctor = ""; selectedNurse = ""; }}
+          >
+            Reset Selections
+          </button>
+        {/if}
+
         <button
           class="w-full py-3 rounded-xl font-bold transition-all
             {roleVoteValid
@@ -516,6 +549,19 @@
         </p>
       </div>
       <p class="text-lg">You are the {getRoleEmoji(myRole)} <span class="font-bold capitalize">{myRole}</span>!</p>
+    </div>
+
+  {:else if subPhase === "phase_preview"}
+    <!-- ── Phase preview (info before countdown) ────────────────── -->
+    <div class="w-full max-w-sm space-y-4 text-center">
+      <p class="text-5xl">{phaseIcons[currentPhase]}</p>
+      <h2 class="text-xl font-black text-amber-400">Next Up</h2>
+      <p class="text-lg font-bold text-white">{phaseLabels[currentPhase]}</p>
+      <p class="text-sm text-gray-300">{phasePrompts[currentPhase]}</p>
+      {#if getPhaseVoteBoost(currentPhase)}
+        <p class="mt-1 text-xs font-semibold uppercase tracking-widest text-amber-300">{getPhaseVoteBoost(currentPhase)}</p>
+      {/if}
+      <p class="text-gray-400">Get ready... {Math.ceil(previewTimeLeft)}s</p>
     </div>
 
   {:else if subPhase === "submission"}
@@ -715,12 +761,14 @@
 
   {:else if subPhase === "results_pending"}
     <!-- ── Results pending ─────────────────────────────────────── -->
-    <div class="w-full max-w-sm space-y-4 text-center">
-      <p class="text-4xl">{phaseIcons[currentPhase]}</p>
-      <h2 class="text-2xl font-black text-emerald-300">The results are in...</h2>
-      <p class="text-sm text-gray-400">
-        Revealing the winning {phaseLabels[currentPhase].toLowerCase()} next.
-      </p>
+    <div class="flex-1 flex items-center justify-center">
+      <div class="w-full max-w-sm space-y-4 text-center">
+        <p class="text-4xl">{phaseIcons[currentPhase]}</p>
+        <h2 class="text-2xl font-black text-emerald-300">The results are in...</h2>
+        <p class="text-sm text-gray-400">
+          Revealing the winning {phaseLabels[currentPhase].toLowerCase()} next.
+        </p>
+      </div>
     </div>
 
   {:else if subPhase === "phase_result"}

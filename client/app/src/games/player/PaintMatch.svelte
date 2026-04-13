@@ -286,19 +286,10 @@
           <div class="flex-1 flex flex-col items-center gap-1">
             <p class="text-xs text-gray-400">Your Mix</p>
             <div
-              class="w-full aspect-[0.88] rounded-xl border-2 border-gray-600 transition-colors"
+              class="w-full aspect-[1.8] rounded-xl border-2 border-gray-600 transition-colors"
               style="background:{previewColor}"
               data-testid="mix-preview"
             ></div>
-        </div>
-        <!-- Target swatch (small reference) -->
-        <div class="flex flex-col items-center gap-1">
-          <p class="text-xs text-gray-400">Target</p>
-          <div
-            class="w-20 aspect-square rounded-xl border-2 border-amber-500/50"
-            style="background:rgb({targetRGB[0]},{targetRGB[1]},{targetRGB[2]})"
-            data-testid="target-preview"
-          ></div>
         </div>
       </div>
 
