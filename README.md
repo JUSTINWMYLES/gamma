@@ -260,6 +260,8 @@ This repository includes third-party audio. CC BY 4.0 tracks (attribution requir
 - "Thinking Music" — Kevin MacLeod (incompetech.com)
 - "The Entertainer" — Kevin MacLeod (incompetech.com)
 - "Ouroboros" — Kevin MacLeod (incompetech.com)
+- "Two Finger Johnny" — Kevin MacLeod (incompetech.com)
+- "Pinball Spring 160" — Kevin MacLeod (incompetech.com)
 - Cash Register — kiddpark (freesound.org/s/201159/)
 - Whip Crack 01.wav — CGEffex (freesound.org/s/93100/)
 - hey.wav — UncleSigmund (freesound.org/s/30989/)

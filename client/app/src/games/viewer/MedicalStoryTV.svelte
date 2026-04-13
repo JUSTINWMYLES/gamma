@@ -136,6 +136,53 @@
 
   const allPhases: GamePhase[] = ["complaint", "diagnosis", "procedure", "catchphrase"];
 
+  const phaseCardThemes: Record<GamePhase, {
+    panelClass: string;
+    pendingPanelClass: string;
+    labelClass: string;
+    pendingLabelClass: string;
+    quoteClass: string;
+    metaClass: string;
+    placeholderClass: string;
+  }> = {
+    complaint: {
+      panelClass: "border-rose-500/60 bg-rose-950/40",
+      pendingPanelClass: "border-rose-900/50 bg-rose-950/12",
+      labelClass: "text-rose-100",
+      pendingLabelClass: "text-rose-200/85",
+      quoteClass: "text-white",
+      metaClass: "text-rose-100",
+      placeholderClass: "text-rose-200/75",
+    },
+    diagnosis: {
+      panelClass: "border-cyan-500/60 bg-cyan-950/38",
+      pendingPanelClass: "border-cyan-900/50 bg-cyan-950/12",
+      labelClass: "text-cyan-100",
+      pendingLabelClass: "text-cyan-200/85",
+      quoteClass: "text-white",
+      metaClass: "text-cyan-100",
+      placeholderClass: "text-cyan-200/75",
+    },
+    procedure: {
+      panelClass: "border-amber-500/60 bg-amber-950/42",
+      pendingPanelClass: "border-amber-900/55 bg-amber-950/12",
+      labelClass: "text-amber-100",
+      pendingLabelClass: "text-amber-200/85",
+      quoteClass: "text-white",
+      metaClass: "text-amber-100",
+      placeholderClass: "text-amber-200/75",
+    },
+    catchphrase: {
+      panelClass: "border-fuchsia-500/60 bg-fuchsia-950/40",
+      pendingPanelClass: "border-fuchsia-900/50 bg-fuchsia-950/12",
+      labelClass: "text-fuchsia-100",
+      pendingLabelClass: "text-fuchsia-200/85",
+      quoteClass: "text-white",
+      metaClass: "text-fuchsia-100",
+      placeholderClass: "text-fuchsia-200/75",
+    },
+  };
+
   // ── Message handlers ─────────────────────────────────────────────────
 
   function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number }) {
@@ -367,26 +414,25 @@
     {#each allPhases as phase}
       {@const historyEntry = phaseHistory.find((entry) => entry.phase === phase)}
       {@const canShowWinner = revealedPhaseWinners.has(phase) && historyEntry?.winner}
-      <div class="rounded-2xl border p-4 transition-all
-        {canShowWinner
-          ? 'border-emerald-600/60 bg-emerald-950/30'
-          : 'border-gray-800 bg-gray-950/40'}">
-        <p class="text-xs uppercase tracking-widest text-gray-200">{phaseIcons[phase]} {phaseLabels[phase]}</p>
-        {#if canShowWinner}
-          <p class="mt-2 text-sm font-semibold text-white">
-            "{historyEntry.winner.text}"
+      {@const phaseTheme = phaseCardThemes[phase]}
+      {@const winner = canShowWinner ? historyEntry?.winner ?? null : null}
+      <div class={`rounded-2xl border p-4 transition-all ${canShowWinner ? phaseTheme.panelClass : phaseTheme.pendingPanelClass}`}>
+        <p class={`text-xs font-semibold uppercase tracking-widest ${canShowWinner ? phaseTheme.labelClass : phaseTheme.pendingLabelClass}`}>{phaseIcons[phase]} {phaseLabels[phase]}</p>
+        {#if winner}
+          <p class={`mt-2 text-sm font-semibold leading-snug ${phaseTheme.quoteClass}`}>
+            "{winner.text}"
           </p>
-          {#if historyEntry.winner.bodyPart}
-            <p class="mt-1 text-xs text-gray-200">📍 {historyEntry.winner.bodyPart}</p>
+          {#if winner.bodyPart}
+            <p class={`mt-1 text-xs font-medium ${phaseTheme.metaClass}`}>📍 {winner.bodyPart}</p>
           {/if}
-          {#if historyEntry.winner.tests && historyEntry.winner.tests.length}
-            <p class="mt-1 text-xs text-gray-200">🧪 {historyEntry.winner.tests.join(", ")}</p>
+          {#if winner.tests && winner.tests.length}
+            <p class={`mt-1 text-xs font-medium ${phaseTheme.metaClass}`}>🧪 {winner.tests.join(", ")}</p>
           {/if}
-          {#if historyEntry.winner.action}
-            <p class="mt-1 text-xs text-gray-200">⚡ {historyEntry.winner.action}</p>
+          {#if winner.action}
+            <p class={`mt-1 text-xs font-medium ${phaseTheme.metaClass}`}>⚡ {winner.action}</p>
           {/if}
         {:else}
-          <p class="mt-2 text-sm text-gray-500">Waiting for this phase.</p>
+          <p class={`mt-2 text-sm ${phaseTheme.placeholderClass}`}>Waiting for this phase.</p>
         {/if}
       </div>
     {/each}

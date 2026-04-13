@@ -32,6 +32,7 @@
 >
   {#if hasVisibleDesign}
     <svg class="absolute inset-0 w-full h-full" viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={size / 2} fill={design.bgColor} />
       {#each design.strokes as stroke}
         <path
           d={pointsToPath(stroke.points)}

@@ -92,7 +92,18 @@
 
   // ── Viewer-only background music ──────────────────────────────────
 
-  type TrackId = "cloud" | "fart" | "zazie" | "pixelland" | "vivacity" | "le_grand_chase" | "thinking" | "entertainer" | "ouroboros";
+  type TrackId =
+    | "cloud"
+    | "fart"
+    | "zazie"
+    | "pixelland"
+    | "vivacity"
+    | "le_grand_chase"
+    | "thinking"
+    | "entertainer"
+    | "ouroboros"
+    | "two_finger_johnny"
+    | "pinball_spring_160";
 
   const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string }> = {
     cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
@@ -104,11 +115,14 @@
     thinking:       { file: "/thinking_music.mp3",   volume: 0.35, attribution: '"Thinking Music" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     entertainer:    { file: "/the_entertainer.mp3",  volume: 0.34, attribution: '"The Entertainer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     ouroboros:      { file: "/ouroboros.mp3",        volume: 0.36, attribution: '"Ouroboros" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    two_finger_johnny: { file: "/two_finger_johnny.mp3", volume: 0.35, attribution: '"Two Finger Johnny" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    pinball_spring_160: { file: "/pinball_spring_160.mp3", volume: 0.35, attribution: '"Pinball Spring 160" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
   };
 
   let musicAudio: HTMLAudioElement | null = null;
   let currentTrack: TrackId | null = null;
   let userHasInteracted = false;
+  let viewerTrackOverride: TrackId | null = null;
 
   function pauseAllTracks() {
     if (musicAudio) {
@@ -118,6 +132,7 @@
 
   /** Game-to-track mapping for in_round phase. */
   const GAME_TRACK_MAP: Record<string, TrackId> = {
+    "registry-03-tap-speed":             "pinball_spring_160",
     "registry-19-shave-the-yak":        "fart",
     "registry-25-lowball-marketplace":   "zazie",
     "registry-04-escape-maze":           "pixelland",
@@ -139,11 +154,18 @@
     ) {
       return "entertainer";
     }
+    if (state.selectedGame === "registry-26-audio-overlay") {
+      return phase === "in_round" ? viewerTrackOverride : null;
+    }
     // Play game-specific music during in_round (and countdown/instructions for smoother transitions)
     if (phase === "in_round" || phase === "countdown" || phase === "instructions") {
       return GAME_TRACK_MAP[state.selectedGame] ?? null;
     }
     return null;
+  }
+
+  function onViewerMusicTrackChange(event: CustomEvent<{ trackId: TrackId | null }>) {
+    viewerTrackOverride = event.detail.trackId;
   }
 
   async function syncTrackPlayback() {
@@ -161,7 +183,7 @@
     const targetSrc = new URL(config.file, window.location.href).href;
     const sourceChanged = musicAudio.src !== targetSrc;
 
-    musicAudio.loop = true;
+    musicAudio.loop = false;
     musicAudio.volume = config.volume;
     // Start muted if the user hasn't interacted yet — browsers allow muted autoplay.
     // Once the user has interacted, play unmuted.
@@ -185,6 +207,18 @@
       // Extremely rare edge case — browser still blocked even muted play.
       currentTrack = null;
     }
+  }
+
+  function onMusicEnded() {
+    if (!musicAudio) return;
+
+    const next = desiredTrack();
+    if (!next || currentTrack !== next) return;
+
+    musicAudio.currentTime = 0;
+    musicAudio.play().catch(() => {
+      // If the browser blocks replay, the next state sync/user gesture will retry.
+    });
   }
 
   function onUserInteraction() {
@@ -332,6 +366,7 @@
     clearSession();
     pauseAllTracks();
     currentTrack = null;
+    viewerTrackOverride = null;
   }
 
   function endGameToLobby() {
@@ -343,7 +378,7 @@
   onMount(() => {
     if (musicAudio) {
       musicAudio.preload = "auto";
-      musicAudio.loop = true;
+      musicAudio.loop = false;
       musicAudio.setAttribute("playsinline", "");
       musicAudio.setAttribute("webkit-playsinline", "true");
     }
@@ -404,8 +439,14 @@
   $: leaveButtonPositionClass = role === "viewer" ? "right-3" : "left-3";
   $: viewerChromeInsetClass = "";  // Room code overlay is fixed-position; no padding needed
 
+  $: if (state?.selectedGame !== "registry-26-audio-overlay" && viewerTrackOverride !== null) {
+    viewerTrackOverride = null;
+  }
+
   // Keep viewer music in sync with room phase + selected game.
   $: if (role === "viewer" && !connecting && !error && state) {
+    phase;
+    viewerTrackOverride;
     void syncTrackPlayback();
   } else {
     pauseAllTracks();
@@ -433,7 +474,7 @@
 
 <div data-testid="app-root" class={appRootClass}>
 
-  <audio bind:this={musicAudio} preload="auto" />
+  <audio bind:this={musicAudio} preload="auto" on:ended={onMusicEnded} />
 
   {#if showBackground}
     <FloatingBackground dark={$isDark} />
@@ -575,7 +616,7 @@
         {:else if phase === "countdown"}
           <ViewerCountdown state={typedState} />
         {:else if phase === "in_round"}
-          <ViewerGame room={typedRoom} state={typedState} />
+          <ViewerGame room={typedRoom} state={typedState} on:musictrackchange={onViewerMusicTrackChange} />
         {:else if phase === "round_end"}
           <ViewerRoundEnd state={typedState} {sortedPlayers} />
         {:else if phase === "scoreboard"}

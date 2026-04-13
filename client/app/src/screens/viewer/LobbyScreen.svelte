@@ -13,8 +13,6 @@
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
   import { GAME_REGISTRY } from "../../../../shared/types";
-  import GameCardGrid from "../../components/GameCardGrid.svelte";
-  import GameDetailView from "../../components/GameDetailView.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
@@ -24,50 +22,12 @@
   $: setupDone = setupStep >= 4;
   $: selectedGameMeta = GAME_REGISTRY.find((g) => g.id === state.selectedGame);
   $: allPlayersReady = [...state.players.values()].every((p) => !p.isConnected || p.isReady);
-  $: hasQueue = (state.gameQueue?.length ?? 0) > 0;
   $: connectedPlayers = [...state.players.values()].filter((p) => p.isConnected);
   $: micReadyCount = connectedPlayers.filter((p) => p.micPermission === "granted").length;
   $: motionReadyCount = connectedPlayers.filter((p) => p.motionPermission === "granted").length;
-
-  // ── Game detail overlay ─────────────────────────────────────────────────
-  let detailGameId: string | null = null;
-  $: detailGame = detailGameId ? GAME_REGISTRY.find((g) => g.id === detailGameId) ?? null : null;
-
-  const DETAIL_THEMES: Record<string, { accent: string; bg: string }> = {
-    "registry-03-tap-speed": { accent: "#ff6020", bg: "radial-gradient(ellipse at 50% 100%, #3d0e00, #0d0200)" },
-    "registry-04-escape-maze": { accent: "#70e870", bg: "radial-gradient(ellipse at 50% 60%, #0a200a, #040a03)" },
-    "registry-06-sound-replication": { accent: "#d080ff", bg: "radial-gradient(ellipse at 50% 50%, #1a0030, #06000e)" },
-    "registry-07-hot-potato": { accent: "#ff9050", bg: "radial-gradient(ellipse at 50% 80%, #3d0a00, #0d0302)" },
-    "registry-14-dont-get-caught": { accent: "#c8c8c8", bg: "#050505" },
-    "registry-17-fire-match-blow-shake": { accent: "#f0c040", bg: "linear-gradient(180deg, #1e1500, #0e0a00)" },
-    "registry-19-shave-the-yak": { accent: "#40f0a0", bg: "radial-gradient(ellipse at 50% 80%, #001e10, #000a06)" },
-    "registry-20-odd-one-out": { accent: "#f060a0", bg: "radial-gradient(ellipse at 50% 50%, #200010, #08000a)" },
-    "registry-25-lowball-marketplace": { accent: "#f0c040", bg: "linear-gradient(180deg, #1e1500, #0e0a00)" },
-    "registry-26-audio-overlay": { accent: "#80a8ff", bg: "#020408" },
-  };
-
-  function openDetail(gameId: string) {
-    detailGameId = gameId;
-  }
-
-  function closeDetail() {
-    detailGameId = null;
-  }
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10">
-  <!-- ── Game detail overlay ──────────────────────────────────── -->
-  {#if detailGame}
-    {@const dTheme = DETAIL_THEMES[detailGame.id] ?? { accent: "#818cf8", bg: "#050505" }}
-    <GameDetailView
-      game={detailGame}
-      accent={dTheme.accent}
-      artBg={dTheme.bg}
-      isHost={false}
-      isSelected={state.selectedGame === detailGame.id}
-      on:back={closeDetail}
-    />
-  {/if}
   <!-- Room code — big and prominent for players to join -->
   <div class="text-center">
     <p class="text-8xl font-black tracking-widest font-mono text-indigo-400" data-testid="room-code">{state.roomCode}</p>
@@ -137,21 +97,6 @@
             <p class="text-2xl font-bold text-white">{selectedGameMeta.label}</p>
             <p class="text-sm text-gray-300 mt-2">{selectedGameMeta.description}</p>
           </div>
-          {#if hasQueue}
-            <div class="bg-gray-800/60 rounded-lg p-4 space-y-1.5">
-              <p class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                Playlist ({state.queueIndex + 1} / {state.gameQueue?.length ?? 0})
-              </p>
-              {#each (state.gameQueue ?? []) as gameId, i}
-                {@const meta = GAME_REGISTRY.find((g) => g.id === gameId)}
-                <div class="flex items-center gap-2 text-sm
-                  {i === (state.queueIndex ?? 0) ? 'text-indigo-400 font-bold' : i < (state.queueIndex ?? 0) ? 'text-gray-600 line-through' : 'text-gray-500'}">
-                  <span class="w-6 text-right font-mono">{i + 1}.</span>
-                  <span>{meta?.label ?? gameId}</span>
-                </div>
-              {/each}
-            </div>
-          {/if}
           {#if allPlayersReady && state.players.size >= 1}
             <div class="text-center">
               <p class="text-green-400 text-lg font-bold animate-pulse">All players ready!</p>
@@ -163,9 +108,11 @@
             </div>
           {/if}
         {:else}
-          <!-- No game selected yet — show readonly card grid so TV audience can see options -->
-          <p class="text-gray-400 text-center text-sm mb-2">Host is picking a game...</p>
-          <GameCardGrid {state} readonly={true} on:detail={(e) => openDetail(e.detail.gameId)} />
+          <div class="bg-gray-900/70 border border-gray-800 rounded-xl p-6 text-center">
+            <p class="text-sm font-semibold uppercase tracking-widest text-gray-400">Game Selection</p>
+            <p class="mt-3 text-xl font-bold text-white">Host is picking a game</p>
+            <p class="mt-2 text-sm text-gray-400">The game list is hidden on the TV so the lobby stays within the screen.</p>
+          </div>
         {/if}
       </div>
     </div>
