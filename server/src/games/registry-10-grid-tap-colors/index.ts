@@ -507,7 +507,7 @@ export default class GridTapColorsGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
   }
 

@@ -14,12 +14,17 @@
    *   voting_start, vote_count_update,
    *   round_result, round_skipped
    */
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
+
+  const dispatch = createEventDispatcher<{
+    musictrackchange: { trackId: "two_finger_johnny" | null };
+  }>();
 
   // ── Sub-phase state ──────────────────────────────────────────────
 
@@ -28,6 +33,7 @@
     | "category_selection"
     | "category_reveal"
     | "gif_selection"
+    | "recording_prepare"
     | "recording"
     | "playback"
     | "playback_done"
@@ -78,13 +84,18 @@
   let recordingEndTime = 0;
   let recordingTimer: ReturnType<typeof setInterval> | null = null;
   let recorderSubmitted = false;
+  let recordingMode: "randomized" | "record_own" = "randomized";
+  let maxClipDurationMs = 10_000;
 
   // ── Playback phase ──────────────────────────────────────────────
 
   let playbackName = "";
   let playbackGifUrl = "";
   let playbackGifLabel = "";
+  let playbackIntroOnly = true;
+  let playbackAudioDurationMs = 0;
   let audioEl: HTMLAudioElement | null = null;
+  let playbackStageTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── Voting phase ────────────────────────────────────────────────
 
@@ -93,7 +104,7 @@
   let votingTimer: ReturnType<typeof setInterval> | null = null;
   let votesIn = 0;
   let totalVoters = 0;
-  let votingEntries: { playerId: string; playerName: string }[] = [];
+  let votingEntries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string }[] = [];
 
   // ── Results ─────────────────────────────────────────────────────
 
@@ -114,6 +125,7 @@
     if (selectionTimer) { clearInterval(selectionTimer); selectionTimer = null; }
     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    if (playbackStageTimer) { clearTimeout(playbackStageTimer); playbackStageTimer = null; }
   }
 
   // ── Audio playback ──────────────────────────────────────────────
@@ -192,13 +204,35 @@
     playerName: string;
     durationMs: number;
     serverTimestamp: number;
+    maxClipDurationMs: number;
+    mode: "randomized" | "record_own";
   }) {
     subPhase = "recording";
     clearAllTimers();
 
     recorderName = data.playerName;
     recorderSubmitted = false;
+    recordingMode = data.mode;
+    maxClipDurationMs = data.maxClipDurationMs;
 
+    recordingEndTime = data.serverTimestamp + data.durationMs;
+    recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+
+    recordingTimer = setInterval(() => {
+      recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+    }, 100);
+  }
+
+  function onRecordingPrepare(data: {
+    playerId: string;
+    playerName: string;
+    durationMs: number;
+    serverTimestamp: number;
+  }) {
+    clearAllTimers();
+    subPhase = "recording_prepare";
+    recorderName = data.playerName;
+    recorderSubmitted = false;
     recordingEndTime = data.serverTimestamp + data.durationMs;
     recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
 
@@ -217,13 +251,22 @@
     gifUrl: string;
     gifLabel: string;
     audioBase64: string;
+    audioDurationMs: number;
+    introDurationMs: number;
+    postDurationMs: number;
   }) {
     subPhase = "playback";
     playbackName = data.playerName;
     playbackGifUrl = data.gifUrl;
     playbackGifLabel = data.gifLabel;
+    playbackIntroOnly = true;
+    playbackAudioDurationMs = data.audioDurationMs;
 
-    playAudio(data.audioBase64);
+    if (playbackStageTimer) clearTimeout(playbackStageTimer);
+    playbackStageTimer = setTimeout(() => {
+      playbackIntroOnly = false;
+      playAudio(data.audioBase64);
+    }, data.introDurationMs);
   }
 
   function onPlaybackDone() {
@@ -236,7 +279,8 @@
   function onVotingStart(data: {
     durationMs: number;
     serverTimestamp: number;
-    entries: { playerId: string; playerName: string }[];
+    totalVoters: number;
+    entries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string }[];
   }) {
     subPhase = "voting";
     clearAllTimers();
@@ -245,7 +289,7 @@
     votingEndTime = data.serverTimestamp + data.durationMs;
     votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
     votesIn = 0;
-    totalVoters = data.entries.length;
+    totalVoters = data.totalVoters;
 
     votingTimer = setInterval(() => {
       votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
@@ -276,6 +320,7 @@
     room.onMessage("category_chosen", onCategoryChosen);
     room.onMessage("gif_selection_start", onGifSelectionStart);
     room.onMessage("gif_selection_update", onGifSelectionUpdate);
+    room.onMessage("recording_prepare", onRecordingPrepare);
     room.onMessage("recording_turn", onRecordingTurn);
     room.onMessage("recording_submitted", onRecordingSubmitted);
     room.onMessage("playback_entry", onPlaybackEntry);
@@ -295,6 +340,18 @@
   $: sortedResults = results?.entries
     ? [...results.entries].sort((a, b) => b.voteCount - a.voteCount)
     : [];
+
+  let activeMusicTrack: "two_finger_johnny" | null = null;
+
+  $: {
+    const nextMusicTrack = !roundSkipped && (subPhase === "waiting" || subPhase === "category_selection" || subPhase === "category_reveal" || subPhase === "gif_selection")
+      ? "two_finger_johnny"
+      : null;
+    if (nextMusicTrack !== activeMusicTrack) {
+      activeMusicTrack = nextMusicTrack;
+      dispatch("musictrackchange", { trackId: nextMusicTrack });
+    }
+  }
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="audio-overlay-tv">
@@ -403,7 +460,9 @@
       <div class="rounded-2xl bg-gray-800 shadow-2xl p-10 space-y-6">
         <p class="text-sm text-gray-400 uppercase tracking-widest">Now dubbing...</p>
         <p class="text-5xl font-black text-white">{recorderName}</p>
-        <p class="text-lg text-gray-400">Recording their audio...</p>
+        <p class="text-lg text-gray-400">
+          Recording their audio {recordingMode === 'record_own' ? 'for their own GIF' : 'for a shuffled GIF'}...
+        </p>
 
         <!-- Recording indicator -->
         <div class="flex items-center justify-center gap-2">
@@ -414,6 +473,8 @@
             </span>
           </div>
         </div>
+
+        <p class="text-sm text-gray-500">Each take can be up to {Math.ceil(maxClipDurationMs / 1000)} seconds.</p>
       </div>
 
       <!-- Timer -->
@@ -436,11 +497,23 @@
       {/if}
     </div>
 
+  {:else if subPhase === "recording_prepare"}
+    <div class="text-center space-y-6 w-full max-w-3xl">
+      <p class="text-sm uppercase tracking-[0.35em] text-yellow-400">Get Ready</p>
+      <h1 class="text-5xl font-black text-white">{recorderName}</h1>
+      <p class="text-xl text-gray-300">is up next to record</p>
+      <p class="text-7xl font-mono font-black text-white">{Math.ceil(recordingTimeLeft)}</p>
+      <p class="text-gray-500">They can hold to record and retry as many times as they want in their 60 second turn.</p>
+    </div>
+
   {:else if subPhase === "playback"}
     <!-- Playback: show GIF + play audio -->
     <div class="w-full max-w-3xl text-center space-y-4">
       <p class="text-sm text-gray-400 uppercase tracking-widest">Presenting...</p>
       <h2 class="text-4xl font-black text-white">{playbackName}</h2>
+      <p class="text-gray-400">
+        {playbackIntroOnly ? 'Intro: watch the GIF first' : `Audio playing now (${(playbackAudioDurationMs / 1000).toFixed(1)}s)`}
+      </p>
 
       <div class="relative rounded-2xl overflow-hidden bg-gray-800 shadow-2xl">
         {#if playbackGifUrl}
@@ -451,17 +524,18 @@
           />
         {/if}
 
-        <!-- Audio waveform overlay -->
-        <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
-          <div class="flex items-end gap-1 h-8 justify-center">
-            {#each Array(20) as _, i}
-              <div
-                class="w-1.5 bg-purple-400/70 rounded-full animate-pulse"
-                style="height:{10 + Math.random() * 90}%;animation-delay:{i * 0.05}s;animation-duration:{0.3 + Math.random() * 0.4}s"
-              ></div>
-            {/each}
+        {#if !playbackIntroOnly}
+          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+            <div class="flex items-end gap-1 h-8 justify-center">
+              {#each Array(20) as _, i}
+                <div
+                  class="w-1.5 bg-purple-400/70 rounded-full animate-pulse"
+                  style="height:{10 + Math.random() * 90}%;animation-delay:{i * 0.05}s;animation-duration:{0.3 + Math.random() * 0.4}s"
+                ></div>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/if}
       </div>
     </div>
 
@@ -483,8 +557,12 @@
       <!-- Contestants -->
       <div class="flex gap-4 justify-center flex-wrap">
         {#each votingEntries as entry}
-          <div class="px-6 py-3 bg-gray-800 rounded-xl text-center min-w-[120px]">
-            <p class="font-bold text-white text-lg">{entry.playerName}</p>
+          <div class="w-52 bg-gray-800 rounded-xl overflow-hidden text-center">
+            <img src={entry.gifUrl} alt={entry.gifLabel} class="w-full h-28 object-cover" />
+            <div class="px-4 py-3">
+              <p class="font-bold text-white text-lg">{entry.playerName}</p>
+              <p class="text-xs text-gray-400 truncate mt-1">{entry.gifLabel}</p>
+            </div>
           </div>
         {/each}
       </div>
@@ -537,8 +615,14 @@
             {#each sortedResults as entry, i}
               {@const score = results.scores[entry.playerId] ?? 0}
               {@const isWinner = entry.playerId === results.winner}
+              {@const resultPlayer = state.players.get(entry.playerId)}
               <div class="flex items-center gap-3">
                 <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+                {#if resultPlayer}
+                  <PlayerIcon player={resultPlayer} size={28} />
+                {:else}
+                  <div class="w-7 h-7 rounded-full bg-gray-700"></div>
+                {/if}
                 <span class="w-28 truncate font-semibold text-white">
                   {entry.playerName}
                   {#if isWinner}
@@ -567,6 +651,7 @@
             {#each sortedPlayers as p, i}
               <div class="flex items-center gap-3">
                 <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+                <PlayerIcon player={p} size={24} />
                 <span class="flex-1 truncate font-semibold text-white">{p.name}</span>
                 <span class="font-mono text-lg font-bold text-white">{p.score}</span>
               </div>

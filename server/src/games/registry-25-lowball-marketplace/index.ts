@@ -45,7 +45,7 @@
  *   → "fm_write_update"    { writtenIn, totalWriters }
  *   → "fm_reveal_entry"    { playerName, item: FmItem, message }
  *   → "fm_reveal_done"     {}
- *   → "fm_voting_start"    { entries: { playerId, playerName }[], durationMs, serverTimestamp }
+ *   → "fm_voting_start"    { entries: { playerId, playerName, item: FmItem, message }[], durationMs, serverTimestamp, totalVoters }
  *   → "fm_vote_confirmed"  { targetId }
  *   → "fm_vote_update"     { votesIn, totalVoters }
  *   → "fm_result"          { winner, scores, entries: { playerId, playerName, itemName, message, voteCount }[] }
@@ -90,9 +90,9 @@ const CLOSE_SHAVE_BONUS = 25;
  * Players share one timer for both browsing and writing.
  * Once a player picks, they immediately proceed to writing.
  */
-const FM_BROWSE_WRITE_DURATION_MS = 60_000;
+const FM_BROWSE_WRITE_DURATION_MS = 180_000;
 /** Duration each message is shown on TV (ms). */
-const FM_REVEAL_ENTRY_MS = 6_000;
+const FM_REVEAL_ENTRY_MS = 15_000;
 /** Voting duration (ms). */
 const FM_VOTING_DURATION_MS = 20_000;
 /** Results display (ms). */
@@ -2247,9 +2247,12 @@ export default class LowballMarketplaceGame extends BaseGame {
       this.broadcast("fm_voting_start", {
         durationMs: FM_VOTING_DURATION_MS,
         serverTimestamp: Date.now(),
+        totalVoters: this._activePlayers().length,
         entries: entries.map((e) => ({
           playerId: e.playerId,
           playerName: e.playerName,
+          item: e.item,
+          message: e.message,
         })),
       });
 
@@ -2444,7 +2447,7 @@ export default class LowballMarketplaceGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
   }
 

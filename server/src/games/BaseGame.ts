@@ -28,7 +28,10 @@
 
 import { Room, Client } from "@colyseus/core";
 import { RoomState, Phase } from "../schema/RoomState";
+import { PlayerState } from "../schema/PlayerState";
 import { meter, tracer } from "../telemetry";
+
+const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60) * 1000;
 
 // ── OTEL metrics (shared across all game plugin instances) ────────────────────
 const phaseTransitions = meter.createCounter("gamma.game.phase_transitions", {
@@ -109,6 +112,9 @@ export abstract class BaseGame {
   /** Number of rounds completed so far in this game session (for progress tracking). */
   private _roundsCompleted = 0;
 
+  /** Set during teardown so stale async work stops mutating room state. */
+  private _cancelled = false;
+
   constructor(room: Room<RoomState>) {
     this.room = room;
   }
@@ -122,14 +128,17 @@ export abstract class BaseGame {
   async start(): Promise<void> {
     this.setPhase("game_loading");
     await this.onLoad();
+    if (this.isCancelled()) return;
 
     const ctor = this.constructor as typeof BaseGame;
     if (ctor.hasInstructionsPhase) {
       this.setPhase("instructions");
       await this.waitForAllReady();
+      if (this.isCancelled()) return;
     }
 
     await this.runRounds();
+    if (this.isCancelled()) return;
     this.setPhase("game_over");
   }
 
@@ -149,6 +158,7 @@ export abstract class BaseGame {
 
   /** Override to clean up intervals/timeouts and release resources. */
   teardown(): void {
+    this._cancelled = true;
     for (const t of this._timers) clearTimeout(t);
     this._timers = [];
   }
@@ -173,51 +183,90 @@ export abstract class BaseGame {
     const total = this.room.state.gameConfig.roundCount;
     const gameId = this.room.state.selectedGame ?? "unknown";
 
+    if (this.hasPracticeRound()) {
+      await this.runPracticeRound();
+      if (this.isCancelled()) return;
+    }
+
     for (let r = 1; r <= total; r++) {
-      this.room.state.currentRound = r;
-      this.room.state.roundDurationSecs = this.room.state.gameConfig.timeLimitSecs;
-
-      this.setPhase("countdown");
-      await this.delay(3000);
-
-      this.setPhase("in_round");
-      this.room.state.phaseStartedAt = Date.now();
-      this._roundStartMs = Date.now();
-
-      // Give clients time to detect the phase change, unmount the countdown
-      // screen, mount the game-specific component, and register their
-      // onMessage() listeners before the game broadcasts initial messages.
-      await this.delay(500);
-
-      await this.runRound(r);
-
-      // Record round duration
-      const roundDurationMs = Date.now() - this._roundStartMs;
-      roundDurationHistogram.record(roundDurationMs, {
-        gameId,
-        round: r,
-        totalRounds: total,
-      });
-
-      this.scoreRound(r);
-      this._roundsCompleted = r;
-      roundsCompleted.add(1, { gameId });
-
-      this.setPhase("round_end");
-      await this.delay(4000);
+      await this.runScoredRound(r);
+      if (this.isCancelled()) return;
     }
 
     // Record game progress (how much of the session was played)
     const progressPercent = total > 0 ? (this._roundsCompleted / total) * 100 : 0;
     gameProgressGauge.record(progressPercent, { gameId });
 
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
+    if (this.isCancelled()) return;
+  }
+
+  protected hasPracticeRound(): boolean {
+    return !!this.room.state.gameConfig.practiceRoundEnabled;
+  }
+
+  protected async runPracticeRound(effectiveRound: number = 1): Promise<void> {
+    await this._runConfiguredRound(0, effectiveRound, false);
+  }
+
+  protected async runScoredRound(displayRound: number, effectiveRound: number = displayRound): Promise<void> {
+    await this._runConfiguredRound(displayRound, effectiveRound, true);
+  }
+
+  private async _runConfiguredRound(
+    displayRound: number,
+    effectiveRound: number,
+    shouldScore: boolean,
+  ): Promise<void> {
+    const total = this.room.state.gameConfig.roundCount;
+    const gameId = this.room.state.selectedGame ?? "unknown";
+
+    this.room.state.currentRound = displayRound;
+    this.room.state.isPracticeRound = !shouldScore;
+    this.room.state.roundDurationSecs = this.room.state.gameConfig.timeLimitSecs;
+
+    this.setPhase("countdown");
+    await this.delay(3000);
+    if (this.isCancelled()) return;
+
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    this._roundStartMs = Date.now();
+
+    // Give clients time to detect the phase change, unmount the countdown
+    // screen, mount the game-specific component, and register their
+    // onMessage() listeners before the game broadcasts initial messages.
+    await this.delay(500);
+    if (this.isCancelled()) return;
+
+    await this.runRound(effectiveRound);
+    if (this.isCancelled()) return;
+
+    const roundDurationMs = Date.now() - this._roundStartMs;
+    roundDurationHistogram.record(roundDurationMs, {
+      gameId,
+      round: shouldScore ? effectiveRound : 0,
+      totalRounds: total,
+      practiceRound: !shouldScore,
+    });
+
+    if (shouldScore) {
+      this.scoreRound(effectiveRound);
+      this._roundsCompleted = effectiveRound;
+      roundsCompleted.add(1, { gameId });
+    }
+
+    this.setPhase("round_end");
+    await this.delay(4000);
+    if (this.isCancelled()) return;
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
 
   protected setPhase(phase: Phase): void {
+    if (this._cancelled) return;
     const gameId = this.room.state.selectedGame ?? "unknown";
     phaseTransitions.add(1, { gameId, phase });
     this.room.state.phase = phase;
@@ -234,19 +283,37 @@ export abstract class BaseGame {
     });
   }
 
+  protected isCancelled(): boolean {
+    return this._cancelled;
+  }
+
+  protected isPlayerActive(player: PlayerState | null | undefined): boolean {
+    if (!player || player.isEliminated) return false;
+    if (player.isConnected) return true;
+    return player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < RECONNECT_GRACE_MS;
+  }
+
+  protected hasMicPermission(player: PlayerState | null | undefined): boolean {
+    return player?.micPermission === "granted";
+  }
+
+  protected hasMotionPermission(player: PlayerState | null | undefined): boolean {
+    return player?.motionPermission === "granted";
+  }
+
   /**
    * Resolves when every connected, non-eliminated player has isReady = true.
    * Includes a 30-second timeout to prevent indefinite stalling.
    */
-  protected waitForAllReady(timeoutMs: number = 30_000): Promise<void> {
+  protected waitForAllReady(timeoutMs: number = Math.max(30_000, RECONNECT_GRACE_MS)): Promise<void> {
     return new Promise((resolve) => {
       const check = (): boolean => {
         for (const p of this.room.state.players.values()) {
-          if (p.isConnected && !p.isEliminated && !p.isReady) return false;
+          if (this.isPlayerActive(p) && !p.isReady) return false;
         }
         // Ensure at least one active player exists
         for (const p of this.room.state.players.values()) {
-          if (p.isConnected && !p.isEliminated) return true;
+          if (this.isPlayerActive(p)) return true;
         }
         return false;
       };
@@ -272,11 +339,13 @@ export abstract class BaseGame {
 
   /** Broadcast a message to all connected clients. */
   protected broadcast(type: string, payload: unknown): void {
+    if (this._cancelled) return;
     this.room.broadcast(type, payload);
   }
 
   /** Send a private message to one client. */
   protected send(sessionId: string, type: string, payload: unknown): void {
+    if (this._cancelled) return;
     const client = [...(this.room.clients as Iterable<Client>)].find(
       (c) => c.sessionId === sessionId,
     );

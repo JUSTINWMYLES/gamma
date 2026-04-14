@@ -2,15 +2,15 @@
   /**
    * Phone game component for "Audio Overlay" (registry-26).
    *
-   * Flow sub-phases:
-   *   category_choosing | category_waiting → gif_browsing → gif_confirmed →
-   *   waiting_turn → my_recording → recording_done → watching_others →
-   *   playback → voting → results
+ * Flow sub-phases:
+ *   category_choosing | category_waiting → gif_browsing → gif_confirmed →
+ *   recording_prepare → my_recording → recording_done → watching_others →
+ *   playback → voting → results
    *
    * Server messages listened:
    *   category_selection_start, category_chosen,
    *   gif_selection_start, gif_selection_confirmed, gif_selection_update,
-   *   gif_assigned, recording_turn, recording_submitted,
+ *   gif_assigned, recording_prepare, recording_turn, recording_submitted,
    *   playback_entry, playback_done,
    *   voting_start, vote_confirmed, vote_count_update,
    *   round_result, round_skipped
@@ -23,6 +23,13 @@
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
+  type PermissionAwarePlayer = PlayerState & {
+    micPermission?: string;
+  };
+
+  $: permissionPlayer = me as PermissionAwarePlayer | undefined;
+  $: micGranted = permissionPlayer?.micPermission === "granted";
+
   // ── Sub-phase state ──────────────────────────────────────────────
 
   type SubPhase =
@@ -31,7 +38,7 @@
     | "category_waiting"
     | "gif_browsing"
     | "gif_confirmed"
-    | "waiting_turn"
+    | "recording_prepare"
     | "my_recording"
     | "recording_done"
     | "watching_others"
@@ -99,16 +106,24 @@
   let assignedGifUrl = "";
   let assignedGifLabel = "";
   let assignedOriginalPicker = "";
+  let assignedMode: "randomized" | "record_own" = "randomized";
   let recordingTimeLeft = 0;
   let recordingEndTime = 0;
   let recordingTimer: ReturnType<typeof setInterval> | null = null;
+  let maxClipDurationMs = 10_000;
+  let clipTimeLeft = 10;
+  let clipTimer: ReturnType<typeof setInterval> | null = null;
+  let recordingStopTimer: ReturnType<typeof setTimeout> | null = null;
 
   let micAllowed = false;
   let micError = "";
   let isRecording = false;
   let recordingDone = false;
   let audioBase64 = "";
+  let audioPreviewUrl = "";
   let recordingSubmitted = false;
+  let recordedDurationSecs = 0;
+  let recordingStartedAt = 0;
 
   let mediaRecorder: MediaRecorder | null = null;
   let audioChunks: Blob[] = [];
@@ -126,7 +141,7 @@
 
   // ── Voting ──────────────────────────────────────────────────────
 
-  let votableEntries: { playerId: string; playerName: string }[] = [];
+  let votableEntries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string }[] = [];
   let votingTimeLeft = 0;
   let votingEndTime = 0;
   let votingTimer: ReturnType<typeof setInterval> | null = null;
@@ -151,6 +166,11 @@
   // ── Mic helpers ─────────────────────────────────────────────────
 
   async function requestMic(): Promise<boolean> {
+    if (!micGranted) {
+      micAllowed = false;
+      micError = "Enable microphone in the lobby to join Audio Overlay recording.";
+      return false;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       micAllowed = false;
       micError = "Microphone is unavailable in this browser/context. Use Safari/Chrome on HTTPS.";
@@ -184,15 +204,49 @@
     }
   }
 
-  async function startRecording(durationMs: number) {
+  function revokeAudioPreview() {
+    if (audioPreviewUrl) {
+      URL.revokeObjectURL(audioPreviewUrl);
+      audioPreviewUrl = "";
+    }
+  }
+
+  function clearClipTimers() {
+    if (clipTimer) { clearInterval(clipTimer); clipTimer = null; }
+    if (recordingStopTimer) { clearTimeout(recordingStopTimer); recordingStopTimer = null; }
+  }
+
+  function resetTakeState() {
+    clearClipTimers();
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
+    isRecording = false;
+    recordingDone = false;
+    audioBase64 = "";
+    recordedDurationSecs = 0;
+    recordingStartedAt = 0;
+    recordingProgress = 0;
+    clipTimeLeft = maxClipDurationMs / 1000;
+    audioChunks = [];
+    revokeAudioPreview();
+  }
+
+  async function startHeldRecording() {
+    if (recordingSubmitted || isRecording) return;
+    if (recordingTimeLeft <= 0) return;
+
     if (!mediaStream) {
       const ok = await requestMic();
       if (!ok) return;
     }
 
+    clearClipTimers();
     audioChunks = [];
     isRecording = true;
     recordingDone = false;
+    recordingStartedAt = Date.now();
+    micError = "";
 
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
@@ -205,23 +259,36 @@
     };
 
     mediaRecorder.onstop = async () => {
+      clearClipTimers();
       isRecording = false;
       recordingDone = true;
+      recordedDurationSecs = Math.min(maxClipDurationMs, Date.now() - recordingStartedAt) / 1000;
       const blob = new Blob(audioChunks, { type: mimeType });
+      revokeAudioPreview();
+      audioPreviewUrl = URL.createObjectURL(blob);
       audioBase64 = await blobToBase64(blob);
+
+      if (recordingTimeLeft <= 0 && !recordingSubmitted) {
+        submitRecording();
+      }
     };
 
     mediaRecorder.start(100);
 
-    // Auto-stop after duration
-    setTimeout(() => {
+    const clipWindowMs = Math.min(maxClipDurationMs, Math.max(0, recordingEndTime - Date.now()));
+    clipTimeLeft = clipWindowMs / 1000;
+    clipTimer = setInterval(() => {
+      clipTimeLeft = Math.max(0, (recordingStartedAt + clipWindowMs - Date.now()) / 1000);
+    }, 100);
+
+    recordingStopTimer = setTimeout(() => {
       if (mediaRecorder && mediaRecorder.state === "recording") {
         mediaRecorder.stop();
       }
-    }, durationMs);
+    }, clipWindowMs);
   }
 
-  function stopRecordingEarly() {
+  function stopHeldRecording() {
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
     }
@@ -276,7 +343,11 @@
   function submitRecording() {
     if (!audioBase64 || recordingSubmitted) return;
     recordingSubmitted = true;
-    room.send("game_input", { action: "submit_recording", audioBase64 });
+    room.send("game_input", {
+      action: "submit_recording",
+      audioBase64,
+      durationSecs: recordedDurationSecs,
+    });
   }
 
   function castVote(targetId: string) {
@@ -293,6 +364,7 @@
     if (gifSelectionTimer) { clearInterval(gifSelectionTimer); gifSelectionTimer = null; }
     if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
     if (votingTimer) { clearInterval(votingTimer); votingTimer = null; }
+    clearClipTimers();
   }
 
   // ── Message handlers ────────────────────────────────────────────
@@ -334,6 +406,7 @@
     searchTerm?: string;
     durationMs: number;
     serverTimestamp: number;
+    totalSelectors: number;
   }) {
     subPhase = "gif_browsing";
     gifPool = data.gifs;
@@ -347,6 +420,8 @@
 
     gifSelectionEndTime = data.serverTimestamp + data.durationMs;
     gifSelectionTimeLeft = Math.max(0, (gifSelectionEndTime - Date.now()) / 1000);
+    selectionsSubmitted = 0;
+    selectionsTotal = data.totalSelectors;
 
     gifSelectionTimer = setInterval(() => {
       gifSelectionTimeLeft = Math.max(0, (gifSelectionEndTime - Date.now()) / 1000);
@@ -370,7 +445,7 @@
     gifPool = data.gifs;
   }
 
-  function onRecordingTurn(data: {
+  function onRecordingPrepare(data: {
     playerId: string;
     playerName: string;
     durationMs: number;
@@ -379,46 +454,76 @@
     clearAllTimers();
     currentRecorderName = data.playerName;
     isMyTurn = data.playerId === me?.id;
+    recordingEndTime = data.serverTimestamp + data.durationMs;
+    recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+
+    if (isMyTurn) {
+      subPhase = "recording_prepare";
+    } else {
+      subPhase = "watching_others";
+    }
+
+    recordingTimer = setInterval(() => {
+      recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+    }, 100);
+  }
+
+  function onRecordingTurn(data: {
+    playerId: string;
+    playerName: string;
+    durationMs: number;
+    serverTimestamp: number;
+    maxClipDurationMs: number;
+    mode: "randomized" | "record_own";
+  }) {
+    clearAllTimers();
+    currentRecorderName = data.playerName;
+    isMyTurn = data.playerId === me?.id;
+    maxClipDurationMs = data.maxClipDurationMs;
+    assignedMode = data.mode;
 
     if (isMyTurn) {
       subPhase = "my_recording";
-      // Timer + start recording handled by gif_assigned private message
+      if (!audioBase64) {
+        recordingDone = false;
+        clipTimeLeft = data.maxClipDurationMs / 1000;
+        recordingProgress = 0;
+      }
     } else {
       subPhase = "watching_others";
-      recordingEndTime = data.serverTimestamp + data.durationMs;
-      recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
-      recordingTimer = setInterval(() => {
-        recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
-      }, 200);
     }
+
+    recordingEndTime = data.serverTimestamp + data.durationMs;
+    recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+    const totalSecs = data.durationMs / 1000;
+    recordingTimer = setInterval(() => {
+      recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
+      recordingProgress = 1 - recordingTimeLeft / totalSecs;
+
+      if (recordingTimeLeft <= 0) {
+        if (isRecording) {
+          stopHeldRecording();
+        } else if (isMyTurn && audioBase64 && !recordingSubmitted) {
+          submitRecording();
+        }
+      }
+    }, 100);
   }
 
   function onGifAssigned(data: {
     gifUrl: string;
     gifLabel: string;
     originalPicker: string;
-    durationMs: number;
-    serverTimestamp: number;
+    maxClipDurationMs: number;
+    mode: "randomized" | "record_own";
   }) {
-    // Private message — only the current recorder gets this
     assignedGifUrl = data.gifUrl;
     assignedGifLabel = data.gifLabel;
     assignedOriginalPicker = data.originalPicker;
+    assignedMode = data.mode;
+    maxClipDurationMs = data.maxClipDurationMs;
     recordingSubmitted = false;
-    audioBase64 = "";
-    recordingDone = false;
-
-    recordingEndTime = data.serverTimestamp + data.durationMs;
-    recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
-    const totalSecs = data.durationMs / 1000;
-
-    recordingTimer = setInterval(() => {
-      recordingTimeLeft = Math.max(0, (recordingEndTime - Date.now()) / 1000);
-      recordingProgress = 1 - recordingTimeLeft / totalSecs;
-    }, 100);
-
-    // Start recording immediately
-    startRecording(data.durationMs);
+    resetTakeState();
   }
 
   function onRecordingSubmitted(data: { playerId: string }) {
@@ -432,6 +537,9 @@
     playerName: string;
     gifUrl: string;
     gifLabel: string;
+    audioDurationMs: number;
+    introDurationMs: number;
+    postDurationMs: number;
   }) {
     subPhase = "playback";
     playbackPlayerName = data.playerName;
@@ -446,7 +554,8 @@
   function onVotingStart(data: {
     durationMs: number;
     serverTimestamp: number;
-    entries: { playerId: string; playerName: string }[];
+    totalVoters: number;
+    entries: { playerId: string; playerName: string; gifUrl: string; gifLabel: string }[];
   }) {
     subPhase = "voting";
     clearAllTimers();
@@ -457,7 +566,7 @@
     myVote = null;
     voteConfirmed = false;
     votesIn = 0;
-    totalVoters = data.entries.length;
+    totalVoters = data.totalVoters;
 
     votingTimer = setInterval(() => {
       votingTimeLeft = Math.max(0, (votingEndTime - Date.now()) / 1000);
@@ -494,6 +603,7 @@
     room.onMessage("gif_selection_update", onGifSelectionUpdate);
     room.onMessage("gif_search_results", onGifSearchResults);
     room.onMessage("gif_assigned", onGifAssigned);
+    room.onMessage("recording_prepare", onRecordingPrepare);
     room.onMessage("recording_turn", onRecordingTurn);
     room.onMessage("recording_submitted", onRecordingSubmitted);
     room.onMessage("playback_entry", onPlaybackEntry);
@@ -503,6 +613,8 @@
     room.onMessage("vote_count_update", onVoteCountUpdate);
     room.onMessage("round_result", onRoundResult);
     room.onMessage("round_skipped", onRoundSkipped);
+    window.addEventListener("pointerup", stopHeldRecording);
+    window.addEventListener("pointercancel", stopHeldRecording);
   });
 
   onDestroy(() => {
@@ -514,6 +626,9 @@
     if (mediaStream) {
       mediaStream.getTracks().forEach((t) => t.stop());
     }
+    window.removeEventListener("pointerup", stopHeldRecording);
+    window.removeEventListener("pointercancel", stopHeldRecording);
+    revokeAudioPreview();
   });
 
   // ── Auto-submit when recording finishes ─────────────────────────
@@ -649,7 +764,7 @@
         <div class="grid grid-cols-2 gap-2">
           {#each gifPool as gif}
             <button
-              class="relative rounded-lg overflow-hidden border-2 transition-all active:scale-95
+              class="rounded-lg overflow-hidden border-2 transition-all active:scale-95
                 {selectedGifUrl === gif.url
                   ? 'border-purple-500 ring-2 ring-purple-400'
                   : 'border-gray-700 active:border-purple-500'}"
@@ -661,9 +776,6 @@
                 class="w-full h-24 object-cover"
                 loading="lazy"
               />
-              <span class="absolute bottom-0 left-0 right-0 bg-black/60 text-xs text-white text-center py-0.5 truncate px-1">
-                {gif.label}
-              </span>
             </button>
           {/each}
         </div>
@@ -700,22 +812,14 @@
         <p class="text-sm text-gray-400">{selectionsSubmitted}/{selectionsTotal} have picked</p>
       {/if}
 
-      <!-- Mic permission prompt — must be tapped by user (iOS requirement) -->
-      {#if !micAllowed}
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3">
-          <p class="text-gray-200 font-semibold">You'll need your microphone next!</p>
-          <p class="text-gray-400 text-sm">Tap below to allow mic access so you're ready to record.</p>
-          {#if micError}
-            <p class="text-red-400 text-sm">{micError}</p>
-          {/if}
-          <button
-            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
-            on:click={() => requestMic()}
-          >Allow Microphone</button>
+      {#if micGranted}
+        <div class="flex items-center gap-2 justify-center text-green-400 text-sm">
+          <span>Microphone enabled in lobby</span>
         </div>
       {:else}
-        <div class="flex items-center gap-2 justify-center text-green-400 text-sm">
-          <span>Mic ready</span>
+        <div class="bg-red-950/60 border border-red-700 rounded-xl p-4 space-y-2">
+          <p class="text-red-200 font-semibold">Microphone not enabled</p>
+          <p class="text-red-300/90 text-sm">Use the lobby permission button before the next round if you want to record.</p>
         </div>
       {/if}
     </div>
@@ -730,19 +834,36 @@
       <p class="text-sm text-gray-500">{Math.ceil(recordingTimeLeft)}s remaining</p>
       <p class="text-xs text-gray-600">Watch the TV!</p>
 
-      <!-- Mic permission prompt if they still haven't granted it -->
-      {#if !micAllowed}
-        <div class="bg-gray-800 border border-gray-600 rounded-xl p-4 space-y-3 mt-4">
-          <p class="text-gray-200 font-semibold text-sm">Your turn is coming up!</p>
-          {#if micError}
-            <p class="text-red-400 text-sm">{micError}</p>
-          {/if}
-          <button
-            class="w-full py-3 rounded-xl text-lg font-bold bg-red-600 text-white active:bg-red-500 transition-all active:scale-95"
-            on:click={() => requestMic()}
-          >Allow Microphone</button>
+      {#if !micGranted}
+        <div class="bg-red-950/60 border border-red-700 rounded-xl p-4 space-y-2 mt-4">
+          <p class="text-red-200 font-semibold text-sm">Recording requires lobby mic access</p>
+          <p class="text-red-300/90 text-sm">Players without microphone permission stay out of the recording rotation.</p>
         </div>
       {/if}
+    </div>
+
+  {:else if subPhase === "recording_prepare"}
+    <div class="w-full max-w-sm text-center space-y-4">
+      <p class="text-xs uppercase tracking-[0.3em] text-yellow-400">Up Next</p>
+      <h2 class="text-3xl font-black text-white">Your turn starts soon</h2>
+      <p class="text-gray-300">You have 60 seconds for as many attempts as you want. Each take must stay under 10 seconds.</p>
+
+      {#if assignedGifUrl}
+        <img
+          src={assignedGifUrl}
+          alt={assignedGifLabel}
+          class="w-full max-w-xs h-48 object-cover rounded-xl mx-auto border-2 border-yellow-500"
+        />
+      {/if}
+
+      <div class="rounded-xl bg-gray-800 px-4 py-3">
+        <p class="text-4xl font-mono font-black text-white">{Math.ceil(recordingTimeLeft)}</p>
+        <p class="text-sm text-gray-400 mt-1">
+          {assignedMode === 'record_own'
+            ? 'You are dubbing your own GIF.'
+            : `You are dubbing ${assignedOriginalPicker}'s GIF.`}
+        </p>
+      </div>
     </div>
 
   {:else if subPhase === "my_recording"}
@@ -751,7 +872,9 @@
       <h2 class="text-2xl font-black text-red-400">Your Turn!</h2>
       <p class="text-sm text-gray-400">
         Dub this GIF with your audio
-        <span class="text-gray-500">(picked by {assignedOriginalPicker})</span>
+        <span class="text-gray-500">
+          ({assignedMode === 'record_own' ? 'your pick' : `picked by ${assignedOriginalPicker}`})
+        </span>
       </p>
 
       <!-- The GIF to dub -->
@@ -766,16 +889,20 @@
       {#if micError}
         <div class="bg-red-900 border border-red-600 rounded-xl p-4">
           <p class="text-red-200 text-sm">{micError}</p>
-          <button
-            class="mt-3 px-4 py-2 rounded-lg bg-red-700 text-white text-sm font-bold"
-            on:click={() => requestMic()}
-          >Try Again</button>
         </div>
       {:else}
-        <!-- Timer -->
-        <p class="text-4xl font-mono font-black text-white">
-          {Math.ceil(recordingTimeLeft)}
-        </p>
+        <div class="grid grid-cols-2 gap-3 text-center">
+          <div class="rounded-xl bg-gray-800 px-4 py-3">
+            <p class="text-xs uppercase tracking-widest text-gray-500">Turn</p>
+            <p class="text-3xl font-mono font-black text-white">{Math.ceil(recordingTimeLeft)}</p>
+          </div>
+          <div class="rounded-xl bg-gray-800 px-4 py-3">
+            <p class="text-xs uppercase tracking-widest text-gray-500">Take Max</p>
+            <p class="text-3xl font-mono font-black text-red-300">{clipTimeLeft.toFixed(1)}</p>
+          </div>
+        </div>
+
+        <p class="text-sm text-gray-400">Press and hold to record. Let go to stop. Re-record as many times as you want before the turn ends.</p>
 
         <!-- Recording indicator -->
         <div class="flex flex-col items-center gap-3">
@@ -799,11 +926,32 @@
             ></div>
           </div>
 
-          {#if isRecording}
-            <button
-              class="px-6 py-3 rounded-xl bg-gray-700 text-white font-bold active:bg-gray-600 transition-all active:scale-95"
-              on:click={stopRecordingEarly}
-            >Done Early</button>
+          <button
+            class="w-full py-5 rounded-xl font-black text-lg transition-all select-none
+              {isRecording
+                ? 'bg-red-700 text-white scale-[0.98]'
+                : 'bg-red-600 text-white active:bg-red-500 active:scale-95'}"
+            on:pointerdown|preventDefault={startHeldRecording}
+            on:pointerup|preventDefault={stopHeldRecording}
+            on:pointerleave={stopHeldRecording}
+            disabled={recordingSubmitted || recordingTimeLeft <= 0}
+          >
+            {isRecording ? 'Recording... release to stop' : 'Press and Hold to Record'}
+          </button>
+
+          {#if audioPreviewUrl && !isRecording}
+            <audio controls src={audioPreviewUrl} class="w-full"></audio>
+            <div class="grid grid-cols-2 gap-3 w-full">
+              <button
+                class="py-3 rounded-xl bg-gray-700 text-white font-bold active:bg-gray-600 transition-all active:scale-95"
+                on:click={resetTakeState}
+              >Re-record</button>
+              <button
+                class="py-3 rounded-xl bg-green-600 text-white font-bold active:bg-green-500 transition-all active:scale-95"
+                on:click={submitRecording}
+                disabled={recordingSubmitted}
+              >Submit Take</button>
+            </div>
           {/if}
         </div>
       {/if}
@@ -821,6 +969,22 @@
           class="w-48 h-32 object-cover rounded-xl mx-auto border border-green-500"
         />
       {/if}
+
+      {#if audioPreviewUrl}
+        <audio controls src={audioPreviewUrl} class="w-full"></audio>
+      {/if}
+
+      <p class="text-sm text-gray-400">You can still re-record until the turn timer reaches zero.</p>
+
+      <button
+        class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-95
+          bg-gray-700 text-white active:bg-gray-600"
+        on:click={() => {
+          resetTakeState();
+          subPhase = 'my_recording';
+        }}
+        disabled={recordingTimeLeft <= 0 || recordingSubmitted}
+      >Record Again</button>
 
       <button
         class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-95
@@ -882,7 +1046,13 @@
               on:click={() => castVote(entry.playerId)}
               disabled={!!myVote}
             >
-              <p class="font-semibold">{entry.playerName}</p>
+              <div class="flex gap-3 items-center">
+                <img src={entry.gifUrl} alt={entry.gifLabel} class="w-20 h-14 rounded-lg object-cover border border-gray-700" />
+                <div class="min-w-0">
+                  <p class="font-semibold">{entry.playerName}</p>
+                  <p class="text-xs text-gray-400 truncate">{entry.gifLabel}</p>
+                </div>
+              </div>
             </button>
           {/each}
         </div>

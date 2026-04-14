@@ -42,6 +42,15 @@ interface JoinOptions {
   reconnectToken?: string;
 }
 
+const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60) * 1000;
+
+function getDefaultGameMode(gameId: string): string {
+  if (gameId === "registry-25-lowball-marketplace") return "classic";
+  if (gameId === "registry-26-audio-overlay") return "randomized";
+  if (gameId === "registry-04-escape-maze") return "individual";
+  return "default";
+}
+
 export class GammaRoom extends Room<RoomState> {
   /** The active game plugin instance. Null in lobby. */
   private game: BaseGame | null = null;
@@ -51,6 +60,9 @@ export class GammaRoom extends Room<RoomState> {
 
   /** OTEL span tracking the entire game session (from start_game to game_over/dispose). */
   private gameSessionSpan: Span | null = null;
+
+  /** Monotonic token so stale game promises cannot complete a newer game session. */
+  private activeGameRunId = 0;
 
   // ── OTEL metrics ──────────────────────────────────────────────────────────
   private static roomsCreated = meter.createCounter("gamma.rooms.created", {
@@ -119,6 +131,7 @@ export class GammaRoom extends Room<RoomState> {
     const player = this.state.players.get(client.sessionId);
     if (player) {
       player.isConnected = false;
+      player.disconnectedAt = consented ? 0 : Date.now();
       GammaRoom.playerDisconnects.add(1, {
         roomCode: this.state.roomCode,
         consented: String(consented),
@@ -126,11 +139,12 @@ export class GammaRoom extends Room<RoomState> {
       console.log(`[GammaRoom] player disconnected — id=${client.sessionId} consented=${consented}`);
 
       if (!consented) {
-        // Allow reconnect within grace window (default 30s)
-        const graceSecs = Number(process.env.RECONNECT_GRACE_SECONDS ?? 30);
+        // Allow reconnect within grace window (default 60s)
+        const graceSecs = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60);
         try {
           await this.allowReconnection(client, graceSecs);
           player.isConnected = true;
+          player.disconnectedAt = 0;
           GammaRoom.playerReconnects.add(1, { roomCode: this.state.roomCode });
           console.log(`[GammaRoom] player reconnected — id=${client.sessionId}`);
         } catch {
@@ -179,6 +193,7 @@ export class GammaRoom extends Room<RoomState> {
     const existing = this.state.players.get(client.sessionId);
     if (existing) {
       existing.isConnected = true;
+      existing.disconnectedAt = 0;
       return;
     }
 
@@ -197,6 +212,7 @@ export class GammaRoom extends Room<RoomState> {
       this.state.players.delete(oldId);
       disconnected.id = client.sessionId;
       disconnected.isConnected = true;
+      disconnected.disconnectedAt = 0;
       this.state.players.set(client.sessionId, disconnected);
 
       // If the reconnecting player was the host, update hostSessionId
@@ -228,6 +244,7 @@ export class GammaRoom extends Room<RoomState> {
     const player = new PlayerState();
     player.id = client.sessionId;
     player.name = incomingName;
+    player.disconnectedAt = 0;
     this.state.players.set(client.sessionId, player);
 
     // First player becomes host if no TV
@@ -248,7 +265,7 @@ export class GammaRoom extends Room<RoomState> {
    */
   private _findDisconnectedPlayerByName(name: string): PlayerState | null {
     for (const player of this.state.players.values()) {
-      if (!player.isConnected && playerNamesMatch(player.name, name)) {
+      if (!player.isConnected && this._isWithinReconnectGrace(player) && playerNamesMatch(player.name, name)) {
         return player;
       }
     }
@@ -262,6 +279,10 @@ export class GammaRoom extends Room<RoomState> {
       }
     }
     return null;
+  }
+
+  private _isWithinReconnectGrace(player: PlayerState): boolean {
+    return player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < RECONNECT_GRACE_MS;
   }
 
   // ── Message registration ──────────────────────────────────────────────────
@@ -282,7 +303,15 @@ export class GammaRoom extends Room<RoomState> {
     /** Player customizes their icon/avatar (allowed during lobby). */
     this.onMessage(
       "customize_player",
-      (client, data: { iconEmoji?: string; iconText?: string; iconBgColor?: string }) => {
+      (
+        client,
+        data: {
+          iconEmoji?: string;
+          iconText?: string;
+          iconBgColor?: string;
+          iconDesign?: string;
+        },
+      ) => {
         const p = this.state.players.get(client.sessionId);
         if (!p) return;
         // Only allow customization during lobby phase
@@ -299,6 +328,34 @@ export class GammaRoom extends Room<RoomState> {
         // Validate and set bg color (must look like a hex color or preset name)
         if (typeof data.iconBgColor === "string" && data.iconBgColor.length <= 20) {
           p.iconBgColor = data.iconBgColor;
+        }
+        if (typeof data.iconDesign === "string") {
+          p.iconDesign = data.iconDesign.slice(0, 20_000);
+        }
+      },
+    );
+
+    this.onMessage(
+      "update_permissions",
+      (
+        client,
+        data: Partial<{
+          mic: "unknown" | "granted" | "denied";
+          motion: "unknown" | "granted" | "denied";
+        }>,
+      ) => {
+        const p = this.state.players.get(client.sessionId);
+        if (!p) return;
+
+        if (data.mic === "unknown" || data.mic === "granted" || data.mic === "denied") {
+          p.micPermission = data.mic;
+        }
+        if (
+          data.motion === "unknown" ||
+          data.motion === "granted" ||
+          data.motion === "denied"
+        ) {
+          p.motionPermission = data.motion;
         }
       },
     );
@@ -346,10 +403,24 @@ export class GammaRoom extends Room<RoomState> {
           this.state.gameConfig.gameMode !== "classic" &&
           this.state.gameConfig.gameMode !== "funny_messages"
         ) {
-          this.state.gameConfig.gameMode = "classic";
+          this.state.gameConfig.gameMode = getDefaultGameMode(data.gameId);
+        }
+      } else if (data.gameId === "registry-26-audio-overlay") {
+        if (
+          this.state.gameConfig.gameMode !== "randomized" &&
+          this.state.gameConfig.gameMode !== "record_own"
+        ) {
+          this.state.gameConfig.gameMode = getDefaultGameMode(data.gameId);
+        }
+      } else if (data.gameId === "registry-04-escape-maze") {
+        if (
+          this.state.gameConfig.gameMode !== "individual" &&
+          this.state.gameConfig.gameMode !== "team"
+        ) {
+          this.state.gameConfig.gameMode = getDefaultGameMode(data.gameId);
         }
       } else {
-        this.state.gameConfig.gameMode = "default";
+        this.state.gameConfig.gameMode = getDefaultGameMode(data.gameId);
       }
     });
 
@@ -360,6 +431,7 @@ export class GammaRoom extends Room<RoomState> {
         client,
         data: Partial<{
           roundCount: number;
+          practiceRoundEnabled: boolean;
           timeLimitSecs: number;
           matchMode: string;
           gameMode: string;
@@ -368,6 +440,9 @@ export class GammaRoom extends Room<RoomState> {
         if (!this._isHost(client)) return;
         if (data.roundCount !== undefined) {
           this.state.gameConfig.roundCount = Math.max(1, Math.min(data.roundCount, 10));
+        }
+        if (data.practiceRoundEnabled !== undefined) {
+          this.state.gameConfig.practiceRoundEnabled = !!data.practiceRoundEnabled;
         }
         if (data.timeLimitSecs !== undefined) {
           this.state.gameConfig.timeLimitSecs = Math.max(10, Math.min(data.timeLimitSecs, 300));
@@ -379,7 +454,11 @@ export class GammaRoom extends Room<RoomState> {
           data.gameMode !== undefined &&
           (data.gameMode === "default" ||
             data.gameMode === "classic" ||
-            data.gameMode === "funny_messages")
+            data.gameMode === "funny_messages" ||
+            data.gameMode === "randomized" ||
+            data.gameMode === "record_own" ||
+            data.gameMode === "individual" ||
+            data.gameMode === "team")
         ) {
           this.state.gameConfig.gameMode = data.gameMode;
         }
@@ -432,6 +511,13 @@ export class GammaRoom extends Room<RoomState> {
       if (!this._isHost(client)) return;
       if (this.state.phase !== "game_over") return;
       this._advanceOrResetToLobby();
+    });
+
+    /** Host aborts the current game and sends everyone back to the lobby. */
+    this.onMessage("end_game_to_lobby", (client, _data) => {
+      if (!this._isHost(client)) return;
+      if (this.state.phase === "lobby") return;
+      this._resetToLobby();
     });
 
     /**
@@ -499,6 +585,8 @@ export class GammaRoom extends Room<RoomState> {
 
     const GameClass = await loadGame(this.state.selectedGame);
 
+    this.state.isPracticeRound = false;
+
     // Enforce view screen requirement
     if (GameClass.requiresTV && !this.state.viewScreenConnected) {
       this.broadcast("error", { message: "This game requires a view screen to be connected." });
@@ -529,8 +617,10 @@ export class GammaRoom extends Room<RoomState> {
     });
 
     this.game = new GameClass(this);
+    const runId = ++this.activeGameRunId;
     this.game.start()
       .then(() => {
+        if (runId !== this.activeGameRunId) return;
         // Game completed successfully
         GammaRoom.gamesCompleted.add(1, {
           roomCode: this.state.roomCode,
@@ -543,6 +633,7 @@ export class GammaRoom extends Room<RoomState> {
         }
       })
       .catch((err) => {
+        if (runId !== this.activeGameRunId) return;
         console.error("[GammaRoom] game error:", err);
         if (this.gameSessionSpan) {
           this.gameSessionSpan.setStatus({
@@ -586,6 +677,7 @@ export class GammaRoom extends Room<RoomState> {
 
       // Reset round-level state
       this.state.currentRound = 0;
+      this.state.isPracticeRound = false;
       this.state.phaseStartedAt = 0;
       this.state.roundDurationSecs = 60;
       this.state.mapTiles = "";
@@ -597,6 +689,7 @@ export class GammaRoom extends Room<RoomState> {
       if (this.game) {
         this.game.teardown();
         this.game = null;
+        this.activeGameRunId++;
       }
       if (this.gameSessionSpan) {
         this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
@@ -619,6 +712,7 @@ export class GammaRoom extends Room<RoomState> {
     if (this.game) {
       this.game.teardown();
       this.game = null;
+      this.activeGameRunId++;
     }
 
     // End active OTEL span
@@ -645,6 +739,7 @@ export class GammaRoom extends Room<RoomState> {
     // Reset room-level game state
     this.state.selectedGame = "";
     this.state.currentRound = 0;
+    this.state.isPracticeRound = false;
     this.state.phaseStartedAt = 0;
     this.state.roundDurationSecs = 60;
     this.state.mapTiles = "";

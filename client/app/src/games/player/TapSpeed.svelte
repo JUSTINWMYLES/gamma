@@ -171,9 +171,9 @@
     if (data.matchId !== currentMatchId) return;
     const mySessionId = me?.id ?? "";
     if (mySessionId === data.player1Id) {
-      opponentTaps = data.player2Taps;
+      opponentTaps = Math.max(0, data.player2Taps);
     } else if (mySessionId === data.player2Id) {
-      opponentTaps = data.player1Taps;
+      opponentTaps = Math.max(0, data.player1Taps);
     } else {
       // Spectating — could show both
     }
@@ -201,11 +201,11 @@
     // Sync final counts
     const mySessionId = me?.id ?? "";
     if (mySessionId === data.player1Id) {
-      myTaps = data.player1Taps;
-      opponentTaps = data.player2Taps;
+      myTaps = Math.max(0, data.player1Taps);
+      opponentTaps = Math.max(0, data.player2Taps);
     } else if (mySessionId === data.player2Id) {
-      myTaps = data.player2Taps;
-      opponentTaps = data.player1Taps;
+      myTaps = Math.max(0, data.player2Taps);
+      opponentTaps = Math.max(0, data.player1Taps);
     }
   }
 
@@ -223,8 +223,8 @@
     resultWinnerId = data.winnerId;
     resultWinnerName = data.winnerName;
     resultLoserName = data.loserName;
-    resultWinnerTaps = data.winnerTaps;
-    resultLoserTaps = data.loserTaps;
+    resultWinnerTaps = Math.max(0, data.winnerTaps);
+    resultLoserTaps = Math.max(0, data.loserTaps);
     resultDurationMs = data.durationMs;
 
     const mySessionId = me?.id ?? "";
