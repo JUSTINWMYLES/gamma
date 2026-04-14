@@ -344,7 +344,7 @@
   let activeMusicTrack: "two_finger_johnny" | null = null;
 
   $: {
-    const nextMusicTrack = !roundSkipped && subPhase === "gif_selection"
+    const nextMusicTrack = !roundSkipped && (subPhase === "waiting" || subPhase === "category_selection" || subPhase === "category_reveal" || subPhase === "gif_selection")
       ? "two_finger_johnny"
       : null;
     if (nextMusicTrack !== activeMusicTrack) {

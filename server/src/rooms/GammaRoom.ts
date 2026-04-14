@@ -61,6 +61,9 @@ export class GammaRoom extends Room<RoomState> {
   /** OTEL span tracking the entire game session (from start_game to game_over/dispose). */
   private gameSessionSpan: Span | null = null;
 
+  /** Monotonic token so stale game promises cannot complete a newer game session. */
+  private activeGameRunId = 0;
+
   // ── OTEL metrics ──────────────────────────────────────────────────────────
   private static roomsCreated = meter.createCounter("gamma.rooms.created", {
     description: "Total rooms created",
@@ -614,8 +617,10 @@ export class GammaRoom extends Room<RoomState> {
     });
 
     this.game = new GameClass(this);
+    const runId = ++this.activeGameRunId;
     this.game.start()
       .then(() => {
+        if (runId !== this.activeGameRunId) return;
         // Game completed successfully
         GammaRoom.gamesCompleted.add(1, {
           roomCode: this.state.roomCode,
@@ -628,6 +633,7 @@ export class GammaRoom extends Room<RoomState> {
         }
       })
       .catch((err) => {
+        if (runId !== this.activeGameRunId) return;
         console.error("[GammaRoom] game error:", err);
         if (this.gameSessionSpan) {
           this.gameSessionSpan.setStatus({
@@ -683,6 +689,7 @@ export class GammaRoom extends Room<RoomState> {
       if (this.game) {
         this.game.teardown();
         this.game = null;
+        this.activeGameRunId++;
       }
       if (this.gameSessionSpan) {
         this.gameSessionSpan.setStatus({ code: SpanStatusCode.OK });
@@ -705,6 +712,7 @@ export class GammaRoom extends Room<RoomState> {
     if (this.game) {
       this.game.teardown();
       this.game = null;
+      this.activeGameRunId++;
     }
 
     // End active OTEL span

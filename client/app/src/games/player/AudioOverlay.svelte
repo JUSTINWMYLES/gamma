@@ -216,6 +216,22 @@
     if (recordingStopTimer) { clearTimeout(recordingStopTimer); recordingStopTimer = null; }
   }
 
+  function resetTakeState() {
+    clearClipTimers();
+    if (mediaRecorder && mediaRecorder.state === "recording") {
+      mediaRecorder.stop();
+    }
+    isRecording = false;
+    recordingDone = false;
+    audioBase64 = "";
+    recordedDurationSecs = 0;
+    recordingStartedAt = 0;
+    recordingProgress = 0;
+    clipTimeLeft = maxClipDurationMs / 1000;
+    audioChunks = [];
+    revokeAudioPreview();
+  }
+
   async function startHeldRecording() {
     if (recordingSubmitted || isRecording) return;
     if (recordingTimeLeft <= 0) return;
@@ -470,6 +486,8 @@
       subPhase = "my_recording";
       if (!audioBase64) {
         recordingDone = false;
+        clipTimeLeft = data.maxClipDurationMs / 1000;
+        recordingProgress = 0;
       }
     } else {
       subPhase = "watching_others";
@@ -505,11 +523,7 @@
     assignedMode = data.mode;
     maxClipDurationMs = data.maxClipDurationMs;
     recordingSubmitted = false;
-    audioBase64 = "";
-    recordingDone = false;
-    recordedDurationSecs = 0;
-    clipTimeLeft = data.maxClipDurationMs / 1000;
-    revokeAudioPreview();
+    resetTakeState();
   }
 
   function onRecordingSubmitted(data: { playerId: string }) {
@@ -930,12 +944,7 @@
             <div class="grid grid-cols-2 gap-3 w-full">
               <button
                 class="py-3 rounded-xl bg-gray-700 text-white font-bold active:bg-gray-600 transition-all active:scale-95"
-                on:click={() => {
-                  audioBase64 = '';
-                  recordingDone = false;
-                  recordedDurationSecs = 0;
-                  revokeAudioPreview();
-                }}
+                on:click={resetTakeState}
               >Re-record</button>
               <button
                 class="py-3 rounded-xl bg-green-600 text-white font-bold active:bg-green-500 transition-all active:scale-95"
@@ -971,10 +980,7 @@
         class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-95
           bg-gray-700 text-white active:bg-gray-600"
         on:click={() => {
-          audioBase64 = '';
-          recordingDone = false;
-          recordedDurationSecs = 0;
-          revokeAudioPreview();
+          resetTakeState();
           subPhase = 'my_recording';
         }}
         disabled={recordingTimeLeft <= 0 || recordingSubmitted}
