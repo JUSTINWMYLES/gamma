@@ -155,6 +155,9 @@
       return "entertainer";
     }
     if (state.selectedGame === "registry-26-audio-overlay") {
+      if (phase === "instructions") {
+        return "two_finger_johnny";
+      }
       return phase === "in_round" ? viewerTrackOverride : null;
     }
     // Play game-specific music during in_round (and countdown/instructions for smoother transitions)

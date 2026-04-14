@@ -112,6 +112,9 @@ export abstract class BaseGame {
   /** Number of rounds completed so far in this game session (for progress tracking). */
   private _roundsCompleted = 0;
 
+  /** Set during teardown so stale async work stops mutating room state. */
+  private _cancelled = false;
+
   constructor(room: Room<RoomState>) {
     this.room = room;
   }
@@ -125,14 +128,17 @@ export abstract class BaseGame {
   async start(): Promise<void> {
     this.setPhase("game_loading");
     await this.onLoad();
+    if (this.isCancelled()) return;
 
     const ctor = this.constructor as typeof BaseGame;
     if (ctor.hasInstructionsPhase) {
       this.setPhase("instructions");
       await this.waitForAllReady();
+      if (this.isCancelled()) return;
     }
 
     await this.runRounds();
+    if (this.isCancelled()) return;
     this.setPhase("game_over");
   }
 
@@ -152,6 +158,7 @@ export abstract class BaseGame {
 
   /** Override to clean up intervals/timeouts and release resources. */
   teardown(): void {
+    this._cancelled = true;
     for (const t of this._timers) clearTimeout(t);
     this._timers = [];
   }
@@ -178,10 +185,12 @@ export abstract class BaseGame {
 
     if (this.hasPracticeRound()) {
       await this.runPracticeRound();
+      if (this.isCancelled()) return;
     }
 
     for (let r = 1; r <= total; r++) {
       await this.runScoredRound(r);
+      if (this.isCancelled()) return;
     }
 
     // Record game progress (how much of the session was played)
@@ -191,6 +200,7 @@ export abstract class BaseGame {
     this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
+    if (this.isCancelled()) return;
   }
 
   protected hasPracticeRound(): boolean {
@@ -219,6 +229,7 @@ export abstract class BaseGame {
 
     this.setPhase("countdown");
     await this.delay(3000);
+    if (this.isCancelled()) return;
 
     this.setPhase("in_round");
     this.room.state.phaseStartedAt = Date.now();
@@ -228,8 +239,10 @@ export abstract class BaseGame {
     // screen, mount the game-specific component, and register their
     // onMessage() listeners before the game broadcasts initial messages.
     await this.delay(500);
+    if (this.isCancelled()) return;
 
     await this.runRound(effectiveRound);
+    if (this.isCancelled()) return;
 
     const roundDurationMs = Date.now() - this._roundStartMs;
     roundDurationHistogram.record(roundDurationMs, {
@@ -247,11 +260,13 @@ export abstract class BaseGame {
 
     this.setPhase("round_end");
     await this.delay(4000);
+    if (this.isCancelled()) return;
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
 
   protected setPhase(phase: Phase): void {
+    if (this._cancelled) return;
     const gameId = this.room.state.selectedGame ?? "unknown";
     phaseTransitions.add(1, { gameId, phase });
     this.room.state.phase = phase;
@@ -266,6 +281,10 @@ export abstract class BaseGame {
       const t = setTimeout(resolve, ms);
       this._timers.push(t);
     });
+  }
+
+  protected isCancelled(): boolean {
+    return this._cancelled;
   }
 
   protected isPlayerActive(player: PlayerState | null | undefined): boolean {
@@ -320,11 +339,13 @@ export abstract class BaseGame {
 
   /** Broadcast a message to all connected clients. */
   protected broadcast(type: string, payload: unknown): void {
+    if (this._cancelled) return;
     this.room.broadcast(type, payload);
   }
 
   /** Send a private message to one client. */
   protected send(sessionId: string, type: string, payload: unknown): void {
+    if (this._cancelled) return;
     const client = [...(this.room.clients as Iterable<Client>)].find(
       (c) => c.sessionId === sessionId,
     );
