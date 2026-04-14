@@ -19,6 +19,13 @@
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
+  type PermissionAwarePlayer = PlayerState & {
+    motionPermission?: string;
+  };
+
+  $: permissionPlayer = me as PermissionAwarePlayer | undefined;
+  $: motionGranted = permissionPlayer?.motionPermission === "granted";
+
   // ── Sub-phase state ──────────────────────────────────────────────
 
   type SubPhase =
@@ -61,6 +68,7 @@
   let shakeListening = false;
   let lastAccelMagnitude = 0;
   const SHAKE_THRESHOLD = 15; // m/s^2 above gravity
+  let motionBlockedMsg = "";
 
   // ── Maze info ───────────────────────────────────────────────────
 
@@ -81,6 +89,9 @@
   onMount(() => {
     listen("maze_mode", (msg) => {
       gameMode = msg.mode;
+      if (msg.mode !== "team") {
+        motionBlockedMsg = "";
+      }
     });
 
     listen("maze_role", (msg) => {
@@ -90,7 +101,12 @@
         teamId = msg.teamId;
         myDirection = msg.direction;
         teamMembers = msg.teamMembers;
-        startShakeDetection();
+        if (motionGranted) {
+          motionBlockedMsg = "";
+          startShakeDetection();
+        } else {
+          motionBlockedMsg = "Enable motion in the lobby to use shake controls.";
+        }
       } else {
         gameMode = "individual";
         controlType = "dpad";
@@ -206,21 +222,9 @@
   // ── Shake detection (team mode) ─────────────────────────────────
 
   function startShakeDetection() {
-    if (shakeListening) return;
+    if (shakeListening || !motionGranted) return;
     shakeListening = true;
-
-    // Request permission on iOS
-    if (typeof (DeviceMotionEvent as any).requestPermission === "function") {
-      (DeviceMotionEvent as any).requestPermission().then((perm: string) => {
-        if (perm === "granted") {
-          window.addEventListener("devicemotion", onDeviceMotion);
-        }
-      }).catch(() => {
-        // Fall back — can't access motion on this device
-      });
-    } else {
-      window.addEventListener("devicemotion", onDeviceMotion);
-    }
+    window.addEventListener("devicemotion", onDeviceMotion);
   }
 
   function stopShakeDetection() {
@@ -353,15 +357,27 @@
 
       <div class="text-center">
         <h2 class="text-2xl font-black text-white mb-1">You move {directionLabel}</h2>
-        <p class="text-gray-400 text-sm">Shake your phone to move!</p>
+        <p class="text-gray-400 text-sm">
+          {motionGranted ? 'Shake your phone to move!' : 'Motion was not enabled in the lobby.'}
+        </p>
       </div>
+
+      {#if motionBlockedMsg}
+        <div class="w-full max-w-xs rounded-xl border border-red-700 bg-red-950/60 px-4 py-3 text-center text-sm text-red-200">
+          {motionBlockedMsg}
+        </div>
+      {/if}
 
       <!-- Manual shake button (fallback / desktop) -->
       <button
-        class="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 rounded-2xl text-white font-bold text-lg shadow-lg active:scale-95 transition-transform"
+        class="px-8 py-4 rounded-2xl text-lg shadow-lg transition-transform
+          {motionGranted
+            ? 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-400 text-white font-bold active:scale-95'
+            : 'bg-gray-800 text-gray-500 cursor-not-allowed font-semibold'}"
         style="touch-action:manipulation"
         on:touchstart|preventDefault={() => room.send("game_input", { action: "shake" })}
         on:click={() => room.send("game_input", { action: "shake" })}
+        disabled={!motionGranted}
       >
         SHAKE ({directionLabel})
       </button>

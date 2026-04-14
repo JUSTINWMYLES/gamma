@@ -11,6 +11,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -74,6 +75,13 @@
       clearInterval(timerInterval);
       timerInterval = null;
     }
+  }
+
+  function getPlayerByName(name: string) {
+    for (const player of state.players.values()) {
+      if (player.name === name) return player;
+    }
+    return undefined;
   }
 
   // ── Message handlers ────────────────────────────────────────────
@@ -162,7 +170,11 @@
           </p>
           <div class="flex flex-wrap gap-1 justify-center">
             {#each team.playerNames as name}
-              <span class="text-sm px-2 py-1 rounded bg-gray-800 text-gray-300">{name}</span>
+              {@const player = getPlayerByName(name)}
+              <span class="inline-flex items-center gap-2 rounded bg-gray-800 px-2 py-1 text-sm text-gray-300">
+                {#if player}<PlayerIcon player={player} size={18} />{/if}
+                <span>{name}</span>
+              </span>
             {/each}
           </div>
           {#if teamsDone.has(team.teamId)}
@@ -214,7 +226,11 @@
           </div>
           <div class="flex flex-wrap gap-1 justify-center">
             {#each tr.playerNames as name}
-              <span class="text-sm px-2 py-1 rounded bg-gray-800 text-gray-300">{name}</span>
+              {@const player = getPlayerByName(name)}
+              <span class="inline-flex items-center gap-2 rounded bg-gray-800 px-2 py-1 text-sm text-gray-300">
+                {#if player}<PlayerIcon player={player} size={18} />{/if}
+                <span>{name}</span>
+              </span>
             {/each}
           </div>
         </div>

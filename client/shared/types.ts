@@ -19,6 +19,8 @@ export type Phase =
   | "scoreboard"
   | "game_over";
 
+export type DevicePermissionState = "unknown" | "granted" | "denied";
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -32,6 +34,9 @@ export interface PlayerState {
   iconEmoji: string;
   iconText: string;
   iconBgColor: string;
+  iconDesign: string;
+  micPermission: DevicePermissionState;
+  motionPermission: DevicePermissionState;
   // registry-14
   x: number;
   y: number;
@@ -42,6 +47,7 @@ export interface PlayerState {
 
 export interface GameConfig {
   roundCount: number;
+  practiceRoundEnabled: boolean;
   timeLimitSecs: number;
   matchMode: "ffa" | "1v1_bracket";
   gameMode: string;
@@ -65,6 +71,7 @@ export interface RoomState {
   viewScreenConnected: boolean;
   selectedGame: string;
   currentRound: number;
+  isPracticeRound: boolean;
   phaseStartedAt: number;
   roundDurationSecs: number;
   players: Map<string, PlayerState>;
@@ -287,7 +294,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     id: "registry-43-medical-story",
     label: "Medical Story",
     description: "Assign hospital roles and invent the funniest complaint, diagnosis, procedure, and catchphrase!",
-    detailDescription: "A patient arrives by ambulance and everyone votes to assign roles: patient, doctor, and nurse. Then work through four creative rounds — describe the patient's complaint, invent a hilariously made-up diagnosis, devise an emergency procedure, and complete the doctor's catchphrase. After each phase, vote for the funniest entry. Points go to the winning author!",
+    detailDescription: "A patient arrives by ambulance and everyone votes to assign roles: patient, doctor, and nurse. Then work through four creative rounds — describe the patient's complaint, invent a hilariously made-up diagnosis with optional ridiculous tests, devise an emergency procedure, and finish the doctor's open-ended brag. After each phase, vote for the funniest entry, with some roles getting double voting power in their specialty phase.",
     activityLevel: "none",
     requiresSameRoom: false,
     requiresSecondaryDisplay: false,
@@ -347,4 +354,18 @@ export function getGameUnavailableReason(
     return `Max ${game.maxPlayers} players`;
   }
   return null;
+}
+
+export function getRoundLabel(
+  state: Pick<RoomState, "currentRound" | "isPracticeRound">,
+): string {
+  if (state.isPracticeRound) return "Practice Round";
+  return `Round ${Math.max(1, state.currentRound)}`;
+}
+
+export function getRoundProgressLabel(
+  state: Pick<RoomState, "currentRound" | "isPracticeRound" | "gameConfig">,
+): string {
+  if (state.isPracticeRound) return "Practice Round";
+  return `${getRoundLabel(state)} of ${state.gameConfig.roundCount}`;
 }

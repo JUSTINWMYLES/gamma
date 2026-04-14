@@ -8,6 +8,15 @@
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
+  type PermissionAwarePlayer = PlayerState & {
+    micPermission?: string;
+    motionPermission?: string;
+  };
+
+  $: permissionPlayer = me as PermissionAwarePlayer | undefined;
+  $: micGranted = permissionPlayer?.micPermission === "granted";
+  $: motionGranted = permissionPlayer?.motionPermission === "granted";
+
   // ── Stage / phase state ───────────────────────────────────────────────────
   type FireStage = "strike" | "blow" | "shake" | "extinguish";
   type GamePhase = "waiting" | "active" | "finished" | "round_end";
@@ -50,19 +59,10 @@
   // ── Strike (tap) state ────────────────────────────────────────────────────
   let strikeTaps = 0;
 
-  /** Prevent click from firing after touchstart already handled the event. */
-  let lastTouchAt = 0;
-  function wasTouch(): boolean {
-    return Date.now() - lastTouchAt < 400;
-  }
-
   function sendStrike() {
     strikeTaps++;
     room.send("game_input", { action: "fire_strike" });
   }
-
-  function onStrikeTouch() { lastTouchAt = Date.now(); sendStrike(); }
-  function onStrikeClick() { if (!wasTouch()) sendStrike(); }
 
   // ── Blow (microphone) state ───────────────────────────────────────────────
   let micActive = false;
@@ -73,7 +73,7 @@
   let micCheckTimer: ReturnType<typeof setInterval> | null = null;
 
   async function startMic() {
-    if (micActive) return;
+    if (micActive || !micGranted) return;
     try {
       if (!window.isSecureContext) {
         micMsg = "Microphone requires HTTPS (or localhost).";
@@ -114,12 +114,6 @@
     micActive = false;
   }
 
-  function sendBlowManual() {
-    room.send("game_input", { action: "fire_blow", amplitude: 1 });
-  }
-  function onBlowTouch() { lastTouchAt = Date.now(); sendBlowManual(); }
-  function onBlowClick() { if (!wasTouch()) sendBlowManual(); }
-
   // ── Shake (accelerometer) state ───────────────────────────────────────────
   let motionEnabled = false;
   let motionMsg = "";
@@ -139,33 +133,15 @@
     }
   }
 
-  async function enableMotion() {
+  function enableMotion() {
+    if (!motionGranted) return;
     if (!window.isSecureContext) {
       motionMsg = "Motion sensors require HTTPS (or localhost).";
       return;
     }
-    const dm = DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> };
-    if (typeof dm.requestPermission === "function") {
-      try {
-        const p = await dm.requestPermission();
-        if (p !== "granted") {
-          motionMsg = "Motion permission denied.";
-          return;
-        }
-      } catch {
-        motionMsg = "Could not request motion permission.";
-        return;
-      }
-    }
     motionEnabled = true;
-    motionMsg = "Shake detection enabled!";
+    motionMsg = "Shake detection ready.";
   }
-
-  function sendShakeManual() {
-    room.send("game_input", { action: "fire_shake", magnitude: 1.2 });
-  }
-  function onShakeTouch() { lastTouchAt = Date.now(); sendShakeManual(); }
-  function onShakeClick() { if (!wasTouch()) sendShakeManual(); }
 
   // ── Extinguish (tap) state ────────────────────────────────────────────────
   let extinguishTaps = 0;
@@ -174,8 +150,6 @@
     extinguishTaps++;
     room.send("game_input", { action: "fire_tap" });
   }
-  function onExtinguishTouch() { lastTouchAt = Date.now(); sendExtinguish(); }
-  function onExtinguishClick() { if (!wasTouch()) sendExtinguish(); }
 
   // ── Timer ─────────────────────────────────────────────────────────────────
   function startTimer(totalDurationMs: number, serverTimestamp: number) {
@@ -199,13 +173,25 @@
   };
   const STAGE_INSTRUCTIONS: Record<FireStage, string> = {
     strike: "Tap rapidly to strike the match",
-    blow: "Blow into your mic (or tap the button)",
+    blow: "Blow into your mic to grow the fire",
     shake: "Shake your phone to fan the flames!",
     extinguish: "Tap rapidly to stamp out the fire",
   };
 
   // ── Colyseus message handlers ─────────────────────────────────────────────
   onMount(() => {
+    if (micGranted) {
+      startMic();
+    } else {
+      micMsg = "Enable microphone in the lobby to play the blow stage.";
+    }
+
+    if (motionGranted) {
+      enableMotion();
+    } else {
+      motionMsg = "Enable motion in the lobby to play the shake stage.";
+    }
+
     room.onMessage("fire_round_start", (d: {
       totalStages: number;
       totalDurationMs: number;
@@ -343,30 +329,18 @@
         <button
           class="w-full py-5 rounded-xl bg-amber-600 text-white font-black text-xl active:scale-95 active:bg-amber-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:touchstart|preventDefault={onStrikeTouch}
-          on:click={onStrikeClick}
+          on:click={sendStrike}
         >
           STRIKE! ({strikeTaps})
         </button>
 
       {:else if myStage === "blow"}
         <div class="space-y-2">
-          {#if !micActive}
-            <button
-              class="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all"
-              on:click={startMic}
-            >
-              Enable Microphone
-            </button>
+          {#if !micGranted}
+            <div class="w-full rounded-xl border border-red-700 bg-red-950/50 px-4 py-3 text-center text-sm text-red-200">
+              Enable microphone in the lobby to use the blow stage.
+            </div>
           {/if}
-          <button
-            class="w-full py-5 rounded-xl bg-orange-600 text-white font-black text-xl active:scale-95 active:bg-orange-500 transition-all select-none"
-            style="touch-action:manipulation"
-            on:touchstart|preventDefault={onBlowTouch}
-            on:click={onBlowClick}
-          >
-            BLOW
-          </button>
           {#if micMsg}
             <p class="text-xs text-center {micActive ? 'text-green-400' : 'text-gray-400'}">{micMsg}</p>
           {/if}
@@ -374,22 +348,11 @@
 
       {:else if myStage === "shake"}
         <div class="space-y-2">
-          {#if !motionEnabled}
-            <button
-              class="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold active:scale-95 transition-all"
-              on:click={enableMotion}
-            >
-              Enable Motion
-            </button>
+          {#if !motionGranted}
+            <div class="w-full rounded-xl border border-red-700 bg-red-950/50 px-4 py-3 text-center text-sm text-red-200">
+              Enable motion in the lobby to use the shake stage.
+            </div>
           {/if}
-          <button
-            class="w-full py-5 rounded-xl bg-sky-600 text-white font-black text-xl active:scale-95 active:bg-sky-500 transition-all select-none"
-            style="touch-action:manipulation"
-            on:touchstart|preventDefault={onShakeTouch}
-            on:click={onShakeClick}
-          >
-            SHAKE
-          </button>
           {#if motionMsg}
             <p class="text-xs text-center {motionEnabled ? 'text-green-400' : 'text-gray-400'}">{motionMsg}</p>
           {/if}
@@ -399,8 +362,7 @@
         <button
           class="w-full py-5 rounded-xl bg-red-600 text-white font-black text-xl active:scale-95 active:bg-red-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:touchstart|preventDefault={onExtinguishTouch}
-          on:click={onExtinguishClick}
+          on:click={sendExtinguish}
         >
           TAP TO EXTINGUISH! ({extinguishTaps})
         </button>

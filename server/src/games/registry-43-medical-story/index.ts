@@ -21,17 +21,19 @@
  * Server messages → clients:
  *   "ms_role_phase"         { playerList, durationMs }
  *   "ms_roles_assigned"     { roles }
- *   "ms_submission_phase"   { phase, durationMs, bodyParts?, actions? }
+ *   "ms_phase_preview"      { phase, durationMs, history }
+ *   "ms_submission_phase"   { phase, durationMs, bodyParts?, actions?, tests?, history, promptExamples? }
  *   "ms_submit_ack"         { accepted, reason? }
- *   "ms_voting_phase"       { phase, submissions, durationMs }
+ *   "ms_voting_phase"       { phase, submissions, durationMs, history }
  *   "ms_vote_ack"           {}
- *   "ms_phase_result"       { phase, results, phaseWinner, points }
- *   "ms_round_recap"        { phaseWinners, scores }
+ *   "ms_results_pending"    { phase, history }
+ *   "ms_phase_result"       { phase, results, phaseWinner, points, history }
+ *   "ms_round_recap"        { phaseWinners, scores, history, recapTimeline }
  *   "round_skipped"         { reason }
  *
  * Client messages ← players:
  *   { action: "ms_role_vote", patient: string, doctor: string, nurse: string }
- *   { action: "ms_submit", text: string, bodyPart?: string, action?: string }
+ *   { action: "ms_submit", text: string, bodyPart?: string, action?: string, tests?: string[] }
  *   { action: "ms_vote", targetPlayerId: string }
  */
 
@@ -43,17 +45,23 @@ import {
   normalizeSubmission,
   isValidBodyPart,
   isValidAction,
+  normalizeFunnyTests,
   haveAllExpectedPlayersResponded,
   tallySubmissionVotes,
   computePhasePoints,
   BODY_PARTS,
   ACTIONS,
+  FUNNY_TESTS,
   PHASES,
   ROLE_VOTE_DURATION_SECS,
   SUBMISSION_DURATION_SECS,
+  PHASE_PREVIEW_SECS,
   VOTING_DURATION_SECS,
+  RESULTS_PENDING_MS,
   RESULTS_DISPLAY_MS,
   RECAP_DISPLAY_MS,
+  RECAP_STEP_MS,
+  getPhaseVoteWeight,
   type Phase as GamePhase,
   type Role,
   type Submission,
@@ -72,8 +80,20 @@ interface MedicalStoryInput {
   text?: string;
   bodyPart?: string;
   actionName?: string; // "action" conflicts with the action field
+  tests?: string[];
   // vote
   targetPlayerId?: string;
+}
+
+interface PhaseHistoryEntry {
+  phase: GamePhase;
+  winner: VoteResult | null;
+}
+
+interface RecapTimelineEntry {
+  phase: GamePhase;
+  revealAtMs: number;
+  winner: VoteResult | null;
 }
 
 // ── Per-round tracking ────────────────────────────────────────────────────────
@@ -95,6 +115,8 @@ interface RoundData {
   votedPlayers: Set<string>;
   /** Winners per phase. */
   phaseWinners: Map<GamePhase, VoteResult | null>;
+  /** Ordered history of revealed phase winners for the round. */
+  history: PhaseHistoryEntry[];
 }
 
 // ── Game class ────────────────────────────────────────────────────────────────
@@ -153,6 +175,7 @@ export default class MedicalStoryGame extends BaseGame {
       submittedPlayers: new Set(),
       votedPlayers: new Set(),
       phaseWinners: new Map(),
+      history: [],
     };
 
     // ── 1. Role voting ──────────────────────────────────────────────────────
@@ -192,12 +215,29 @@ export default class MedicalStoryGame extends BaseGame {
       this.round.submittedPlayers.clear();
       this.round.votedPlayers.clear();
 
+      // ── Phase preview (10-second info screen before countdown) ────────
+      this.broadcast("ms_phase_preview", {
+        phase,
+        durationMs: PHASE_PREVIEW_SECS * 1000,
+        history: this._getPhaseHistory(),
+      });
+      await this.delay(PHASE_PREVIEW_SECS * 1000);
+
       // ── Submission phase ──────────────────────────────────────────────
       this.broadcast("ms_submission_phase", {
         phase,
         durationMs: SUBMISSION_DURATION_SECS * 1000,
-        bodyParts: (phase === "complaint" || phase === "diagnosis") ? [...BODY_PARTS] : undefined,
+        bodyParts: phase === "complaint" ? [...BODY_PARTS] : undefined,
         actions: phase === "procedure" ? [...ACTIONS] : undefined,
+        tests: phase === "diagnosis" ? [...FUNNY_TESTS] : undefined,
+        promptExamples: phase === "catchphrase"
+          ? [
+              "the coupon surgeon",
+              "Dr. Oops-But-It-Worked",
+              "the allergic-to-bad-vibes specialist",
+            ]
+          : undefined,
+        history: this._getPhaseHistory(),
         // 3D scene placeholder: body part selector, action animation viewer
         scene3dPlaceholder: this._get3DPlaceholder(phase, "submission"),
       });
@@ -209,6 +249,7 @@ export default class MedicalStoryGame extends BaseGame {
       if (submissions.length === 0) {
         // Skip voting if no submissions
         this.round.phaseWinners.set(phase, null);
+        this.round.history.push({ phase, winner: null });
         continue;
       }
 
@@ -218,6 +259,7 @@ export default class MedicalStoryGame extends BaseGame {
         text: s.text,
         bodyPart: s.bodyPart,
         action: s.action,
+        tests: s.tests,
       }));
 
       const expectedVoterIds = playerIds.filter((playerId) => submissions.some((submission) => submission.playerId !== playerId));
@@ -226,6 +268,7 @@ export default class MedicalStoryGame extends BaseGame {
         phase,
         submissions: submissionList,
         durationMs: VOTING_DURATION_SECS * 1000,
+        history: this._getPhaseHistory(),
         // 3D scene placeholder: action preview animations
         scene3dPlaceholder: this._get3DPlaceholder(phase, "voting"),
       });
@@ -233,7 +276,7 @@ export default class MedicalStoryGame extends BaseGame {
       await this._waitForVotes(expectedVoterIds);
 
       // ── Tally and score ───────────────────────────────────────────────
-      const results = tallySubmissionVotes(submissions, this.round.phaseVotes);
+      const results = tallySubmissionVotes(submissions, this.round.phaseVotes, this._getVoteWeights(phase));
       const points = computePhasePoints(results, playerIds.length);
 
       // Accumulate pending scores
@@ -243,12 +286,21 @@ export default class MedicalStoryGame extends BaseGame {
 
       const winner = results.length > 0 ? results[0] : null;
       this.round.phaseWinners.set(phase, winner);
+      this.round.history.push({ phase, winner });
 
-      this.broadcast("ms_phase_result", {
-        phase,
-        results,
-        phaseWinner: winner,
+       this.broadcast("ms_results_pending", {
+         phase,
+         history: this._getPhaseHistory(),
+       });
+
+       await this.delay(RESULTS_PENDING_MS);
+
+       this.broadcast("ms_phase_result", {
+         phase,
+         results,
+         phaseWinner: winner,
         points: Object.fromEntries(points),
+        history: this._getPhaseHistory(),
         // 3D scene placeholder: winner celebration animation
         scene3dPlaceholder: this._get3DPlaceholder(phase, "result"),
       });
@@ -267,6 +319,8 @@ export default class MedicalStoryGame extends BaseGame {
       phaseWinners: phaseWinnersObj,
       scores: Object.fromEntries(this.pendingScores),
       roles: rolesObj,
+      history: this._getPhaseHistory(),
+      recapTimeline: this._getRecapTimeline(),
     });
 
     await this.delay(RECAP_DISPLAY_MS);
@@ -419,7 +473,16 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _handleSubmission(client: Client, input: MedicalStoryInput): void {
     const rd = this.round;
-    if (!rd || !this.submissionResolve || !rd.currentPhase) return;
+    if (!rd || !rd.currentPhase) return;
+
+    // Timer already expired — reject gracefully so client doesn't stay stuck
+    if (!this.submissionResolve) {
+      this.send(client.sessionId, "ms_submit_ack", {
+        accepted: false,
+        reason: "Time's up! Submission window has closed.",
+      });
+      return;
+    }
 
     // Already submitted
     if (rd.submittedPlayers.has(client.sessionId)) {
@@ -441,8 +504,8 @@ export default class MedicalStoryGame extends BaseGame {
 
     const submission: Submission = { playerId: client.sessionId, text };
 
-    // Validate body part for complaint/diagnosis phase
-    if (rd.currentPhase === "complaint" || rd.currentPhase === "diagnosis") {
+    // Validate body part for complaint phase
+    if (rd.currentPhase === "complaint") {
       if (!input.bodyPart || !isValidBodyPart(input.bodyPart)) {
         this.send(client.sessionId, "ms_submit_ack", {
           accepted: false,
@@ -451,6 +514,10 @@ export default class MedicalStoryGame extends BaseGame {
         return;
       }
       submission.bodyPart = input.bodyPart;
+    }
+
+    if (rd.currentPhase === "diagnosis") {
+      submission.tests = normalizeFunnyTests(input.tests ?? []);
     }
 
     // Validate action for procedure phase
@@ -524,8 +591,8 @@ export default class MedicalStoryGame extends BaseGame {
       },
       diagnosis: {
         submission: {
-          type: "body_selector_3d",
-          description: "3D body model for selecting the body part affected by the diagnosis.",
+          type: "diagnosis_lab_3d",
+          description: "Comedy lab station showing the fake diagnosis and optional funny tests players ran before deciding.",
         },
         voting: {
           type: "diagnosis_cards_3d",
@@ -553,7 +620,7 @@ export default class MedicalStoryGame extends BaseGame {
       catchphrase: {
         submission: {
           type: "doctor_avatar_3d",
-          description: "3D doctor character with speech bubble for catchphrase entry.",
+          description: '3D doctor character with speech bubble for a more open-ended boast: "That\'s why they call me ___."',
         },
         voting: {
           type: "catchphrase_display_3d",
@@ -576,7 +643,30 @@ export default class MedicalStoryGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
+  }
+
+  private _getVoteWeights(phase: GamePhase): Map<string, number> {
+    const weights = new Map<string, number>();
+    if (!this.round) return weights;
+
+    for (const [playerId, role] of this.round.roles.entries()) {
+      weights.set(playerId, getPhaseVoteWeight(role, phase));
+    }
+
+    return weights;
+  }
+
+  private _getPhaseHistory(): PhaseHistoryEntry[] {
+    return this.round ? this.round.history.map((entry) => ({ ...entry })) : [];
+  }
+
+  private _getRecapTimeline(): RecapTimelineEntry[] {
+    return PHASES.map((phase, index) => ({
+      phase,
+      revealAtMs: index * RECAP_STEP_MS,
+      winner: this.round?.phaseWinners.get(phase) ?? null,
+    }));
   }
 }

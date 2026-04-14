@@ -1,10 +1,12 @@
 <script lang="ts">
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import { getRoundLabel } from "../../../../shared/types";
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
-  $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
+  $: isLastRound = !state.isPracticeRound && state.currentRound >= state.gameConfig.roundCount;
   $: game = state.selectedGame;
+  $: roundLabel = getRoundLabel(state);
 
   /** Game-aware round end message for the player */
   function getRoundMessage(g: string, eliminated: boolean): string {
@@ -23,7 +25,7 @@
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="phone-round-end">
-  <h2 class="text-3xl font-black text-indigo-400">Round {state.currentRound} End</h2>
+  <h2 class="text-3xl font-black text-indigo-400">{roundLabel} End</h2>
   <div class="text-center">
     <p class="text-gray-400 text-sm">Your score</p>
     <p class="text-5xl font-black">{me?.score ?? 0}</p>
@@ -35,6 +37,8 @@
   {/if}
   {#if isLastRound}
     <p class="text-yellow-400 font-bold text-lg">That's the last round — game over!</p>
+  {:else if state.isPracticeRound}
+    <p class="text-gray-400 text-sm">Scored rounds start next.</p>
   {:else}
     <p class="text-gray-400 text-sm">Get ready for round {state.currentRound + 1}...</p>
   {/if}

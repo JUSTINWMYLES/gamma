@@ -12,8 +12,9 @@
  *
  * Mode 2 — Team Shake (4 players per team)
  * ─────────────────────────────────────────
- * - When playerCount is divisible by 4 (4, 8, 12, 16, 20), team mode activates.
- * - Otherwise falls back to individual mode.
+ * - Hosts can explicitly choose individual or team mode.
+ * - Team mode only runs when motion-ready players can form full teams of 4.
+ * - Otherwise the game falls back to individual mode.
  * - Each team of 4 shares a single avatar on the maze.
  * - Each team member is assigned a direction: UP, DOWN, LEFT, RIGHT.
  * - Shaking the phone sends a movement impulse in the assigned direction.
@@ -140,6 +141,11 @@ interface MazeInput {
   direction?: Direction;
 }
 
+interface TilePoint {
+  x: number;
+  y: number;
+}
+
 // ── Game class ────────────────────────────────────────────────────────────────
 
 export default class EscapeMazeGame extends BaseGame {
@@ -197,6 +203,14 @@ export default class EscapeMazeGame extends BaseGame {
   /** Seed for bracket randomization. */
   private bracketSeed = 0;
 
+  private configuredMode(): "individual" | "team" {
+    return this.room.state.gameConfig.gameMode === "team" ? "team" : "individual";
+  }
+
+  private _motionReadyPlayers() {
+    return this._activePlayers().filter((p) => this.hasMotionPermission(p));
+  }
+
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
   protected override async onLoad(): Promise<void> {
@@ -211,6 +225,7 @@ export default class EscapeMazeGame extends BaseGame {
     this.bracketSeed = Date.now();
 
     const isBracket = this.room.state.gameConfig.matchMode === "1v1_bracket";
+    const desiredMode = this.configuredMode();
 
     // Bracket mode forces individual mode (no teams)
     if (isBracket) {
@@ -221,9 +236,8 @@ export default class EscapeMazeGame extends BaseGame {
       const bracket = buildBracket(playerIds, this.bracketSeed, { heatSize, advanceCount: 1 });
       this.room.state.bracket = bracket;
     } else {
-      // Determine game mode based on player count
-      const playerCount = this._activePlayers().length;
-      if (playerCount >= 4 && playerCount % 4 === 0) {
+      const motionReadyCount = this._motionReadyPlayers().length;
+      if (desiredMode === "team" && motionReadyCount >= 4 && motionReadyCount % 4 === 0) {
         this.gameMode = "team";
       } else {
         this.gameMode = "individual";
@@ -233,6 +247,7 @@ export default class EscapeMazeGame extends BaseGame {
     this.broadcast("maze_mode", {
       mode: this.gameMode,
       playerCount: this._activePlayers().length,
+      motionReadyCount: this._motionReadyPlayers().length,
     });
   }
 
@@ -247,6 +262,10 @@ export default class EscapeMazeGame extends BaseGame {
     }
 
     const bracket = this.room.state.bracket;
+
+    if (this.hasPracticeRound()) {
+      await this._runBracketPracticeRound();
+    }
 
     this.broadcast("bracket_init", {
       totalPlayers: this._activePlayers().length,
@@ -346,6 +365,7 @@ export default class EscapeMazeGame extends BaseGame {
       }
     }
 
+    this.room.state.isPracticeRound = false;
     this.setPhase("scoreboard");
     await this.delay(6000);
   }
@@ -380,6 +400,25 @@ export default class EscapeMazeGame extends BaseGame {
     } else {
       this._scoreTeam();
     }
+  }
+
+  private async _runBracketPracticeRound(): Promise<void> {
+    this.room.state.currentRound = 0;
+    this.room.state.isPracticeRound = true;
+
+    this.setPhase("countdown");
+    await this.delay(3000);
+
+    this.setPhase("in_round");
+    this.room.state.phaseStartedAt = Date.now();
+    await this.delay(500);
+
+    await this.runRound(1);
+
+    this.setPhase("round_end");
+    await this.delay(4000);
+
+    this.room.state.isPracticeRound = false;
   }
 
   override handleInput(client: Client, data: unknown): void {
@@ -474,18 +513,21 @@ export default class EscapeMazeGame extends BaseGame {
       }
     }
 
+    // Set start position (top-left cell center)
+    this.startPos = { x: 1, y: 1 };
+
+    // Set exit position (bottom-right cell center)
+    this.exitPos = { x: (w - 1) * 2 + 1, y: (h - 1) * 2 + 1 };
+
     // ── Create loops by removing interior walls ──────────────────
     // A perfect DFS maze has exactly one path between any two cells.
     // Removing some interior walls creates loops / alternative routes,
     // making the maze feel more complex and giving players choices.
+    const baselinePath = this._findMazePath(this.startPos, this.exitPos);
     this._removeExtraWalls(rng, w, h);
+    this._ensureAlternateRoute(baselinePath, rng);
 
-    // Set start position (top-left cell center)
-    this.startPos = { x: 1, y: 1 };
     this.mazeTiles[this.startPos.y * MAP_W + this.startPos.x] = TILE_START;
-
-    // Set exit position (bottom-right cell center)
-    this.exitPos = { x: (w - 1) * 2 + 1, y: (h - 1) * 2 + 1 };
     this.mazeTiles[this.exitPos.y * MAP_W + this.exitPos.x] = TILE_EXIT;
 
     // Broadcast maze info
@@ -496,6 +538,7 @@ export default class EscapeMazeGame extends BaseGame {
       startY: this.startPos.y,
       exitX: this.exitPos.x,
       exitY: this.exitPos.y,
+      tiles: [...this.mazeTiles],
     });
   }
 
@@ -556,6 +599,102 @@ export default class EscapeMazeGame extends BaseGame {
     for (let i = 0; i < removeCount; i++) {
       this.mazeTiles[candidates[i]] = TILE_PATH;
     }
+  }
+
+  private _ensureAlternateRoute(path: TilePoint[], rng: () => number): void {
+    if (path.length < 12) return;
+
+    let bestPair: { from: TilePoint; to: TilePoint } | null = null;
+    let bestScore = -Infinity;
+
+    for (let i = 2; i < path.length - 6; i++) {
+      for (let j = i + 6; j < path.length - 2; j++) {
+        const from = path[i];
+        const to = path[j];
+        const manhattan = Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
+        if (manhattan < 2 || manhattan > 8) continue;
+
+        const score = (j - i) - manhattan;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPair = { from, to };
+        }
+      }
+    }
+
+    if (bestPair) {
+      this._carveShortcut(bestPair.from, bestPair.to, rng);
+      return;
+    }
+
+    const startIndex = Math.max(1, Math.floor(path.length * 0.2));
+    const endIndex = Math.min(path.length - 2, Math.floor(path.length * 0.75));
+    this._carveShortcut(path[startIndex], path[endIndex], rng);
+  }
+
+  private _carveShortcut(from: TilePoint, to: TilePoint, rng: () => number): void {
+    const horizontalFirst = rng() >= 0.5;
+    if (horizontalFirst) {
+      this._carveLine(from.x, from.y, to.x, from.y);
+      this._carveLine(to.x, from.y, to.x, to.y);
+    } else {
+      this._carveLine(from.x, from.y, from.x, to.y);
+      this._carveLine(from.x, to.y, to.x, to.y);
+    }
+  }
+
+  private _carveLine(fromX: number, fromY: number, toX: number, toY: number): void {
+    const stepX = Math.sign(toX - fromX);
+    const stepY = Math.sign(toY - fromY);
+    let x = fromX;
+    let y = fromY;
+
+    this._setWalkableTile(x, y);
+    while (x !== toX || y !== toY) {
+      if (x !== toX) x += stepX;
+      else if (y !== toY) y += stepY;
+      this._setWalkableTile(x, y);
+    }
+  }
+
+  private _setWalkableTile(x: number, y: number): void {
+    if (x <= 0 || y <= 0 || x >= MAP_W - 1 || y >= MAP_H - 1) return;
+    this.mazeTiles[y * MAP_W + x] = TILE_PATH;
+  }
+
+  private _findMazePath(start: TilePoint, goal: TilePoint): TilePoint[] {
+    const queue: TilePoint[] = [start];
+    const visited = new Set<string>([`${start.x},${start.y}`]);
+    const parent = new Map<string, string>();
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.x === goal.x && current.y === goal.y) {
+        const path: TilePoint[] = [];
+        let key = `${goal.x},${goal.y}`;
+        while (key) {
+          const [x, y] = key.split(",").map(Number);
+          path.push({ x, y });
+          key = parent.get(key) ?? "";
+        }
+        return path.reverse();
+      }
+
+      for (const { dx, dy } of Object.values(DIR_OFFSETS)) {
+        const nx = current.x + dx;
+        const ny = current.y + dy;
+        if (nx < 0 || ny < 0 || nx >= MAP_W || ny >= MAP_H) continue;
+        if (this.mazeTiles[ny * MAP_W + nx] === TILE_WALL) continue;
+
+        const key = `${nx},${ny}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        parent.set(key, `${current.x},${current.y}`);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+
+    return [];
   }
 
   // ── Individual mode ───────────────────────────────────────────────────────
@@ -700,7 +839,7 @@ export default class EscapeMazeGame extends BaseGame {
   // ── Team mode ─────────────────────────────────────────────────────────────
 
   private async _runTeamRound(_round: number): Promise<void> {
-    const players = this._activePlayers();
+    const players = this._motionReadyPlayers();
     const teamCount = Math.floor(players.length / 4);
 
     // Shuffle players and split into teams of 4
@@ -784,6 +923,9 @@ export default class EscapeMazeGame extends BaseGame {
   }
 
   private _handleTeamShake(sessionId: string): void {
+    const player = this.room.state.players.get(sessionId);
+    if (!this.hasMotionPermission(player)) return;
+
     // Find which team this player belongs to
     const team = this.teams.find((t) => t.memberIds.includes(sessionId));
     if (!team || team.pos.escaped) return;
@@ -950,7 +1092,7 @@ export default class EscapeMazeGame extends BaseGame {
 
   private _activePlayers() {
     return [...this.room.state.players.values()].filter(
-      (p) => p.isConnected && !p.isEliminated,
+      (p) => this.isPlayerActive(p),
     );
   }
 

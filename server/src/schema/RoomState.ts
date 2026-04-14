@@ -41,6 +41,9 @@ export class RoomState extends Schema {
   /** Which round of the current game is running (1-indexed). */
   @type("number") currentRound: number = 0;
 
+  /** True while the current round is an unscored warm-up round. */
+  @type("boolean") isPracticeRound: boolean = false;
+
   /** Epoch ms at which the current phase started (for client-side countdown sync). */
   @type("number") phaseStartedAt: number = 0;
 

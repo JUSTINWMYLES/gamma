@@ -14,8 +14,11 @@
     if (!roomCode.trim() || roomCode.length !== 4) { localError = "Enter the 4-character room code from the TV."; return; }
     if (!name.trim()) { localError = "Enter your name."; return; }
     submitting = true;
-    try { dispatch("join", { roomCode: roomCode.toUpperCase(), name: name.trim() }); }
-    catch { localError = "Could not join room. Check the code and try again."; submitting = false; }
+    dispatch("join", { roomCode: roomCode.toUpperCase(), name: name.trim() });
+  }
+
+  $: if (error || localError) {
+    submitting = false;
   }
 </script>
 

@@ -12,6 +12,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -169,7 +171,7 @@
 
   <!-- Round header -->
   <p class="text-sm text-gray-400 uppercase tracking-widest">
-    Odd One Out — Round {state.currentRound} of {state.gameConfig.roundCount}
+    Odd One Out — {getRoundProgressLabel(state)}
   </p>
 
   {#if roundSkipped}
@@ -290,8 +292,9 @@
           <div class="flex gap-3 justify-center flex-wrap">
             {#each results.oddPlayerIds as oddId}
               {@const oddPlayer = state.players.get(oddId)}
-              <span class="px-5 py-2 bg-indigo-900 border-2 border-indigo-500 rounded-xl text-xl font-black text-white">
-                {oddPlayer?.name ?? oddId}
+              <span class="flex items-center gap-3 px-5 py-2 bg-indigo-900 border-2 border-indigo-500 rounded-xl text-xl font-black text-white">
+                {#if oddPlayer}<PlayerIcon player={oddPlayer} size={30} />{/if}
+                <span>{oddPlayer?.name ?? oddId}</span>
               </span>
             {/each}
           </div>
@@ -317,12 +320,13 @@
               {@const roundScore = results.scores[p.id] ?? 0}
               {@const isOdd = results.oddPlayerIds.includes(p.id)}
               <div class="flex items-center gap-3">
-                <span class="w-28 truncate font-semibold text-white">
-                  {p.name}
+                <div class="flex w-36 items-center gap-2 truncate font-semibold text-white">
+                  <PlayerIcon player={p} size={24} />
+                  <span class="truncate">{p.name}</span>
                   {#if isOdd}
                     <span class="text-indigo-400 text-xs ml-1">(odd)</span>
                   {/if}
-                </span>
+                </div>
                 <div class="flex-1 h-6 bg-gray-700 rounded-full overflow-hidden">
                   <div
                     class="h-full rounded-full transition-all {roundScore > 0 ? 'bg-green-500' : 'bg-gray-600'}"

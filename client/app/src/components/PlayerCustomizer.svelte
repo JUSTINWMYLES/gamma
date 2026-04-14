@@ -2,19 +2,52 @@
   import type { Room } from "colyseus.js";
   import type { PlayerState } from "../../../shared/types";
   import { createEventDispatcher } from "svelte";
+  import PlayerIcon from "./PlayerIcon.svelte";
+  import {
+    createEmptyIconDesign,
+    DEFAULT_BRUSH_COLOR,
+    DEFAULT_ICON_BG,
+    DEFAULT_STICKER_SIZE,
+    designFromPlayer,
+    MAX_ICON_STICKERS,
+    serializeIconDesign,
+    type IconDesign,
+    type IconStroke,
+  } from "../../../shared/playerIconDesign";
 
   export let room: Room;
   export let me: PlayerState | undefined;
 
   const dispatch = createEventDispatcher<{ done: void }>();
 
-  // ── State ────────────────────────────────────────────────────────────────
-  let selectedEmoji = me?.iconEmoji || "";
-  let selectedText = me?.iconText || "";
-  let selectedColor = me?.iconBgColor || "#6366f1";
-  let mode: "emoji" | "text" = selectedText && !selectedEmoji ? "text" : "emoji";
+  const PALETTE = [
+    "#ffffff",
+    "#0f172a",
+    "#ef4444",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#06b6d4",
+    "#3b82f6",
+    "#8b5cf6",
+    "#ec4899",
+  ];
 
-  // ── Emoji grid — curated fun set ─────────────────────────────────────────
+  const BG_COLORS = [
+    "#6366f1",
+    "#ec4899",
+    "#f97316",
+    "#eab308",
+    "#22c55e",
+    "#06b6d4",
+    "#ffffff",
+    "#ef4444",
+    "#0f172a",
+    "#64748b",
+    "#14b8a6",
+    "#f43f5e",
+  ];
+
   const EMOJI_ROWS = [
     ["😎", "🤠", "👻", "🦊", "🐸", "🤡"],
     ["🔥", "💀", "🎃", "👽", "🤖", "🦄"],
@@ -23,151 +56,249 @@
     ["🏆", "🎯", "🚀", "💥", "🌊", "🍀"],
   ];
 
-  // ── Color presets ────────────────────────────────────────────────────────
-  const COLOR_PRESETS = [
-    { color: "#6366f1", label: "Indigo" },
-    { color: "#ec4899", label: "Pink" },
-    { color: "#f97316", label: "Orange" },
-    { color: "#eab308", label: "Yellow" },
-    { color: "#22c55e", label: "Green" },
-    { color: "#06b6d4", label: "Cyan" },
-    { color: "#8b5cf6", label: "Violet" },
-    { color: "#ef4444", label: "Red" },
-    { color: "#64748b", label: "Slate" },
-    { color: "#f43f5e", label: "Rose" },
-    { color: "#14b8a6", label: "Teal" },
-    { color: "#a855f7", label: "Purple" },
-  ];
+  type IconSource = {
+    iconDesign?: string;
+    iconEmoji?: string;
+    iconText?: string;
+    iconBgColor?: string;
+  };
 
-  // ── Derived display ──────────────────────────────────────────────────────
-  $: displayContent = mode === "emoji"
-    ? (selectedEmoji || "?")
-    : (selectedText || (me?.name?.slice(0, 2).toUpperCase() ?? "?"));
-
-  $: isEmoji = mode === "emoji";
-
-  // ── Actions ──────────────────────────────────────────────────────────────
-  function pickEmoji(emoji: string) {
-    selectedEmoji = emoji;
-    selectedText = "";
-    mode = "emoji";
+  function getInitialDesign(): IconDesign {
+    const iconSource = me as IconSource | undefined;
+    const playerDesign = me
+      ? designFromPlayer({
+          iconDesign: iconSource?.iconDesign ?? "",
+          iconEmoji: iconSource?.iconEmoji ?? "",
+          iconText: iconSource?.iconText ?? "",
+          iconBgColor: iconSource?.iconBgColor ?? DEFAULT_ICON_BG,
+        })
+      : createEmptyIconDesign(DEFAULT_ICON_BG);
+    return { ...playerDesign, text: null };
   }
 
-  function switchToText() {
-    mode = "text";
-    selectedEmoji = "";
-    if (!selectedText && me?.name) {
-      selectedText = me.name.slice(0, 2).toUpperCase();
-    }
+  let design: IconDesign = getInitialDesign();
+  let brushColor = DEFAULT_BRUSH_COLOR;
+  let brushSize = 8;
+  let selectedEmoji = "😎";
+  let placingEmoji = false;
+  let drawingStroke: IconStroke | null = null;
+  let canvasEl: HTMLDivElement | null = null;
+  let pointerActive = false;
+  let activePointerId: number | null = null;
+  let designHistory: IconDesign[] = [];
+
+  $: previewPlayer = {
+    ...(me ?? {} as PlayerState),
+    name: me?.name ?? "You",
+    iconEmoji: "",
+    iconText: "",
+    iconBgColor: design.bgColor,
+    iconDesign: serializeIconDesign({ ...design, text: null }),
+  } as PlayerState;
+
+  function resetDesign() {
+    design = createEmptyIconDesign(DEFAULT_ICON_BG);
+    placingEmoji = false;
+    designHistory = [];
   }
 
-  function switchToEmoji() {
-    mode = "emoji";
-    selectedText = "";
+  function pushHistorySnapshot() {
+    designHistory = [...designHistory, JSON.parse(serializeIconDesign({ ...design, text: null })) as IconDesign];
   }
 
-  function sendCustomization() {
-    const payload: { iconEmoji: string; iconText: string; iconBgColor: string } = {
-      iconEmoji: mode === "emoji" ? selectedEmoji : "",
-      iconText: mode === "text" ? selectedText.slice(0, 3) : "",
-      iconBgColor: selectedColor,
+  function startStroke(event: PointerEvent) {
+    if (placingEmoji || !canvasEl) return;
+    pointerActive = true;
+    activePointerId = event.pointerId;
+    canvasEl.setPointerCapture(event.pointerId);
+    pushHistorySnapshot();
+    const point = eventToPercent(event);
+    drawingStroke = {
+      color: brushColor,
+      size: brushSize,
+      points: [point],
     };
-    room.send("customize_player", payload);
-    dispatch("done");
+    design = { ...design, strokes: [...design.strokes, drawingStroke] };
   }
 
-  function handleTextInput(e: Event) {
-    const input = e.target as HTMLInputElement;
-    selectedText = input.value.slice(0, 3).toUpperCase();
+  function moveStroke(event: PointerEvent) {
+    if (!pointerActive || activePointerId !== event.pointerId || !drawingStroke) return;
+    drawingStroke.points = [...drawingStroke.points, eventToPercent(event)];
+    design = {
+      ...design,
+      strokes: [...design.strokes.slice(0, -1), { ...drawingStroke }],
+    };
+  }
+
+  function endStroke(event: PointerEvent) {
+    if (activePointerId !== event.pointerId) return;
+    pointerActive = false;
+    activePointerId = null;
+    drawingStroke = null;
+  }
+
+  function placeEmoji(event: PointerEvent) {
+    if (!placingEmoji || !canvasEl) return;
+    if (design.stickers.length >= MAX_ICON_STICKERS) return;
+    pushHistorySnapshot();
+    const point = eventToPercent(event);
+    design = {
+      ...design,
+      stickers: [...design.stickers, {
+        emoji: selectedEmoji,
+        x: point.x,
+        y: point.y,
+        size: DEFAULT_STICKER_SIZE,
+      }],
+    };
+  }
+
+  function eventToPercent(event: PointerEvent) {
+    const rect = canvasEl?.getBoundingClientRect();
+    if (!rect) return { x: 50, y: 50 };
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    return {
+      x: Math.max(0, Math.min(100, x)),
+      y: Math.max(0, Math.min(100, y)),
+    };
+  }
+
+  function toggleEmojiPlacement(emoji: string) {
+    selectedEmoji = emoji;
+    placingEmoji = true;
+  }
+
+  function stopEmojiPlacement() {
+    placingEmoji = false;
+  }
+
+  function setBackgroundColor(color: string) {
+    if (design.bgColor === color) return;
+    pushHistorySnapshot();
+    design = { ...design, bgColor: color };
+  }
+
+  function undoLastChange() {
+    const previous = designHistory[designHistory.length - 1];
+    if (!previous) return;
+    design = { ...previous, text: null };
+    designHistory = designHistory.slice(0, -1);
+  }
+
+  function saveCustomization() {
+    const finalDesign: IconDesign = {
+      ...design,
+      bgColor: design.bgColor || DEFAULT_ICON_BG,
+      text: null,
+    };
+
+    room.send("customize_player", {
+      iconEmoji: "",
+      iconText: "",
+      iconBgColor: finalDesign.bgColor,
+      iconDesign: serializeIconDesign(finalDesign),
+    });
+    dispatch("done");
   }
 </script>
 
-<div class="w-full max-w-xs mx-auto space-y-4">
-  <!-- Section header -->
-  <p class="text-center text-xs text-gray-400 uppercase tracking-widest font-semibold">Your Icon</p>
+<div class="w-full max-w-sm mx-auto space-y-4">
+  <p class="text-center text-xs text-gray-400 uppercase tracking-widest font-semibold">Design Your Icon</p>
 
-  <!-- Preview circle -->
   <div class="flex justify-center">
-    <div
-      class="w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-black/30 transition-colors duration-200 border-2 border-white/10"
-      style="background-color: {selectedColor}"
-    >
-      {#if isEmoji}
-        <span class="text-4xl select-none leading-none">{displayContent}</span>
-      {:else}
-        <span class="text-2xl font-black text-white select-none leading-none tracking-tight">{displayContent}</span>
-      {/if}
+    <PlayerIcon player={previewPlayer} size={96} />
+  </div>
+
+  <div class="bg-gray-900/70 border border-gray-700 rounded-2xl p-4 space-y-4">
+    <div class="flex items-center justify-between text-xs text-gray-400">
+      <span>{placingEmoji ? `Tap canvas to place ${selectedEmoji}` : "Draw directly in the circle"}</span>
+      <button class="text-gray-300 hover:text-white" on:click={stopEmojiPlacement}>Draw mode</button>
     </div>
-  </div>
 
-  <!-- Mode toggle: emoji vs text -->
-  <div class="flex items-center gap-1 bg-gray-800 rounded-lg p-1 mx-auto w-fit">
-    <button
-      class="px-4 py-1.5 text-xs font-semibold rounded-md transition-colors
-        {mode === 'emoji' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-      on:click={switchToEmoji}
-    >Emoji</button>
-    <button
-      class="px-4 py-1.5 text-xs font-semibold rounded-md transition-colors
-        {mode === 'text' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-      on:click={switchToText}
-    >Initials</button>
-  </div>
-
-  <!-- Emoji picker OR text input -->
-  {#if mode === "emoji"}
-    <div class="bg-gray-800/50 rounded-xl p-3 space-y-2">
-      {#each EMOJI_ROWS as row}
-        <div class="grid grid-cols-6 gap-1.5">
-          {#each row as emoji}
-            <button
-              class="w-full aspect-square rounded-lg text-2xl flex items-center justify-center transition-all
-                {selectedEmoji === emoji
-                  ? 'bg-indigo-600 scale-110 shadow-lg shadow-indigo-600/40'
-                  : 'bg-gray-700/50 active:bg-gray-600 active:scale-95'}"
-              on:click={() => pickEmoji(emoji)}
-            >{emoji}</button>
+    <div class="flex justify-center">
+      <div
+        bind:this={canvasEl}
+        class="relative w-56 h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none"
+        style="background:{design.bgColor};background-color:{design.bgColor};"
+        on:pointerdown={(event) => placingEmoji ? placeEmoji(event) : startStroke(event)}
+        on:pointermove={moveStroke}
+        on:pointerup={endStroke}
+        on:pointercancel={endStroke}
+        on:pointerleave={endStroke}
+      >
+        <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {#each design.strokes as stroke}
+            <polyline
+              fill="none"
+              stroke={stroke.color}
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width={stroke.size / 4}
+              points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
+            />
           {/each}
-        </div>
-      {/each}
-    </div>
-  {:else}
-    <div class="bg-gray-800/50 rounded-xl p-4 flex flex-col items-center gap-3">
-      <p class="text-xs text-gray-400">Enter 1-3 characters</p>
-      <input
-        type="text"
-        maxlength="3"
-        value={selectedText}
-        on:input={handleTextInput}
-        placeholder="AB"
-        class="w-24 text-center text-2xl font-black bg-gray-700 text-white rounded-lg px-3 py-2
-               border-2 border-gray-600 focus:border-indigo-500 focus:outline-none transition-colors
-               placeholder:text-gray-500 uppercase tracking-wider"
-      />
-    </div>
-  {/if}
+        </svg>
 
-  <!-- Color picker -->
-  <div class="space-y-1.5">
-    <p class="text-center text-xs text-gray-500">Color</p>
-    <div class="grid grid-cols-6 gap-2 px-2">
-      {#each COLOR_PRESETS as preset}
-        <button
-          class="w-full aspect-square rounded-full transition-all border-2
-            {selectedColor === preset.color
-              ? 'border-white scale-110 shadow-lg'
-              : 'border-transparent active:scale-95 opacity-80 hover:opacity-100'}"
-          style="background-color: {preset.color}; {selectedColor === preset.color ? `box-shadow: 0 0 12px ${preset.color}80;` : ''}"
-          title={preset.label}
-          on:click={() => (selectedColor = preset.color)}
-        ></button>
-      {/each}
+        {#each design.stickers as sticker}
+          <span
+            class="absolute leading-none pointer-events-none"
+            style="left:calc({sticker.x}% - {sticker.size / 2}px);top:calc({sticker.y}% - {sticker.size / 2}px);font-size:{sticker.size}px;"
+          >{sticker.emoji}</span>
+        {/each}
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <p class="text-xs text-gray-500 uppercase tracking-widest">Background</p>
+      <div class="grid grid-cols-6 gap-2">
+        {#each BG_COLORS as color}
+          <button
+            class="w-full aspect-square rounded-full border-2 {design.bgColor === color ? 'border-white scale-110' : 'border-transparent'}"
+            style="background-color:{color};"
+            on:click={() => setBackgroundColor(color)}
+          ></button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="space-y-2">
+      <p class="text-xs text-gray-500 uppercase tracking-widest">Brush</p>
+      <div class="flex gap-2 flex-wrap">
+        {#each PALETTE as color}
+          <button
+            class="w-8 h-8 rounded-full border-2 {brushColor === color ? 'border-white scale-110' : 'border-gray-600'}"
+            style="background-color:{color};"
+            on:click={() => (brushColor = color)}
+          ></button>
+        {/each}
+      </div>
+      <input type="range" min="4" max="18" bind:value={brushSize} class="w-full" />
+    </div>
+
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-500 uppercase tracking-widest">Emoji Stickers</p>
+        <span class="text-[11px] text-gray-500">{design.stickers.length}/{MAX_ICON_STICKERS}</span>
+      </div>
+      <div class="grid grid-cols-6 gap-1.5">
+        {#each EMOJI_ROWS.flat() as emoji}
+          <button
+            class="aspect-square rounded-lg text-2xl flex items-center justify-center transition-all {selectedEmoji === emoji && placingEmoji ? 'bg-indigo-600 scale-110 shadow-lg shadow-indigo-600/40' : 'bg-gray-800 active:bg-gray-700'}"
+            on:click={() => toggleEmojiPlacement(emoji)}
+          >{emoji}</button>
+        {/each}
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2">
+      <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={undoLastChange}>Undo</button>
+      <button class="py-2 rounded-xl bg-gray-800 text-gray-200 font-semibold active:bg-gray-700" on:click={resetDesign}>Reset</button>
     </div>
   </div>
 
-  <!-- Done button -->
   <button
     class="w-full py-3 rounded-xl text-sm font-bold bg-indigo-600 text-white active:bg-indigo-500 transition-colors active:scale-[0.98]"
-    on:click={sendCustomization}
-  >Done</button>
+    on:click={saveCustomization}
+  >Save Icon</button>
 </div>

@@ -13,6 +13,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -296,14 +297,15 @@
         </p>
       {/if}
 
-      <!-- Player roster -->
-      <div class="flex gap-3 justify-center flex-wrap">
-        {#each sortedPlayers as p}
-          <div class="px-4 py-2 bg-gray-800 rounded-lg text-center">
-            <p class="font-semibold text-white">{p.name}</p>
-          </div>
-        {/each}
-      </div>
+        <!-- Player roster -->
+        <div class="flex gap-3 justify-center flex-wrap">
+          {#each sortedPlayers as p}
+            <div class="px-4 py-2 bg-gray-800 rounded-lg text-center flex items-center gap-2">
+              <PlayerIcon player={p} size={24} />
+              <p class="font-semibold text-white">{p.name}</p>
+            </div>
+          {/each}
+        </div>
     </div>
 
   {:else if subPhase === "match_preview"}
@@ -479,7 +481,8 @@
       <!-- Remaining players -->
       <div class="flex gap-3 justify-center flex-wrap">
         {#each sortedPlayers.filter(p => !p.isEliminated) as p}
-          <div class="px-4 py-2 bg-cyan-900 border border-cyan-600 rounded-lg text-center">
+          <div class="px-4 py-2 bg-cyan-900 border border-cyan-600 rounded-lg text-center flex items-center gap-2">
+            <PlayerIcon player={p} size={24} />
             <p class="font-semibold text-white">{p.name}</p>
             <p class="text-xs text-cyan-400">{p.score} pts</p>
           </div>
@@ -492,7 +495,10 @@
           <p class="text-xs text-gray-500 uppercase tracking-widest mb-2">Eliminated</p>
           <div class="flex gap-2 justify-center flex-wrap">
             {#each sortedPlayers.filter(p => p.isEliminated) as p}
-              <div class="px-3 py-1 bg-gray-800 rounded-lg text-gray-500 text-sm">{p.name}</div>
+              <div class="px-3 py-1 bg-gray-800 rounded-lg text-gray-500 text-sm flex items-center gap-2">
+                <PlayerIcon player={p} size={18} />
+                <span>{p.name}</span>
+              </div>
             {/each}
           </div>
         </div>
@@ -535,6 +541,7 @@
           {#each sortedPlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
+              <PlayerIcon player={p} size={24} />
               <span class="flex-1 truncate font-semibold {p.id === championId ? 'text-yellow-400' : 'text-white'}">
                 {p.name}
                 {#if p.id === championId}

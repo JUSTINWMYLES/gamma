@@ -14,6 +14,8 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getRoundProgressLabel } from "../../../../shared/types";
+  import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -98,7 +100,7 @@
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-3xl font-black text-white">Shave the Yak</h1>
-      <p class="text-sm text-sky-300">Round {state.currentRound} of {state.gameConfig.roundCount}</p>
+      <p class="text-sm text-sky-300">{getRoundProgressLabel(state)}</p>
     </div>
 
     <div class="text-right">
@@ -118,6 +120,7 @@
   {:else}
     <div class="flex-1 grid gap-4" style="grid-template-columns: repeat({Math.min(players.length, 8)}, 1fr);">
       {#each players as p, i}
+        {@const player = state.players.get(p.playerId)}
         {@const color = PLAYER_COLORS[i % PLAYER_COLORS.length]}
         {@const bgColor = PLAYER_BG_COLORS[i % PLAYER_BG_COLORS.length]}
         <div
@@ -125,7 +128,10 @@
           style="background:{bgColor}; border: 2px solid {color}33;"
         >
           <!-- Player name -->
-          <p class="text-lg font-bold text-white truncate w-full text-center mb-3">{p.playerName}</p>
+          <div class="mb-3 flex w-full items-center justify-center gap-2 text-center">
+            {#if player}<PlayerIcon player={player} size={28} />{/if}
+            <p class="text-lg font-bold text-white truncate">{p.playerName}</p>
+          </div>
 
           <!-- Vertical progress bar -->
           <div class="flex-1 w-full flex flex-col items-center justify-end relative mb-3" style="min-height:180px;">
