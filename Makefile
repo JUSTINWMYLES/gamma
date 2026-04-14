@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := help
+
 .PHONY: install dev dev-server dev-client compose-up compose-down compose-logs build docker-build docker-push test test-unit test-e2e test-e2e-headed test-coverage smoke lint helm-lint helm-template helm-install-operator helm-uninstall-operator operator-manifests operator-build operator-test operator-docker-build operator-docker-push clean help
 
 # ── Variables ────────────────────────────────────────────────────────────────
