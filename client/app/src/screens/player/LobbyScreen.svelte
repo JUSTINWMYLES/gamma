@@ -26,6 +26,7 @@
     motion: "granted" | "denied" | "skipped" | "not_needed";
   }
   let permResult: PermissionResult | null = null;
+  let permissionMessage = "";
 
   type PermissionRequester = {
     requestPermission?: () => Promise<string>;
@@ -54,20 +55,51 @@
     const requesters = getSensorPermissionRequesters();
     if (requesters.length === 0) return "not_needed";
 
-    for (const requestPermission of requesters) {
+    // Kick off all Safari sensor permission requests from the same tap before
+    // yielding, otherwise later requests can lose transient activation.
+    const permissionPromises = requesters.map((requestPermission) => {
       try {
-        const permission = await requestPermission();
-        if (permission !== "granted") return "denied";
+        return requestPermission();
+      } catch {
+        return Promise.resolve("denied");
+      }
+    });
+
+    const permissions = await Promise.all(permissionPromises.map(async (permissionPromise) => {
+      try {
+        return await permissionPromise;
       } catch {
         return "denied";
       }
+    }));
+
+    if (permissions.some((permission) => permission !== "granted")) {
+      return "denied";
     }
 
     return "granted";
   }
 
+  function motionDeniedHelpText(): string {
+    const isIPhoneSafari = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isIPhoneSafari) {
+      return "Motion access was denied. Check browser permissions and make sure you are using HTTPS.";
+    }
+
+    return "Motion access was denied. On iPhone Safari, motion must be allowed from the tap itself. If it still fails, check Safari's Motion & Orientation Access setting for this device, then close and reopen Safari and try again.";
+  }
+
   async function requestAllPermissions() {
     const result: PermissionResult = { mic: "skipped", motion: "not_needed" };
+    permissionMessage = "";
+
+    // Safari on iPhone requires motion/orientation permission to be requested
+    // directly from the original tap. Request it before any awaited mic prompt.
+    result.motion = await requestMotionPermissions();
+
+    if (result.motion === "denied") {
+      permissionMessage = motionDeniedHelpText();
+    }
 
     // ── Microphone ──
     try {
@@ -81,8 +113,6 @@
       result.mic = "denied";
     }
 
-    result.motion = await requestMotionPermissions();
-
     permResult = result;
     syncPermissionsToServer(result);
     try {
@@ -93,6 +123,7 @@
 
   function skipConsent() {
     permResult = { mic: "skipped", motion: needsMotionPermission() ? "skipped" : "not_needed" };
+    permissionMessage = "";
     syncPermissionsToServer(permResult);
     try {
       localStorage.setItem(CONSENT_KEY, "skipped");
@@ -310,6 +341,9 @@
         <p class="text-sm text-gray-400 leading-relaxed">
           Some games use your microphone plus motion and tilt sensors. Grant access here so you never have to approve them mid-game.
         </p>
+        {#if permissionMessage}
+          <p class="text-xs text-amber-300 leading-relaxed">{permissionMessage}</p>
+        {/if}
         <button
           class="w-full py-3 rounded-xl text-base font-bold bg-indigo-600 text-white active:bg-indigo-500 transition-colors"
           on:click={requestAllPermissions}
