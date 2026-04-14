@@ -298,7 +298,7 @@
       <!-- Detection meter -->
       <div class="flex-1">
         <p class="text-xs text-gray-400 mb-1">Detection</p>
-        <div class="h-3 bg-gray-700 rounded-full overflow-hidden">
+        <div class="h-3 bg-gray-700 rounded-full overflow-hidden" data-testid="detection-meter">
           <div
             class="h-full rounded-full transition-all"
             style="width:{me?.detectionMeter ?? 0}%;
@@ -306,7 +306,7 @@
                 (me?.detectionMeter ?? 0) > 70 ? '#ef4444' :
                 (me?.detectionMeter ?? 0) > 40 ? '#f59e0b' : '#6366f1'
               }"
-            data-testid="detection-meter"
+            data-testid="detection-meter-fill"
           ></div>
         </div>
       </div>
