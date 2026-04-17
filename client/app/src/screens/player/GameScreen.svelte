@@ -10,6 +10,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import { isMotionPermissionGrantedThisSession } from "../../lib/permissions";
   import ShaveYak from "../../games/player/ShaveYak.svelte";
   import OddOneOut from "../../games/player/OddOneOut.svelte";
   import AudioOverlay from "../../games/player/AudioOverlay.svelte";
@@ -152,6 +153,12 @@
   function startTilt() {
     if (!tiltAllowed) {
       tiltError = "Enable motion in the lobby before using tilt controls.";
+      controlMode = "joystick";
+      localStorage.setItem("gamma_control_mode", "joystick");
+      return;
+    }
+    if (!isMotionPermissionGrantedThisSession()) {
+      tiltError = "Motion permission expired. Return to the lobby and re-enable permissions.";
       controlMode = "joystick";
       localStorage.setItem("gamma_control_mode", "joystick");
       return;
