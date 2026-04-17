@@ -18,6 +18,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import { getCachedMicStream } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -184,7 +185,9 @@
     }
 
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Prefer the cached stream from the lobby consent flow to avoid
+      // triggering a second browser permission prompt mid-game.
+      mediaStream = getCachedMicStream() ?? await navigator.mediaDevices.getUserMedia({ audio: true });
       micAllowed = true;
       micError = "";
       return true;

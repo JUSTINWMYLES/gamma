@@ -14,6 +14,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import { isMotionPermissionGrantedThisSession } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -223,6 +224,10 @@
 
   function startShakeDetection() {
     if (shakeListening || !motionGranted) return;
+    if (!isMotionPermissionGrantedThisSession()) {
+      motionBlockedMsg = "Motion permission expired. Return to the lobby and re-enable permissions.";
+      return;
+    }
     shakeListening = true;
     window.addEventListener("devicemotion", onDeviceMotion);
   }
