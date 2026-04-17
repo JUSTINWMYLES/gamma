@@ -15,6 +15,12 @@
 /** State for tracking active listeners so they can be removed. */
 let installed = false;
 
+/**
+ * Minimum acceleration magnitude (m/s²) that triggers shake-to-undo
+ * suppression. Above normal gravity (~9.81) but below a hard shake.
+ */
+const SHAKE_SUPPRESS_THRESHOLD = 15;
+
 // ── Zoom prevention ──────────────────────────────────────────────────────────
 
 /**
@@ -55,10 +61,7 @@ function onDeviceMotionCapture(e: DeviceMotionEvent): void {
   const a = e.accelerationIncludingGravity;
   if (!a) return;
   const mag = Math.sqrt((a.x ?? 0) ** 2 + (a.y ?? 0) ** 2 + (a.z ?? 0) ** 2);
-  // 15 m/s² is above normal gravity (~9.81) but well below a hard shake.
-  // This threshold catches shake-like movement without firing on
-  // every minor tilt.
-  if (mag > 15) {
+  if (mag > SHAKE_SUPPRESS_THRESHOLD) {
     e.preventDefault();
   }
 }
