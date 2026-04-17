@@ -8,6 +8,7 @@
   import GameDetailView from "../../components/GameDetailView.svelte";
   import PlayerCustomizer from "../../components/PlayerCustomizer.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
+  import { cacheMicStream, markMotionPermissionGranted, isMotionPermissionGrantedThisSession } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -53,7 +54,10 @@
 
   async function requestMotionPermissions(): Promise<PermissionResult["motion"]> {
     const requesters = getSensorPermissionRequesters();
-    if (requesters.length === 0) return "not_needed";
+    if (requesters.length === 0) {
+      markMotionPermissionGranted();
+      return "not_needed";
+    }
 
     // Kick off all Safari sensor permission requests from the same tap before
     // yielding, otherwise later requests can lose transient activation.
@@ -77,6 +81,7 @@
       return "denied";
     }
 
+    markMotionPermissionGranted();
     return "granted";
   }
 
@@ -105,8 +110,9 @@
     try {
       if (navigator.mediaDevices?.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Immediately stop tracks — we just needed the permission grant
-        stream.getTracks().forEach((t) => t.stop());
+        // Cache the live stream so game components can reuse it without
+        // triggering a second browser permission prompt.
+        cacheMicStream(stream);
         result.mic = "granted";
       }
     } catch {
@@ -313,7 +319,11 @@
       sendSetup({ setupStep: 1 });
     }
 
-    // Show device consent dialog if we haven't asked before
+    // Show device consent dialog if we haven't asked before.
+    // On iOS Safari, motion/orientation permissions are per-page-session
+    // (they reset on reload), so we must re-request even if localStorage
+    // says "granted" when the actual browser permission wasn't obtained
+    // in this session.
     try {
       const saved = localStorage.getItem(CONSENT_KEY);
       if (!saved) {
@@ -322,8 +332,23 @@
         permResult = { mic: "skipped", motion: needsMotionPermission() ? "skipped" : "not_needed" };
         syncPermissionsToServer(permResult);
       } else {
-        permResult = JSON.parse(saved) as PermissionResult;
-        syncPermissionsToServer(permResult);
+        const parsed = JSON.parse(saved) as PermissionResult;
+
+        // If cached result claims motion was granted but we're on a
+        // platform that gates it behind requestPermission (iOS) and
+        // the permission hasn't been obtained this page session, we
+        // must re-prompt so motion events actually fire.
+        const motionNeedsRerequest =
+          parsed.motion === "granted" &&
+          needsMotionPermission() &&
+          !isMotionPermissionGrantedThisSession();
+
+        if (motionNeedsRerequest) {
+          showConsent = true;
+        } else {
+          permResult = parsed;
+          syncPermissionsToServer(permResult);
+        }
       }
     } catch {
       showConsent = true;

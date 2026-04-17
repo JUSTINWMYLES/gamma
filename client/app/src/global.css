@@ -83,6 +83,13 @@ html, body, #app {
   height: 100%;
 }
 
+/* ── Mobile zoom prevention ────────────────────────────────────────────────── */
+/* touch-action: manipulation allows taps and scrolls but blocks             */
+/* pinch-to-zoom and double-tap-to-zoom across the entire app.               */
+html {
+  touch-action: manipulation;
+}
+
 body {
   background: var(--bg-base);
   color: var(--text-primary);
