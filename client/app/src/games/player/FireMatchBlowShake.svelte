@@ -114,8 +114,11 @@
 
   function stopMic() {
     if (micCheckTimer) { clearInterval(micCheckTimer); micCheckTimer = null; }
-    // Don't stop the stream tracks — the stream may be the globally cached
-    // mic stream from the lobby and could be reused by other game stages.
+    // Only stop tracks if this is NOT the globally cached mic stream from
+    // the lobby, which may be reused by other game stages.
+    if (micStream && micStream !== getCachedMicStream()) {
+      micStream.getTracks().forEach((t) => t.stop());
+    }
     micStream = null;
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
     analyser = null;
