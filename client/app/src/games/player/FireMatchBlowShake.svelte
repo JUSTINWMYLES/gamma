@@ -3,6 +3,7 @@
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
   import CampfireCanvas from "../shared/CampfireCanvas.svelte";
+  import { getCachedMicStream, isMotionPermissionGrantedThisSession } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -79,7 +80,12 @@
         micMsg = "Microphone requires HTTPS (or localhost).";
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Prefer the cached stream from the lobby consent flow to avoid
+      // triggering a second browser permission prompt mid-game.
+      let stream = getCachedMicStream();
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       micStream = stream;
       audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);
@@ -108,7 +114,9 @@
 
   function stopMic() {
     if (micCheckTimer) { clearInterval(micCheckTimer); micCheckTimer = null; }
-    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    // Don't stop the stream tracks — the stream may be the globally cached
+    // mic stream from the lobby and could be reused by other game stages.
+    micStream = null;
     if (audioCtx) { audioCtx.close(); audioCtx = null; }
     analyser = null;
     micActive = false;
@@ -137,6 +145,13 @@
     if (!motionGranted) return;
     if (!window.isSecureContext) {
       motionMsg = "Motion sensors require HTTPS (or localhost).";
+      return;
+    }
+    // On iOS, DeviceMotionEvent.requestPermission() must have been called
+    // this page session. If the lobby didn't obtain it (e.g. page reloaded
+    // mid-game), motion events won't fire.
+    if (!isMotionPermissionGrantedThisSession()) {
+      motionMsg = "Motion permission expired. Return to the lobby and re-enable permissions.";
       return;
     }
     motionEnabled = true;
