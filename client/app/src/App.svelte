@@ -135,6 +135,7 @@
     "registry-03-tap-speed":             "pinball_spring_160",
     "registry-19-shave-the-yak":        "fart",
     "registry-25-lowball-marketplace":   "zazie",
+    "registry-28-wanted-ad":             "entertainer",
     "registry-04-escape-maze":           "pixelland",
     "registry-17-fire-match-blow-shake": "vivacity",
     "registry-14-dont-get-caught":       "le_grand_chase",
