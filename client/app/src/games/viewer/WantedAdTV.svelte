@@ -151,6 +151,7 @@
     clearTimer();
   });
 
+  $: playerCards = [...state.players.values()];
   $: leaderboard = [...state.players.values()].sort((a, b) => (roundScores[b.id] ?? b.score) - (roundScores[a.id] ?? a.score));
 </script>
 
@@ -193,14 +194,12 @@
             <div class="h-full bg-amber-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
           </div>
           <div class="grid grid-cols-2 xl:grid-cols-3 gap-4 pt-2">
-            {#each [...state.players.values()] as player}
+            {#each playerCards as player}
               <div class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center gap-3">
                 <PlayerIcon {player} size={40} />
                 <div>
                   <p class="font-black text-white">{player.name}</p>
-                  <p class="text-xs uppercase tracking-[0.2em] text-amber-100/55">
-                    {submittedCount > 0 && submittedCount >= [...state.players.values()].findIndex((p) => p.id === player.id) + 1 ? "In the mix" : "Drafting"}
-                  </p>
+                  <p class="text-xs uppercase tracking-[0.2em] text-amber-100/55">Writing poster</p>
                 </div>
               </div>
             {/each}
