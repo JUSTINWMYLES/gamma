@@ -593,6 +593,54 @@ export const GAME_INSTRUCTIONS: Record<string, InstructionSlide[]> = {
     },
   ],
 
+  "registry-28-wanted-ad": [
+    {
+      heading: "Wanted Ad",
+      body: "The sheriff hands you a dusty western poster with key fields missing.",
+      bgClass: "bg-gradient-to-br from-amber-900 via-orange-900 to-yellow-900",
+      headingColor: "text-amber-300",
+      bodyColor: "text-amber-100",
+      fontClass: "font-black",
+      icon: "🤠",
+    },
+    {
+      heading: "You Get An Outlaw",
+      body: "The lobby is shuffled and you get assigned another player. Their icon becomes your poster portrait.",
+      bgClass: "bg-gradient-to-br from-red-900 via-orange-900 to-amber-900",
+      headingColor: "text-red-300",
+      bodyColor: "text-red-100",
+      fontClass: "font-bold",
+      icon: "🎯",
+    },
+    {
+      heading: "Fill In The Blanks",
+      body: "Pick any wanted condition you like and optionally add a bounty and a reason they're wanted.",
+      bgClass: "bg-gradient-to-br from-stone-900 via-amber-950 to-yellow-950",
+      headingColor: "text-yellow-200",
+      bodyColor: "text-yellow-100",
+      fontClass: "font-bold",
+      icon: "📝",
+    },
+    {
+      heading: "Watch The Reveal",
+      body: "Every finished poster gets a ten-second spotlight on the wanted wall.",
+      bgClass: "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
+      headingColor: "text-emerald-300",
+      bodyColor: "text-emerald-100",
+      fontClass: "font-bold",
+      icon: "📜",
+    },
+    {
+      heading: "Vote For The Best",
+      body: "After the reveal, vote for the poster you liked most. The top poster earns the bragging rights and bonus points.",
+      bgClass: "bg-gradient-to-br from-fuchsia-900 via-purple-900 to-violet-900",
+      headingColor: "text-fuchsia-300",
+      bodyColor: "text-fuchsia-100",
+      fontClass: "font-black",
+      icon: "🗳️",
+    },
+  ],
+
   "registry-43-medical-story": [
     {
       heading: "Medical Story",
