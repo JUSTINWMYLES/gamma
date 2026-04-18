@@ -51,7 +51,7 @@ export function normalizeReason(value: string): string {
 
 export function normalizeBounty(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
-  const raw = typeof value === "number" ? String(value) : String(value);
+  const raw = String(value);
   const digits = raw.replace(/[^\d.-]/g, "");
   if (!digits) return null;
   const parsed = Number(digits);
