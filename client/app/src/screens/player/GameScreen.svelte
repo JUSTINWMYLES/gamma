@@ -25,6 +25,7 @@
   import WordBuild from "../../games/player/WordBuild.svelte";
   import TierRanking from "../../games/player/TierRanking.svelte";
   import MedicalStory from "../../games/player/MedicalStory.svelte";
+  import WantedAd from "../../games/player/WantedAd.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -51,6 +52,7 @@
   $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
   $: isGridTapColors = state.selectedGame === "registry-10-grid-tap-colors";
   $: isWordBuild = state.selectedGame === "registry-27-word-build";
+  $: isWantedAd = state.selectedGame === "registry-28-wanted-ad";
   $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
   $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
 
@@ -192,7 +194,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isTierRanking || isMedicalStory) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -258,6 +260,9 @@
 {#if isMedicalStory}
   <!-- ── Registry-43: Medical Story ──────────────────────────────── -->
   <MedicalStory {room} {state} {me} />
+{:else if isWantedAd}
+  <!-- ── Registry-28: Wanted Ad ─────────────────────────────────── -->
+  <WantedAd {room} {state} {me} />
 {:else if isWordBuild}
   <!-- ── Registry-27: Word Build ─────────────────────────────────── -->
   <WordBuild {room} {state} {me} />
