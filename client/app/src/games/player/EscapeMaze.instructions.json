@@ -1,0 +1,119 @@
+{
+  "gameId": "registry-04-escape-maze",
+  "modes": {
+    "default": [
+      {
+        "heading": "Escape Maze",
+        "body": "Navigate the maze and find your way out!",
+        "bgClass": "bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900",
+        "headingColor": "text-sky-300",
+        "bodyColor": "text-sky-100",
+        "fontClass": "font-black",
+        "icon": "🗺️"
+      },
+      {
+        "heading": "Use the Controls",
+        "body": "Swipe or use the joystick on your phone to move through the maze.",
+        "bgClass": "bg-gradient-to-br from-indigo-900 via-blue-900 to-cyan-900",
+        "headingColor": "text-indigo-300",
+        "bodyColor": "text-indigo-100",
+        "fontClass": "font-bold",
+        "icon": "🕹️"
+      },
+      {
+        "heading": "Race to the Exit",
+        "body": "Find and reach the exit before other players. Faster times earn more points!",
+        "bgClass": "bg-gradient-to-br from-green-900 via-emerald-900 to-lime-900",
+        "headingColor": "text-green-300",
+        "bodyColor": "text-green-100",
+        "fontClass": "font-bold",
+        "icon": "🏁"
+      },
+      {
+        "heading": "New Maze Each Round",
+        "body": "Every round generates a fresh maze. Memorization won't help, so stay sharp!",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-fuchsia-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-black",
+        "icon": "🔄"
+      }
+    ],
+    "individual": [
+      {
+        "heading": "Escape Maze",
+        "body": "Navigate the maze and find your way out!",
+        "bgClass": "bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900",
+        "headingColor": "text-sky-300",
+        "bodyColor": "text-sky-100",
+        "fontClass": "font-black",
+        "icon": "🗺️"
+      },
+      {
+        "heading": "Use the Controls",
+        "body": "Swipe or use the joystick on your phone to move through the maze.",
+        "bgClass": "bg-gradient-to-br from-indigo-900 via-blue-900 to-cyan-900",
+        "headingColor": "text-indigo-300",
+        "bodyColor": "text-indigo-100",
+        "fontClass": "font-bold",
+        "icon": "🕹️"
+      },
+      {
+        "heading": "Race to the Exit",
+        "body": "Find and reach the exit before other players. Faster times earn more points!",
+        "bgClass": "bg-gradient-to-br from-green-900 via-emerald-900 to-lime-900",
+        "headingColor": "text-green-300",
+        "bodyColor": "text-green-100",
+        "fontClass": "font-bold",
+        "icon": "🏁"
+      },
+      {
+        "heading": "New Maze Each Round",
+        "body": "Every round generates a fresh maze. Memorization won't help, so stay sharp!",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-fuchsia-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-black",
+        "icon": "🔄"
+      }
+    ],
+    "team": [
+      {
+        "heading": "Escape Maze Team Mode",
+        "body": "Teams of four share one maze runner, so every move needs coordination.",
+        "bgClass": "bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900",
+        "headingColor": "text-sky-300",
+        "bodyColor": "text-sky-100",
+        "fontClass": "font-black",
+        "icon": "🧭"
+      },
+      {
+        "heading": "One Direction Each",
+        "body": "Every teammate gets one job: up, down, left, or right.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-indigo-900 to-blue-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "↕️"
+      },
+      {
+        "heading": "Shake to Move",
+        "body": "When your direction is needed, shake your phone to push the shared runner that way.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-bold",
+        "icon": "📳"
+      },
+      {
+        "heading": "Talk It Out",
+        "body": "Call out walls, corners, and openings. The fastest coordinated team reaches the exit first.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-orange-900 to-red-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-black",
+        "icon": "🏁"
+      }
+    ]
+  }
+}

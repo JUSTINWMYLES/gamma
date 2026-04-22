@@ -1,0 +1,52 @@
+{
+  "gameId": "registry-43-medical-story",
+  "modes": {
+    "default": [
+      {
+        "heading": "Medical Story",
+        "body": "A patient just arrived by ambulance, and it is time to save or roast them.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "🚑"
+      },
+      {
+        "heading": "Assign Roles",
+        "body": "Vote to pick the patient, doctor, and nurse. Everyone else becomes a bystander.",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "🏥"
+      },
+      {
+        "heading": "Four Rounds of Chaos",
+        "body": "Describe the complaint, invent a diagnosis, devise a procedure, and finish the doctor's brag.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-bold",
+        "icon": "🩺"
+      },
+      {
+        "heading": "Vote for the Funniest",
+        "body": "After each phase, vote for your favorite entry. The winning author earns points.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-orange-900 to-yellow-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      },
+      {
+        "heading": "The Best Doctor Wins!",
+        "body": "Rack up points across all phases and become the funniest medical mind in the room.",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-purple-900 to-violet-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-fuchsia-100",
+        "fontClass": "font-black",
+        "icon": "🏆"
+      }
+    ]
+  }
+}

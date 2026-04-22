@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   PHASES,
   BODY_PARTS,
@@ -31,6 +31,7 @@ import {
   type Role,
   type Submission,
 } from "../src/games/registry-43-medical-story/medicalStoryLogic";
+import MedicalStoryGame from "../src/games/registry-43-medical-story";
 
 // ── PHASES ──────────────────────────────────────────────────────────────────
 
@@ -662,5 +663,98 @@ describe("integration: full round flow", () => {
     expect(results[0].playerId).toBe("p4");
     expect(results[0].action).toBe("Shock");
     expect(results[0].voteCount).toBe(2);
+  });
+});
+
+describe("MedicalStoryGame timed payloads", () => {
+  function createRoomStub() {
+    const players = new Map([
+      ["p1", { id: "p1", name: "Alex", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+      ["p2", { id: "p2", name: "Blair", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+      ["p3", { id: "p3", name: "Casey", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+    ]);
+
+    return {
+      state: {
+        phase: "in_round",
+        selectedGame: "registry-43-medical-story",
+        phaseStartedAt: 0,
+        currentRound: 1,
+        isPracticeRound: false,
+        roundDurationSecs: 60,
+        gameConfig: {
+          roundCount: 1,
+          timeLimitSecs: 60,
+          practiceRoundEnabled: false,
+        },
+        players,
+      },
+      broadcast: vi.fn(),
+      clients: [],
+    } as any;
+  }
+
+  it("broadcasts server timestamps for every timed phase", async () => {
+    const room = createRoomStub();
+    const game = new MedicalStoryGame(room) as any;
+
+    game.delay = () => Promise.resolve();
+    game._waitForRoleVotes = () => Promise.resolve();
+    game._waitForSubmissions = async (playerIds: string[]) => {
+      const round = game.round;
+      const authorId = playerIds[0];
+      round.submissions.set(authorId, {
+        playerId: authorId,
+        text: `submission-${round.currentPhase}`,
+      });
+    };
+    game._waitForVotes = () => Promise.resolve();
+
+    await game.runRound(1);
+
+    const broadcasts = room.broadcast.mock.calls.map(([type, payload]: [string, Record<string, unknown>]) => ({
+      type,
+      payload,
+    }));
+
+    for (const type of ["ms_role_phase", "ms_phase_preview", "ms_submission_phase", "ms_voting_phase"]) {
+      const matching = broadcasts.filter((event) => event.type === type);
+      expect(matching.length).toBeGreaterThan(0);
+      for (const event of matching) {
+        expect(event.payload.durationMs).toBeGreaterThan(0);
+        expect(event.payload.serverTimestamp).toEqual(expect.any(Number));
+      }
+    }
+  });
+
+  it("ignores stale submission timeouts after a phase resolves early", async () => {
+    vi.useFakeTimers();
+    const room = createRoomStub();
+    const game = new MedicalStoryGame(room) as any;
+
+    const firstWait = game._waitForSubmissions(["p1"]);
+    game.round = {
+      roles: new Map(),
+      roleVotes: new Map(),
+      currentPhase: "complaint",
+      submissions: new Map(),
+      phaseVotes: new Map(),
+      submittedPlayers: new Set(["p1"]),
+      votedPlayers: new Set(),
+      phaseWinners: new Map(),
+      history: [],
+    };
+    game._checkSubmissionsComplete(["p1"]);
+    await firstWait;
+
+    const secondWait = game._waitForSubmissions(["p2"]);
+    expect(game.submissionResolve).not.toBeNull();
+
+    vi.advanceTimersByTime(44_999);
+    await Promise.resolve();
+
+    expect(game.submissionResolve).not.toBeNull();
+
+    void secondWait;
   });
 });

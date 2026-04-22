@@ -1,0 +1,43 @@
+{
+  "gameId": "registry-19-shave-the-yak",
+  "modes": {
+    "default": [
+      {
+        "heading": "Shave The Yak",
+        "body": "Grab your razor and get shaving!",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-black",
+        "icon": "✂️"
+      },
+      {
+        "heading": "Swipe to Shave",
+        "body": "Swipe across the yak on your phone to remove its fur. Stay on target!",
+        "bgClass": "bg-gradient-to-br from-green-900 via-emerald-900 to-teal-900",
+        "headingColor": "text-green-300",
+        "bodyColor": "text-green-100",
+        "fontClass": "font-bold",
+        "icon": "✋"
+      },
+      {
+        "heading": "Build Combos",
+        "body": "Consecutive good swipes build your combo multiplier. Missing makes the yak move!",
+        "bgClass": "bg-gradient-to-br from-orange-900 via-red-900 to-rose-900",
+        "headingColor": "text-orange-300",
+        "bodyColor": "text-orange-100",
+        "fontClass": "font-black",
+        "icon": "🔥"
+      },
+      {
+        "heading": "Beat the Clock",
+        "body": "Shave as much fur as you can before time runs out. Most fur removed wins!",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "⏱️"
+      }
+    ]
+  }
+}

@@ -158,6 +158,7 @@
       recordingDone = true;
       const blob = new Blob(audioChunks, { type: mimeType });
       audioBase64 = await blobToBase64(blob);
+      stopMediaStream();
     };
 
     mediaRecorder.start(100);
@@ -173,6 +174,13 @@
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
     }
+  }
+
+  function stopMediaStream() {
+    if (!mediaStream) return;
+    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
+    micAllowed = false;
   }
 
   function blobToBase64(blob: Blob): Promise<string> {
@@ -349,9 +357,7 @@
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
     }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop());
-    }
+    stopMediaStream();
   });
 
   $: if (subPhase === "recording" && recordingDone && audioBase64 && !recordingSubmitted) {

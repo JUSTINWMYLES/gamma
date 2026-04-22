@@ -19,12 +19,12 @@
  * The winning author earns points.
  *
  * Server messages → clients:
- *   "ms_role_phase"         { playerList, durationMs }
+ *   "ms_role_phase"         { playerList, durationMs, serverTimestamp }
  *   "ms_roles_assigned"     { roles }
- *   "ms_phase_preview"      { phase, durationMs, history }
- *   "ms_submission_phase"   { phase, durationMs, bodyParts?, actions?, tests?, history, promptExamples? }
+ *   "ms_phase_preview"      { phase, durationMs, serverTimestamp, history }
+ *   "ms_submission_phase"   { phase, durationMs, serverTimestamp, bodyParts?, actions?, tests?, history, promptExamples? }
  *   "ms_submit_ack"         { accepted, reason? }
- *   "ms_voting_phase"       { phase, submissions, durationMs, history }
+ *   "ms_voting_phase"       { phase, submissions, durationMs, serverTimestamp, history }
  *   "ms_vote_ack"           {}
  *   "ms_results_pending"    { phase, history }
  *   "ms_phase_result"       { phase, results, phaseWinner, points, history }
@@ -137,6 +137,9 @@ export default class MedicalStoryGame extends BaseGame {
   private round: RoundData | null = null;
   private pendingScores: Map<string, number> = new Map();
   private _extraTimers: ReturnType<typeof setTimeout>[] = [];
+  private roleVoteTimeout: ReturnType<typeof setTimeout> | null = null;
+  private submissionTimeout: ReturnType<typeof setTimeout> | null = null;
+  private votingTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Resolve callbacks for async phase waits
   private roleVoteResolve: (() => void) | null = null;
@@ -185,6 +188,7 @@ export default class MedicalStoryGame extends BaseGame {
     this.broadcast("ms_role_phase", {
       playerList,
       durationMs: ROLE_VOTE_DURATION_SECS * 1000,
+      serverTimestamp: Date.now(),
     });
 
     await this._waitForRoleVotes(playerIds);
@@ -219,6 +223,7 @@ export default class MedicalStoryGame extends BaseGame {
       this.broadcast("ms_phase_preview", {
         phase,
         durationMs: PHASE_PREVIEW_SECS * 1000,
+        serverTimestamp: Date.now(),
         history: this._getPhaseHistory(),
       });
       await this.delay(PHASE_PREVIEW_SECS * 1000);
@@ -227,6 +232,7 @@ export default class MedicalStoryGame extends BaseGame {
       this.broadcast("ms_submission_phase", {
         phase,
         durationMs: SUBMISSION_DURATION_SECS * 1000,
+        serverTimestamp: Date.now(),
         bodyParts: phase === "complaint" ? [...BODY_PARTS] : undefined,
         actions: phase === "procedure" ? [...ACTIONS] : undefined,
         tests: phase === "diagnosis" ? [...FUNNY_TESTS] : undefined,
@@ -268,6 +274,7 @@ export default class MedicalStoryGame extends BaseGame {
         phase,
         submissions: submissionList,
         durationMs: VOTING_DURATION_SECS * 1000,
+        serverTimestamp: Date.now(),
         history: this._getPhaseHistory(),
         // 3D scene placeholder: action preview animations
         scene3dPlaceholder: this._get3DPlaceholder(phase, "voting"),
@@ -355,6 +362,9 @@ export default class MedicalStoryGame extends BaseGame {
 
   override teardown(): void {
     super.teardown();
+    this._clearRoleVoteTimeout();
+    this._clearSubmissionTimeout();
+    this._clearVotingTimeout();
     for (const t of this._extraTimers) clearTimeout(t);
     this._extraTimers = [];
     this.round = null;
@@ -369,16 +379,40 @@ export default class MedicalStoryGame extends BaseGame {
 
   // ── Phase wait helpers ────────────────────────────────────────────────────
 
+  private _clearRoleVoteTimeout(): void {
+    if (!this.roleVoteTimeout) return;
+    clearTimeout(this.roleVoteTimeout);
+    this.roleVoteTimeout = null;
+  }
+
+  private _clearSubmissionTimeout(): void {
+    if (!this.submissionTimeout) return;
+    clearTimeout(this.submissionTimeout);
+    this.submissionTimeout = null;
+  }
+
+  private _clearVotingTimeout(): void {
+    if (!this.votingTimeout) return;
+    clearTimeout(this.votingTimeout);
+    this.votingTimeout = null;
+  }
+
   private _waitForRoleVotes(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
       this.expectedRoleVotePlayerIds = [...playerIds];
-      this.roleVoteResolve = resolve;
+      this._clearRoleVoteTimeout();
 
-      const timeout = setTimeout(() => {
+      const finish = () => {
+        this._clearRoleVoteTimeout();
         this.roleVoteResolve = null;
         resolve();
-      }, ROLE_VOTE_DURATION_SECS * 1000);
+      };
 
+      this.roleVoteResolve = finish;
+
+      const timeout = setTimeout(finish, ROLE_VOTE_DURATION_SECS * 1000);
+
+      this.roleVoteTimeout = timeout;
       this._extraTimers.push(timeout);
       this._checkRoleVotesComplete(playerIds);
     });
@@ -389,22 +423,26 @@ export default class MedicalStoryGame extends BaseGame {
     if (!rd || !this.roleVoteResolve) return;
 
     if (haveAllExpectedPlayersResponded(playerIds, rd.roleVotes.keys())) {
-      const resolve = this.roleVoteResolve;
-      this.roleVoteResolve = null;
-      resolve();
+      this.roleVoteResolve();
     }
   }
 
   private _waitForSubmissions(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
       this.expectedSubmissionPlayerIds = [...playerIds];
-      this.submissionResolve = resolve;
+      this._clearSubmissionTimeout();
 
-      const timeout = setTimeout(() => {
+      const finish = () => {
+        this._clearSubmissionTimeout();
         this.submissionResolve = null;
         resolve();
-      }, SUBMISSION_DURATION_SECS * 1000);
+      };
 
+      this.submissionResolve = finish;
+
+      const timeout = setTimeout(finish, SUBMISSION_DURATION_SECS * 1000);
+
+      this.submissionTimeout = timeout;
       this._extraTimers.push(timeout);
       this._checkSubmissionsComplete(playerIds);
     });
@@ -415,22 +453,26 @@ export default class MedicalStoryGame extends BaseGame {
     if (!rd || !this.submissionResolve) return;
 
     if (haveAllExpectedPlayersResponded(playerIds, rd.submittedPlayers)) {
-      const resolve = this.submissionResolve;
-      this.submissionResolve = null;
-      resolve();
+      this.submissionResolve();
     }
   }
 
   private _waitForVotes(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
       this.expectedVotingPlayerIds = [...playerIds];
-      this.votingResolve = resolve;
+      this._clearVotingTimeout();
 
-      const timeout = setTimeout(() => {
+      const finish = () => {
+        this._clearVotingTimeout();
         this.votingResolve = null;
         resolve();
-      }, VOTING_DURATION_SECS * 1000);
+      };
 
+      this.votingResolve = finish;
+
+      const timeout = setTimeout(finish, VOTING_DURATION_SECS * 1000);
+
+      this.votingTimeout = timeout;
       this._extraTimers.push(timeout);
       this._checkVotesComplete(playerIds);
     });
@@ -441,9 +483,7 @@ export default class MedicalStoryGame extends BaseGame {
     if (!rd || !this.votingResolve) return;
 
     if (haveAllExpectedPlayersResponded(playerIds, rd.votedPlayers)) {
-      const resolve = this.votingResolve;
-      this.votingResolve = null;
-      resolve();
+      this.votingResolve();
     }
   }
 

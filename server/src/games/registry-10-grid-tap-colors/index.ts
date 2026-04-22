@@ -133,10 +133,16 @@ export default class GridTapColorsGame extends BaseGame {
   /** Resolve function for the current tap wait. */
   private tapResolve: (() => void) | null = null;
 
+  /** Active timeout guarding the current tap wait. */
+  private tapTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  /** Monotonic token so stale turn timers cannot affect later turns. */
+  private tapWaitToken = 0;
+
   /** Resolve function for admin grid ready. */
   private gridReadyResolve: (() => void) | null = null;
 
-  /** Whether the round-one phone placement flow has already completed. */
+  /** Whether the initial phone placement flow has already completed. */
   private gridSetupComplete = false;
 
   /** Extra timers. */
@@ -172,7 +178,11 @@ export default class GridTapColorsGame extends BaseGame {
   // ── Round logic ──────────────────────────────────────────────────
 
   protected override async runRound(round: number): Promise<void> {
-    await this._runGridSetupIfNeeded();
+    await this._syncGridSetupState();
+    if (!this.gridSetupComplete) {
+      await this._waitForAdminGridReady();
+      this.gridSetupComplete = true;
+    }
 
     // Broadcast round start — all phones go white
     this.broadcast("grid_round_start", {
@@ -224,6 +234,10 @@ export default class GridTapColorsGame extends BaseGame {
     this._extraTimers = [];
     this.activeSpeedTaps.clear();
     this.tapResolve = null;
+    if (this.tapTimeout) {
+      clearTimeout(this.tapTimeout);
+      this.tapTimeout = null;
+    }
     this.gridReadyResolve = null;
     this.gridSetupComplete = false;
   }
@@ -440,9 +454,24 @@ export default class GridTapColorsGame extends BaseGame {
 
   private _waitForAllSpeedTapsComplete(playerIds: string[]): Promise<void> {
     return new Promise<void>((resolve) => {
-      this.tapResolve = resolve;
+      if (this.tapTimeout) {
+        clearTimeout(this.tapTimeout);
+        this.tapTimeout = null;
+      }
+
+      const waitToken = ++this.tapWaitToken;
+      this.tapResolve = () => {
+        if (this.tapWaitToken !== waitToken) return;
+        if (this.tapTimeout) {
+          clearTimeout(this.tapTimeout);
+          this.tapTimeout = null;
+        }
+        this.tapResolve = null;
+        resolve();
+      };
 
       const timeout = setTimeout(() => {
+        if (this.tapWaitToken !== waitToken) return;
         for (const pid of playerIds) {
           const state = this.activeSpeedTaps.get(pid);
           if (state && !state.completed) {
@@ -465,9 +494,9 @@ export default class GridTapColorsGame extends BaseGame {
             });
           }
         }
-        this.tapResolve = null;
-        resolve();
+        this.tapResolve?.();
       }, MODE1_ROUND_CAP_MS);
+      this.tapTimeout = timeout;
       this._extraTimers.push(timeout);
       this._checkAllSpeedTapsDone();
     });
@@ -479,7 +508,6 @@ export default class GridTapColorsGame extends BaseGame {
     );
     if (allDone && this.tapResolve) {
       this.tapResolve();
-      this.tapResolve = null;
     }
   }
 
@@ -512,13 +540,10 @@ export default class GridTapColorsGame extends BaseGame {
   }
 
   /**
-   * Broadcast the placement instructions once the game screen is mounted and
-   * wait briefly for the host to confirm. If the host never confirms, the game
-   * auto-continues instead of hanging on the loading screen.
+   * Re-broadcast the current grid setup every round so remounted TV/phone
+   * screens always recover their placement state before gameplay resumes.
    */
-  private async _runGridSetupIfNeeded(): Promise<void> {
-    if (this.gridSetupComplete) return;
-
+  private _syncGridSetupState(): void {
     const gridLayout = getGridLayout(this.phoneAssignments.length);
 
     this.broadcast("grid_setup", {
@@ -547,9 +572,6 @@ export default class GridTapColorsGame extends BaseGame {
         gridLayout,
       });
     }
-
-    await this._waitForAdminGridReady();
-    this.gridSetupComplete = true;
   }
 
   private _waitForAdminGridReady(): Promise<void> {

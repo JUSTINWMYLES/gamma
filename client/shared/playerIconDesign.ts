@@ -40,6 +40,14 @@ export const DEFAULT_TEXT_COLOR = "#ffffff";
 export const DEFAULT_STICKER_SIZE = 24;
 export const DEFAULT_TEXT_SIZE = 24;
 export const MAX_ICON_STICKERS = 12;
+export const ICON_VIEWBOX_SIZE = 100;
+
+// Saved brush sizes were tuned against the editor preview's 100x100 SVG.
+// Keep the same scale everywhere so previously drawn icons still match what
+// players saw while drawing them.
+export function getIconStrokeRenderWidth(strokeSize: number): number {
+  return clamp(strokeSize, 2, 24) / 4;
+}
 
 export function createEmptyIconDesign(bgColor: string = DEFAULT_ICON_BG): IconDesign {
   return {

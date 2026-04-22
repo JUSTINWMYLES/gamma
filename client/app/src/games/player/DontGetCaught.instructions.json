@@ -1,0 +1,43 @@
+{
+  "gameId": "registry-14-dont-get-caught",
+  "modes": {
+    "default": [
+      {
+        "heading": "Don't Get Caught",
+        "body": "Stealth is your only weapon!",
+        "bgClass": "bg-gradient-to-br from-gray-950 via-slate-900 to-zinc-900",
+        "headingColor": "text-red-400",
+        "bodyColor": "text-gray-200",
+        "fontClass": "font-black",
+        "icon": "🕵️"
+      },
+      {
+        "heading": "Move Carefully",
+        "body": "Use the joystick on your phone to move your character around the map.",
+        "bgClass": "bg-gradient-to-br from-indigo-900 via-blue-900 to-sky-900",
+        "headingColor": "text-indigo-300",
+        "bodyColor": "text-indigo-100",
+        "fontClass": "font-bold",
+        "icon": "🕹️"
+      },
+      {
+        "heading": "Avoid the Guards",
+        "body": "Guards patrol with a cone of vision. Stay out of their sight or you'll be caught!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-amber-900 to-orange-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🔦"
+      },
+      {
+        "heading": "3 Strikes = Out!",
+        "body": "Get caught 3 times and you're eliminated. Survive until time runs out to score big!",
+        "bgClass": "bg-gradient-to-br from-red-950 via-red-900 to-rose-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "❌"
+      }
+    ]
+  }
+}

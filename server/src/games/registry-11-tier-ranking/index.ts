@@ -21,7 +21,7 @@
  *   "tr_entry_ack"        { accepted, reason?, currentEntryCount }
  *   "tr_ranking_phase"    { items, category, durationMs }
  *   "tr_rankings_ack"     {}
- *   "tr_round_result"     { finalTiers, scores, category }
+ *   "tr_round_result"     { finalTiers, scores, category, revealStepMs }
  *   "round_skipped"       { reason }
  *
  * Client messages ← players:
@@ -39,12 +39,14 @@ import {
   isDuplicateEntry,
   haveAllExpectedPlayersResponded,
   aggregateVotes,
+  getResultsDisplayMs,
+  RESULT_REVEAL_STEP_MS,
+  orderResultsForReveal,
   scoreRound,
   CATEGORY_SUGGESTIONS,
   CATEGORY_PICK_DURATION_SECS,
   ENTRY_SUBMIT_DURATION_SECS,
   TIER_RANK_DURATION_SECS,
-  RESULTS_DISPLAY_MS,
   TIERS,
   type Tier,
   type ItemResult,
@@ -195,16 +197,17 @@ export default class TierRankingGame extends BaseGame {
     }
 
     this.broadcast("tr_round_result", {
-      finalTiers: results.map((r) => ({
+      finalTiers: orderResultsForReveal(results).map((r) => ({
         item: r.item,
         tier: r.tier,
         voteCounts: r.voteCounts,
       })),
       scores: Object.fromEntries(scores),
       category,
+      revealStepMs: RESULT_REVEAL_STEP_MS,
     });
 
-    await this.delay(RESULTS_DISPLAY_MS);
+    await this.delay(getResultsDisplayMs(results.length));
   }
 
   protected override scoreRound(_round: number): void {

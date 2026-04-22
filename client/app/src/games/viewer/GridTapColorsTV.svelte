@@ -13,6 +13,7 @@
     | "waiting"
     | "player_announce"
     | "playing"
+    | "turn_complete"
     | "group_results"
     | "round_scores";
 
@@ -143,6 +144,10 @@
     phones = phones.map((phone, index) => index === data.phoneIndex
       ? { ...phone, lit: data.lit, litColor: data.color }
       : { ...phone, lit: false, litColor: phone.color });
+
+    if (subPhase === "turn_complete") {
+      return;
+    }
   }
 
   function onTapProgress(data: {
@@ -182,6 +187,12 @@
       fastestTapTimeMs: data.fastestTapTimeMs,
       timedOut: data.timedOut,
     });
+
+    const everyoneFinished = [...playerProgressMap.values()].every((progress) => progress.completed);
+    if (everyoneFinished) {
+      phones = phones.map((phone) => ({ ...phone, lit: false, litColor: phone.color }));
+      subPhase = "turn_complete";
+    }
   }
 
   function onGroupResults(data: { results: PlayerProgress[] }) {
@@ -217,7 +228,7 @@
   });
 </script>
 
-<div class="flex flex-1 flex-col bg-gray-950 p-6 text-white" data-testid="grid-tap-colors-tv">
+<div class="flex flex-1 flex-col bg-gray-950 p-6 pt-16 pl-28 text-white" data-testid="grid-tap-colors-tv">
   <div class="mb-4 flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-black text-cyan-400">Grid Tap Colors</h1>
@@ -256,6 +267,20 @@
           {/each}
           <p class="text-6xl font-black text-white">{announceCountdown}</p>
           <p class="text-gray-400">Get in position at the grid</p>
+        </div>
+
+      {:else if subPhase === "turn_complete"}
+        <div class="space-y-6 text-center">
+          <p class="text-xs uppercase tracking-widest text-emerald-300">Turn Complete</p>
+          {#if activePlayerNames.length > 0}
+            <div class="space-y-3">
+              {#each activePlayerNames as name}
+                <div class="rounded-2xl border border-emerald-500/40 bg-emerald-500/15 px-8 py-3 text-3xl font-black text-emerald-300">{name}</div>
+              {/each}
+            </div>
+          {/if}
+          <p class="text-5xl font-black text-white">Done</p>
+          <p class="text-lg text-gray-400">Showing results next...</p>
         </div>
 
       {:else}
