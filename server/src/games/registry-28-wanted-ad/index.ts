@@ -1,25 +1,34 @@
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
 import {
-  CONDITION_SUGGESTIONS,
-  MIN_PLAYERS,
-  SUBMISSION_DURATION_SECS,
-  POSTER_REVEAL_MS,
-  VOTING_DURATION_SECS,
-  RESULTS_DISPLAY_MS,
-  createRoundAssignments,
-  haveAllExpectedPlayersResponded,
-  tallyPosterVotes,
+  CHARACTER_CREATION_DURATION_SECS,
   computeRoundPoints,
+  createRoundAssignments,
+  buildCharacterAssignments,
+  haveAllExpectedPlayersResponded,
+  MAX_BOUNTY_LENGTH,
+  MIN_PLAYERS,
   normalizeBounty,
+  normalizeCharacterDescription,
+  normalizeCharacterName,
   normalizeCondition,
   normalizeReason,
+  POSTER_REVEAL_MS,
+  POSTER_SUBMISSION_DURATION_SECS,
+  RESULTS_DISPLAY_MS,
+  tallyPosterVotes,
+  type WantedCharacterAssignment,
+  type WantedCharacterSubmission,
   type WantedPosterResult,
   type WantedPosterSubmission,
+  VOTING_DURATION_SECS,
 } from "./wantedAdLogic";
 
 interface WantedAdInput {
-  action: "wa_submit_poster" | "wa_vote";
+  action: "wa_submit_character" | "wa_submit_poster" | "wa_vote";
+  characterName?: string;
+  characterDescription?: string;
+  portraitDesign?: string;
   condition?: string;
   bounty?: string | number | null;
   reason?: string;
@@ -27,9 +36,11 @@ interface WantedAdInput {
 }
 
 interface RoundData {
-  assignments: Map<string, string>;
+  characterAssignments: Map<string, WantedCharacterAssignment>;
+  characters: Map<string, WantedCharacterSubmission>;
   posters: Map<string, WantedPosterSubmission>;
-  submittedPlayers: Set<string>;
+  characterSubmittedPlayers: Set<string>;
+  posterSubmittedPlayers: Set<string>;
   votes: Map<string, string>;
   votedPlayers: Set<string>;
   results: WantedPosterResult[] | null;
@@ -50,9 +61,11 @@ export default class WantedAdGame extends BaseGame {
 
   private round: RoundData | null = null;
   private pendingScores: Map<string, number> = new Map();
-  private submissionResolve: (() => void) | null = null;
+  private characterResolve: (() => void) | null = null;
+  private posterResolve: (() => void) | null = null;
   private votingResolve: (() => void) | null = null;
-  private expectedSubmissionPlayerIds: string[] = [];
+  private expectedCharacterPlayerIds: string[] = [];
+  private expectedPosterPlayerIds: string[] = [];
   private expectedVotingPlayerIds: string[] = [];
   private extraTimers: ReturnType<typeof setTimeout>[] = [];
 
@@ -72,38 +85,29 @@ export default class WantedAdGame extends BaseGame {
     }
 
     const playerIds = players.map((player) => player.id);
-    const assignments = createRoundAssignments(playerIds);
-    const durationMs = SUBMISSION_DURATION_SECS * 1000;
-    const serverTimestamp = Date.now();
-
     this.round = {
-      assignments,
+      characterAssignments: new Map(),
+      characters: new Map(),
       posters: new Map(),
-      submittedPlayers: new Set(),
+      characterSubmittedPlayers: new Set(),
+      posterSubmittedPlayers: new Set(),
       votes: new Map(),
       votedPlayers: new Set(),
       results: null,
     };
 
-    this.broadcast("wa_submission_start", {
-      totalPlayers: playerIds.length,
-      durationMs,
-      serverTimestamp,
-      conditionSuggestions: [...CONDITION_SUGGESTIONS],
-    });
+    await this.runCharacterCreationPhase(playerIds);
 
-    for (const [authorId, targetPlayerId] of assignments.entries()) {
-      const targetPlayerName = this.room.state.players.get(targetPlayerId)?.name ?? "Unknown Outlaw";
-      this.send(authorId, "wa_assignment", {
-        targetPlayerId,
-        targetPlayerName,
-        durationMs,
-        serverTimestamp,
-        conditionSuggestions: [...CONDITION_SUGGESTIONS],
-      });
+    const createdCharacters = [...this.round.characters.values()].sort((a, b) => a.submittedAt - b.submittedAt);
+    if (createdCharacters.length < MIN_PLAYERS) {
+      this.broadcast("round_skipped", { reason: "Not enough outlaw characters were submitted" });
+      return;
     }
 
-    await this.waitForSubmissions(playerIds);
+    this.round.characterAssignments = buildCharacterAssignments(createdCharacters);
+
+    const posterAuthorIds = [...this.round.characterAssignments.keys()];
+    await this.runPosterCreationPhase(posterAuthorIds);
 
     const posters = [...this.round.posters.values()].sort((a, b) => a.submittedAt - b.submittedAt);
     if (posters.length === 0) {
@@ -171,6 +175,9 @@ export default class WantedAdGame extends BaseGame {
     if (!input?.action || !this.round) return;
 
     switch (input.action) {
+      case "wa_submit_character":
+        this.handleCharacterSubmission(client, input);
+        break;
       case "wa_submit_poster":
         this.handlePosterSubmission(client, input);
         break;
@@ -182,14 +189,25 @@ export default class WantedAdGame extends BaseGame {
 
   override onPlayerReconnected(oldId: string, newId: string): void {
     if (this.round) {
-      if (this.round.assignments.has(oldId)) {
-        const targetId = this.round.assignments.get(oldId)!;
-        this.round.assignments.delete(oldId);
-        this.round.assignments.set(newId, targetId === oldId ? newId : targetId);
+      if (this.round.characterAssignments.has(oldId)) {
+        const assignment = this.round.characterAssignments.get(oldId)!;
+        this.round.characterAssignments.delete(oldId);
+        this.round.characterAssignments.set(newId, assignment.creatorId === oldId
+          ? { ...assignment, creatorId: newId }
+          : assignment);
       }
 
-      for (const [authorId, targetId] of [...this.round.assignments.entries()]) {
-        if (targetId === oldId) this.round.assignments.set(authorId, newId);
+      for (const [authorId, assignment] of [...this.round.characterAssignments.entries()]) {
+        if (assignment.creatorId === oldId) {
+          this.round.characterAssignments.set(authorId, { ...assignment, creatorId: newId });
+        }
+      }
+
+      if (this.round.characters.has(oldId)) {
+        const character = this.round.characters.get(oldId)!;
+        this.round.characters.delete(oldId);
+        character.creatorId = newId;
+        this.round.characters.set(newId, character);
       }
 
       if (this.round.posters.has(oldId)) {
@@ -198,11 +216,13 @@ export default class WantedAdGame extends BaseGame {
         poster.authorId = newId;
         this.round.posters.set(newId, poster);
       }
+
       for (const poster of this.round.posters.values()) {
-        if (poster.targetPlayerId === oldId) poster.targetPlayerId = newId;
+        if (poster.characterCreatorId === oldId) poster.characterCreatorId = newId;
       }
 
-      if (this.round.submittedPlayers.delete(oldId)) this.round.submittedPlayers.add(newId);
+      if (this.round.characterSubmittedPlayers.delete(oldId)) this.round.characterSubmittedPlayers.add(newId);
+      if (this.round.posterSubmittedPlayers.delete(oldId)) this.round.posterSubmittedPlayers.add(newId);
       if (this.round.votedPlayers.delete(oldId)) this.round.votedPlayers.add(newId);
 
       if (this.round.votes.has(oldId)) {
@@ -218,12 +238,13 @@ export default class WantedAdGame extends BaseGame {
         this.round.results = this.round.results.map((result) => ({
           ...result,
           authorId: result.authorId === oldId ? newId : result.authorId,
-          targetPlayerId: result.targetPlayerId === oldId ? newId : result.targetPlayerId,
+          characterCreatorId: result.characterCreatorId === oldId ? newId : result.characterCreatorId,
         }));
       }
     }
 
-    this.expectedSubmissionPlayerIds = this.expectedSubmissionPlayerIds.map((id) => id === oldId ? newId : id);
+    this.expectedCharacterPlayerIds = this.expectedCharacterPlayerIds.map((id) => id === oldId ? newId : id);
+    this.expectedPosterPlayerIds = this.expectedPosterPlayerIds.map((id) => id === oldId ? newId : id);
     this.expectedVotingPlayerIds = this.expectedVotingPlayerIds.map((id) => id === oldId ? newId : id);
 
     if (this.pendingScores.has(oldId)) {
@@ -239,9 +260,11 @@ export default class WantedAdGame extends BaseGame {
     this.extraTimers = [];
     this.round = null;
     this.pendingScores.clear();
-    this.submissionResolve = null;
+    this.characterResolve = null;
+    this.posterResolve = null;
     this.votingResolve = null;
-    this.expectedSubmissionPlayerIds = [];
+    this.expectedCharacterPlayerIds = [];
+    this.expectedPosterPlayerIds = [];
     this.expectedVotingPlayerIds = [];
   }
 
@@ -249,18 +272,70 @@ export default class WantedAdGame extends BaseGame {
     return [...this.room.state.players.values()].filter((player) => this.isPlayerActive(player));
   }
 
-  private waitForSubmissions(playerIds: string[]): Promise<void> {
-    this.expectedSubmissionPlayerIds = [...playerIds];
+  private async runCharacterCreationPhase(playerIds: string[]) {
+    const durationMs = CHARACTER_CREATION_DURATION_SECS * 1000;
+    const serverTimestamp = Date.now();
+
+    this.broadcast("wa_character_creation_start", {
+      totalPlayers: playerIds.length,
+      durationMs,
+      serverTimestamp,
+    });
+
+    await this.waitForCharacters(playerIds);
+  }
+
+  private async runPosterCreationPhase(playerIds: string[]) {
+    const durationMs = POSTER_SUBMISSION_DURATION_SECS * 1000;
+    const serverTimestamp = Date.now();
+
+    this.broadcast("wa_submission_start", {
+      totalPlayers: playerIds.length,
+      durationMs,
+      serverTimestamp,
+      maxBountyLength: MAX_BOUNTY_LENGTH,
+    });
+
+    for (const [authorId, character] of this.round!.characterAssignments.entries()) {
+      this.send(authorId, "wa_assignment", {
+        character,
+        durationMs,
+        serverTimestamp,
+        maxBountyLength: MAX_BOUNTY_LENGTH,
+      });
+    }
+
+    await this.waitForPosters(playerIds);
+  }
+
+  private waitForCharacters(playerIds: string[]): Promise<void> {
+    this.expectedCharacterPlayerIds = [...playerIds];
     return new Promise((resolve) => {
       const finish = () => {
         clearTimeout(timeout);
-        this.submissionResolve = null;
+        this.characterResolve = null;
         resolve();
       };
 
-      this.submissionResolve = () => finish();
+      this.characterResolve = () => finish();
 
-      const timeout = setTimeout(() => finish(), SUBMISSION_DURATION_SECS * 1000);
+      const timeout = setTimeout(() => finish(), CHARACTER_CREATION_DURATION_SECS * 1000);
+      this.extraTimers.push(timeout);
+    });
+  }
+
+  private waitForPosters(playerIds: string[]): Promise<void> {
+    this.expectedPosterPlayerIds = [...playerIds];
+    return new Promise((resolve) => {
+      const finish = () => {
+        clearTimeout(timeout);
+        this.posterResolve = null;
+        resolve();
+      };
+
+      this.posterResolve = () => finish();
+
+      const timeout = setTimeout(() => finish(), POSTER_SUBMISSION_DURATION_SECS * 1000);
       this.extraTimers.push(timeout);
     });
   }
@@ -283,9 +358,56 @@ export default class WantedAdGame extends BaseGame {
     });
   }
 
+  private handleCharacterSubmission(client: Client, input: WantedAdInput): void {
+    if (!this.round || !this.characterResolve) return;
+    if (this.round.characterSubmittedPlayers.has(client.sessionId)) {
+      this.send(client.sessionId, "wa_character_ack", {
+        accepted: false,
+        reason: "You already turned in your outlaw character.",
+      });
+      return;
+    }
+
+    const name = normalizeCharacterName(input.characterName ?? "");
+    const description = normalizeCharacterDescription(input.characterDescription ?? "");
+    const portraitDesign = typeof input.portraitDesign === "string" ? input.portraitDesign.slice(0, 20_000) : "";
+
+    if (!name || !portraitDesign) {
+      this.send(client.sessionId, "wa_character_ack", {
+        accepted: false,
+        reason: "Add a character name and drawing before submitting.",
+      });
+      return;
+    }
+
+    const character: WantedCharacterSubmission = {
+      creatorId: client.sessionId,
+      name,
+      description,
+      portraitDesign,
+      submittedAt: Date.now(),
+    };
+
+    this.round.characters.set(client.sessionId, character);
+    this.round.characterSubmittedPlayers.add(client.sessionId);
+
+    this.send(client.sessionId, "wa_character_ack", {
+      accepted: true,
+      character,
+    });
+    this.broadcast("wa_character_progress", {
+      submittedCount: this.round.characterSubmittedPlayers.size,
+      totalPlayers: this.expectedCharacterPlayerIds.length,
+    });
+
+    if (haveAllExpectedPlayersResponded(this.round.characterSubmittedPlayers, this.expectedCharacterPlayerIds)) {
+      this.characterResolve?.();
+    }
+  }
+
   private handlePosterSubmission(client: Client, input: WantedAdInput): void {
-    if (!this.round || !this.submissionResolve) return;
-    if (this.round.submittedPlayers.has(client.sessionId)) {
+    if (!this.round || !this.posterResolve) return;
+    if (this.round.posterSubmittedPlayers.has(client.sessionId)) {
       this.send(client.sessionId, "wa_submit_ack", {
         accepted: false,
         reason: "You already turned in your poster for this round.",
@@ -293,12 +415,15 @@ export default class WantedAdGame extends BaseGame {
       return;
     }
 
-    const targetPlayerId = this.round.assignments.get(client.sessionId);
-    if (!targetPlayerId) return;
+    const character = this.round.characterAssignments.get(client.sessionId);
+    if (!character) return;
 
     const poster: WantedPosterSubmission = {
       authorId: client.sessionId,
-      targetPlayerId,
+      characterCreatorId: character.creatorId,
+      characterName: character.name,
+      characterDescription: character.description,
+      portraitDesign: character.portraitDesign,
       condition: normalizeCondition(input.condition ?? ""),
       bounty: normalizeBounty(input.bounty),
       reason: normalizeReason(input.reason ?? ""),
@@ -306,19 +431,19 @@ export default class WantedAdGame extends BaseGame {
     };
 
     this.round.posters.set(client.sessionId, poster);
-    this.round.submittedPlayers.add(client.sessionId);
+    this.round.posterSubmittedPlayers.add(client.sessionId);
 
     this.send(client.sessionId, "wa_submit_ack", {
       accepted: true,
       poster,
     });
     this.broadcast("wa_submission_progress", {
-      submittedCount: this.round.submittedPlayers.size,
-      totalPlayers: this.expectedSubmissionPlayerIds.length,
+      submittedCount: this.round.posterSubmittedPlayers.size,
+      totalPlayers: this.expectedPosterPlayerIds.length,
     });
 
-    if (haveAllExpectedPlayersResponded(this.round.submittedPlayers, this.expectedSubmissionPlayerIds)) {
-      this.submissionResolve?.();
+    if (haveAllExpectedPlayersResponded(this.round.posterSubmittedPlayers, this.expectedPosterPlayerIds)) {
+      this.posterResolve?.();
     }
   }
 

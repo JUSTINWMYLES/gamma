@@ -2,29 +2,55 @@
   import { onDestroy, onMount } from "svelte";
   import type { Room } from "colyseus.js";
   import type { PlayerState, RoomState } from "../../../../shared/types";
+  import IconDesignEditor from "../../components/IconDesignEditor.svelte";
   import WantedPosterCard, { type WantedPosterViewData } from "../../components/WantedPosterCard.svelte";
+  import {
+    createEmptyIconDesign,
+    serializeIconDesign,
+    type IconDesign,
+  } from "../../../../shared/playerIconDesign";
 
   export let room: Room;
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
-  type SubPhase = "waiting" | "submission" | "submitted" | "reveal" | "voting" | "result";
-
+  type SubPhase = "waiting" | "character_creation" | "character_submitted" | "submission" | "submitted" | "reveal" | "voting" | "result";
   type PosterData = WantedPosterViewData & { submittedAt: number };
+  type CharacterData = {
+    creatorId: string;
+    name: string;
+    description: string;
+    portraitDesign: string;
+    submittedAt: number;
+  };
+  type CharacterAssignment = {
+    creatorId: string;
+    name: string;
+    description: string;
+    portraitDesign: string;
+  };
 
   let subPhase: SubPhase = "waiting";
   let roundSkipped = false;
   let skipReason = "";
 
-  let targetPlayerId = "";
-  let targetPlayerName = "";
+  let totalPlayers = 0;
+  let submittedCount = 0;
+  let maxBountyLength = 40;
+
+  let characterNameInput = "";
+  let characterDescriptionInput = "";
+  let characterDesign: IconDesign = createEmptyIconDesign();
+  let characterSubmitted = false;
+  let characterError = "";
+  let acceptedCharacter: CharacterData | null = null;
+
+  let assignedCharacter: CharacterAssignment | null = null;
   let conditionInput = "Dead or Alive";
   let bountyInput = "";
   let reasonInput = "";
-  let conditionSuggestions: string[] = [];
-  let submitted = false;
-  let submittedCount = 0;
-  let totalPlayers = 0;
+  let posterSubmitted = false;
+  let posterError = "";
 
   let revealPoster: PosterData | null = null;
   let revealIndex = 0;
@@ -33,6 +59,7 @@
   let votingPosters: PosterData[] = [];
   let voteSubmitted = false;
   let myVote = "";
+  let selectedVoteAuthorId = "";
   let voteError = "";
   let votesIn = 0;
   let totalVoters = 0;
@@ -44,10 +71,6 @@
 
   let timeLeft = 0;
   let timerInterval: ReturnType<typeof setInterval> | null = null;
-
-  function playerById(playerId: string): PlayerState | undefined {
-    return [...state.players.values()].find((player) => player.id === playerId);
-  }
 
   function startTimerFromEnd(endTimeMs: number) {
     clearTimer();
@@ -65,15 +88,39 @@
     }
   }
 
-  function resetForm() {
+  function resetCharacterForm() {
+    characterNameInput = "";
+    characterDescriptionInput = "";
+    characterDesign = createEmptyIconDesign();
+    characterSubmitted = false;
+    characterError = "";
+    acceptedCharacter = null;
+  }
+
+  function resetPosterForm() {
     conditionInput = "Dead or Alive";
     bountyInput = "";
     reasonInput = "";
-    submitted = false;
+    posterSubmitted = false;
+    posterError = "";
+  }
+
+  function submitCharacter() {
+    if (characterSubmitted) return;
+    characterError = "";
+
+    room.send("game_input", {
+      action: "wa_submit_character",
+      characterName: characterNameInput,
+      characterDescription: characterDescriptionInput,
+      portraitDesign: serializeIconDesign({ ...characterDesign, text: null }),
+    });
   }
 
   function submitPoster() {
-    if (submitted) return;
+    if (posterSubmitted) return;
+    posterError = "";
+
     room.send("game_input", {
       action: "wa_submit_poster",
       condition: conditionInput,
@@ -82,39 +129,78 @@
     });
   }
 
-  function voteFor(authorId: string) {
+  function selectVote(authorId: string) {
     if (voteSubmitted || !authorId || authorId === me?.id) return;
-    myVote = authorId;
+    selectedVoteAuthorId = authorId;
     voteError = "";
-    room.send("game_input", { action: "wa_vote", targetAuthorId: authorId });
   }
 
-  function onSubmissionStart(data: { totalPlayers: number; conditionSuggestions?: string[] }) {
+  function submitVote() {
+    if (voteSubmitted || !selectedVoteAuthorId || selectedVoteAuthorId === me?.id) return;
+    voteError = "";
+    room.send("game_input", { action: "wa_vote", targetAuthorId: selectedVoteAuthorId });
+  }
+
+  function onCharacterCreationStart(data: { totalPlayers: number; durationMs: number; serverTimestamp: number }) {
+    roundSkipped = false;
+    skipReason = "";
+    totalPlayers = data.totalPlayers;
+    submittedCount = 0;
+    assignedCharacter = null;
+    resetCharacterForm();
+    resetPosterForm();
+    votingPosters = [];
+    revealPoster = null;
+    resultPosters = [];
+    winnerAuthorIds = [];
+    roundScores = {};
+    totalVotes = 0;
+    subPhase = "character_creation";
+    startTimerFromEnd(data.serverTimestamp + data.durationMs);
+  }
+
+  function onCharacterAck(data: { accepted: boolean; character?: CharacterData; reason?: string }) {
+    if (!data.accepted) {
+      characterError = data.reason ?? "Character submission failed";
+      return;
+    }
+
+    characterSubmitted = true;
+    acceptedCharacter = data.character ?? null;
+    subPhase = "character_submitted";
+  }
+
+  function onCharacterProgress(data: { submittedCount: number; totalPlayers: number }) {
+    submittedCount = data.submittedCount;
+    totalPlayers = data.totalPlayers;
+  }
+
+  function onSubmissionStart(data: { totalPlayers: number; durationMs: number; serverTimestamp: number; maxBountyLength: number }) {
     roundSkipped = false;
     skipReason = "";
     submittedCount = 0;
     totalPlayers = data.totalPlayers;
-    conditionSuggestions = data.conditionSuggestions ?? conditionSuggestions;
+    maxBountyLength = data.maxBountyLength;
+    resetPosterForm();
+    subPhase = posterSubmitted ? "submitted" : "waiting";
+    startTimerFromEnd(data.serverTimestamp + data.durationMs);
   }
 
-  function onAssignment(data: {
-    targetPlayerId: string;
-    targetPlayerName: string;
-    durationMs: number;
-    serverTimestamp: number;
-    conditionSuggestions?: string[];
-  }) {
+  function onAssignment(data: { character: CharacterAssignment; durationMs: number; serverTimestamp: number; maxBountyLength: number }) {
+    assignedCharacter = data.character;
+    maxBountyLength = data.maxBountyLength;
+    resetPosterForm();
     subPhase = "submission";
-    targetPlayerId = data.targetPlayerId;
-    targetPlayerName = data.targetPlayerName;
-    conditionSuggestions = data.conditionSuggestions ?? conditionSuggestions;
-    resetForm();
     startTimerFromEnd(data.serverTimestamp + data.durationMs);
   }
 
   function onSubmitAck(data: { accepted: boolean; reason?: string }) {
-    if (!data.accepted) return;
-    submitted = true;
+    if (!data.accepted) {
+      posterError = data.reason ?? "Poster submission failed";
+      return;
+    }
+
+    posterSubmitted = true;
     subPhase = "submitted";
   }
 
@@ -131,13 +217,7 @@
     revealTotal = data.totalPosters;
   }
 
-  function onRevealPoster(data: {
-    poster: PosterData;
-    index: number;
-    totalPosters: number;
-    displayMs: number;
-    serverTimestamp: number;
-  }) {
+  function onRevealPoster(data: { poster: PosterData; index: number; totalPosters: number; displayMs: number; serverTimestamp: number }) {
     subPhase = "reveal";
     revealPoster = data.poster;
     revealIndex = data.index + 1;
@@ -145,17 +225,13 @@
     startTimerFromEnd(data.serverTimestamp + data.displayMs);
   }
 
-  function onVotingStart(data: {
-    posters: PosterData[];
-    durationMs: number;
-    serverTimestamp: number;
-    totalVoters: number;
-  }) {
+  function onVotingStart(data: { posters: PosterData[]; durationMs: number; serverTimestamp: number; totalVoters: number }) {
     subPhase = "voting";
     votingPosters = data.posters.filter((poster) => poster.authorId !== me?.id);
     totalVoters = data.totalVoters;
     votesIn = 0;
     myVote = "";
+    selectedVoteAuthorId = "";
     voteSubmitted = false;
     voteError = "";
     startTimerFromEnd(data.serverTimestamp + data.durationMs);
@@ -165,9 +241,11 @@
     if (data.accepted) {
       voteSubmitted = true;
       myVote = data.targetAuthorId ?? myVote;
+      selectedVoteAuthorId = data.targetAuthorId ?? selectedVoteAuthorId;
       return;
     }
-    myVote = "";
+
+    selectedVoteAuthorId = "";
     voteError = data.reason ?? "Vote failed";
   }
 
@@ -176,12 +254,7 @@
     totalVoters = data.totalVoters;
   }
 
-  function onRoundResult(data: {
-    posters: PosterData[];
-    winnerAuthorIds: string[];
-    scores: Record<string, number>;
-    totalVotes: number;
-  }) {
+  function onRoundResult(data: { posters: PosterData[]; winnerAuthorIds: string[]; scores: Record<string, number>; totalVotes: number }) {
     clearTimer();
     subPhase = "result";
     resultPosters = data.posters;
@@ -197,6 +270,9 @@
   }
 
   onMount(() => {
+    room.onMessage("wa_character_creation_start", onCharacterCreationStart);
+    room.onMessage("wa_character_ack", onCharacterAck);
+    room.onMessage("wa_character_progress", onCharacterProgress);
     room.onMessage("wa_submission_start", onSubmissionStart);
     room.onMessage("wa_assignment", onAssignment);
     room.onMessage("wa_submit_ack", onSubmitAck);
@@ -214,15 +290,28 @@
     clearTimer();
   });
 
-  $: myRoundScore = me ? roundScores[me.id] ?? 0 : 0;
+  $: timerDisplay = String(Math.max(0, Math.ceil(timeLeft))).padStart(2, "0");
+  $: characterPreview = {
+    authorId: me?.id ?? "",
+    characterCreatorId: me?.id ?? "",
+    characterName: characterNameInput,
+    characterDescription: characterDescriptionInput,
+    portraitDesign: serializeIconDesign({ ...characterDesign, text: null }),
+    condition: "Legend pending",
+    bounty: "Name your price",
+    reason: "This outlaw is still being invented.",
+  } satisfies WantedPosterViewData;
   $: draftPoster = {
     authorId: me?.id ?? "",
-    targetPlayerId,
-    targetPlayerName,
+    characterCreatorId: assignedCharacter?.creatorId ?? "",
+    characterName: assignedCharacter?.name ?? "Mystery Outlaw",
+    characterDescription: assignedCharacter?.description ?? "Awaiting assignment from the sheriff.",
+    portraitDesign: assignedCharacter?.portraitDesign ?? "",
     condition: conditionInput,
-    bounty: bountyInput.trim() ? Number(bountyInput.replace(/[^\d]/g, "")) || null : null,
+    bounty: bountyInput,
     reason: reasonInput,
-  } as WantedPosterViewData;
+  } satisfies WantedPosterViewData;
+  $: myRoundScore = me ? roundScores[me.id] ?? 0 : 0;
   $: myPosterResult = me ? resultPosters.find((poster) => poster.authorId === me.id) ?? null : null;
 </script>
 
@@ -236,20 +325,86 @@
   {:else if subPhase === "waiting"}
     <div class="text-center space-y-4 mt-8">
       <h2 class="text-3xl font-black text-amber-300 tracking-[0.2em]">WANTED AD</h2>
-      <p class="text-gray-300">Waiting for the sheriff to hand you a blank poster...</p>
+      <p class="text-gray-300">Waiting for the sheriff to hand out the next assignment...</p>
+    </div>
+
+  {:else if subPhase === "character_creation" || subPhase === "character_submitted"}
+    <div class="space-y-4 pb-6">
+      <div class="rounded-3xl border border-red-500/30 bg-red-950/30 p-4 space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-xs uppercase tracking-[0.3em] text-red-200/80">Create An Outlaw</p>
+            <h2 class="text-2xl font-black text-red-100">Invent a western menace</h2>
+          </div>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[2.5ch] text-right text-3xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
+        </div>
+        <p class="text-sm text-red-50/80">Name them, sketch them, and give the next player enough detail to write a ridiculous bounty poster.</p>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-sm text-red-100/80">
+            <span>Characters turned in</span>
+            <span>{submittedCount} / {totalPlayers}</span>
+          </div>
+          <div class="h-3 rounded-full bg-black/30 overflow-hidden">
+            <div class="h-full bg-red-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
+          </div>
+        </div>
+      </div>
+
+      <WantedPosterCard poster={characterPreview} />
+
+      <div class="rounded-3xl border border-white/10 bg-gray-900/70 p-4 space-y-4">
+        <label class="block space-y-2">
+          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Outlaw name</span>
+          <input
+            bind:value={characterNameInput}
+            maxlength="28"
+            class="w-full rounded-2xl border border-red-600/40 bg-red-50/95 px-4 py-3 text-lg font-semibold text-red-950 outline-none"
+            placeholder="Dusty Biscuit"
+            disabled={characterSubmitted}
+          />
+        </label>
+
+        <label class="block space-y-2">
+          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Short description</span>
+          <textarea
+            bind:value={characterDescriptionInput}
+            maxlength="120"
+            rows="3"
+            class="w-full rounded-2xl border border-red-600/40 bg-red-50/95 px-4 py-3 text-base font-semibold text-red-950 outline-none"
+            placeholder="Pie thief, train whisperer, and undefeated saloon karaoke champion."
+            disabled={characterSubmitted}
+          ></textarea>
+        </label>
+
+        <IconDesignEditor bind:design={characterDesign} previewName={characterNameInput || me?.name || "Outlaw"} previewSize={112} disabled={characterSubmitted} />
+
+        {#if characterError}
+          <p class="text-sm font-semibold text-red-300">{characterError}</p>
+        {/if}
+
+        {#if acceptedCharacter}
+          <p class="text-sm text-red-100/80">Submitted as <span class="font-black text-white">{acceptedCharacter.name}</span>. The sheriff is now shuffling outlaws between players.</p>
+        {/if}
+
+        <button
+          class="w-full rounded-2xl bg-red-500 px-4 py-3 text-lg font-black text-red-950 disabled:opacity-50"
+          on:click={submitCharacter}
+          disabled={characterSubmitted}
+        >{characterSubmitted ? "Character Submitted" : "Send Outlaw To Sheriff"}</button>
+      </div>
     </div>
 
   {:else if subPhase === "submission" || subPhase === "submitted"}
-    <div class="space-y-4">
+    <div class="space-y-4 pb-6">
       <div class="rounded-3xl border border-amber-500/30 bg-amber-950/30 p-4 space-y-2">
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-xs uppercase tracking-[0.3em] text-amber-200/80">Poster Assignment</p>
-            <h2 class="text-2xl font-black text-amber-100">Build a poster for {targetPlayerName}</h2>
+            <h2 class="text-2xl font-black text-amber-100">Write the bounty for {assignedCharacter?.name ?? "your assigned outlaw"}</h2>
           </div>
-          <p class:animate-pulse={timeLeft < 10} class="text-3xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[2.5ch] text-right text-3xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
         </div>
-        <p class="text-sm text-amber-50/80">Fill in any fields you want, then the town votes for their favourite. The portrait uses {targetPlayerName}'s player icon automatically.</p>
+        <p class="text-sm text-amber-50/80">Keep the portrait, description, and name. You control the condition, bounty text, and accusation.</p>
         <div class="space-y-2">
           <div class="flex items-center justify-between text-sm text-amber-100/80">
             <span>Posters turned in</span>
@@ -261,58 +416,53 @@
         </div>
       </div>
 
-      <WantedPosterCard poster={draftPoster} targetPlayer={playerById(targetPlayerId)} audioPlaceholder />
+      <WantedPosterCard poster={draftPoster} />
 
       <div class="rounded-3xl border border-white/10 bg-gray-900/70 p-4 space-y-4">
         <label class="block space-y-2">
-          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Wanted dead / alive / whatever</span>
+          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Condition</span>
           <input
             bind:value={conditionInput}
             maxlength="28"
             class="w-full rounded-2xl border border-amber-600/40 bg-amber-50/95 px-4 py-3 text-lg font-semibold text-amber-950 outline-none"
             placeholder="Dead or Alive"
-            disabled={submitted}
+            disabled={posterSubmitted}
           />
         </label>
 
-        <div class="flex flex-wrap gap-2">
-          {#each conditionSuggestions as suggestion}
-            <button
-              class="rounded-full border border-amber-500/40 px-3 py-1 text-xs font-bold uppercase tracking-[0.15em] text-amber-200"
-              on:click={() => (conditionInput = suggestion)}
-              disabled={submitted}
-            >{suggestion}</button>
-          {/each}
-        </div>
-
         <label class="block space-y-2">
-          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Bounty price</span>
+          <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Bounty text</span>
           <input
             bind:value={bountyInput}
-            inputmode="numeric"
+            maxlength={maxBountyLength}
             class="w-full rounded-2xl border border-amber-600/40 bg-amber-50/95 px-4 py-3 text-lg font-semibold text-amber-950 outline-none"
-            placeholder="$5,000"
-            disabled={submitted}
+            placeholder="Three horses, $4,500, and a warm pie"
+            disabled={posterSubmitted}
           />
+          <p class="text-xs text-gray-400">Free-form. Use money, trade offers, threats, or whatever the town would pay.</p>
         </label>
 
         <label class="block space-y-2">
           <span class="text-sm font-bold uppercase tracking-[0.2em] text-gray-300">Why are they wanted?</span>
           <textarea
             bind:value={reasonInput}
-            maxlength="96"
-            rows="3"
+            maxlength="120"
+            rows="4"
             class="w-full rounded-2xl border border-amber-600/40 bg-amber-50/95 px-4 py-3 text-base font-semibold text-amber-950 outline-none"
-            placeholder="Stole every pie in town and vanished into the sunset..."
-            disabled={submitted}
+            placeholder="Hijacked the town tuba parade and declared themselves mayor of every cactus in sight."
+            disabled={posterSubmitted}
           ></textarea>
         </label>
+
+        {#if posterError}
+          <p class="text-sm font-semibold text-red-300">{posterError}</p>
+        {/if}
 
         <button
           class="w-full rounded-2xl bg-amber-500 px-4 py-3 text-lg font-black text-amber-950 disabled:opacity-50"
           on:click={submitPoster}
-          disabled={submitted}
-        >{submitted ? "Poster Submitted" : "Pin Poster To Wall"}</button>
+          disabled={posterSubmitted || !assignedCharacter}
+        >{posterSubmitted ? "Poster Submitted" : "Pin Poster To Wall"}</button>
       </div>
     </div>
 
@@ -321,17 +471,16 @@
       <div class="rounded-3xl border border-amber-500/30 bg-amber-950/30 p-4 text-center space-y-2">
         <p class="text-xs uppercase tracking-[0.3em] text-amber-200/80">Sheriff Showcase</p>
         <h2 class="text-2xl font-black text-amber-100">Poster {revealIndex} of {revealTotal}</h2>
-        <p class:animate-pulse={timeLeft < 4} class="text-4xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
+        <p class:animate-pulse={timeLeft < 4} class="min-w-[2.5ch] text-center text-4xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
       </div>
 
       {#if revealPoster}
         <WantedPosterCard
           poster={revealPoster}
-          targetPlayer={playerById(revealPoster.targetPlayerId)}
           showAuthor
           authorName={state.players.get(revealPoster.authorId)?.name ?? "Unknown Deputy"}
-          audioPlaceholder
           featuredLabel="On Display"
+          emphasis="showcase"
         />
       {/if}
     </div>
@@ -342,9 +491,9 @@
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-xs uppercase tracking-[0.3em] text-purple-200/80">Vote</p>
-            <h2 class="text-2xl font-black text-purple-100">Pick the poster you liked most</h2>
+            <h2 class="text-2xl font-black text-purple-100">Pick the best poster</h2>
           </div>
-          <p class:animate-pulse={timeLeft < 10} class="text-3xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[2.5ch] text-right text-3xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
         </div>
         <div class="flex items-center justify-between text-sm text-purple-100/80">
           <span>Votes in</span>
@@ -358,22 +507,26 @@
       <div class="grid gap-4">
         {#each votingPosters as poster}
           <button
-            class:selected={myVote === poster.authorId}
+            class:selected={selectedVoteAuthorId === poster.authorId}
             class="rounded-[28px] border border-white/10 bg-transparent p-0 text-left transition-transform hover:-translate-y-1 disabled:opacity-70"
-            on:click={() => voteFor(poster.authorId)}
+            on:click={() => selectVote(poster.authorId)}
             disabled={voteSubmitted}
           >
             <WantedPosterCard
               poster={poster}
-              targetPlayer={playerById(poster.targetPlayerId)}
               compact
               showAuthor
               authorName={state.players.get(poster.authorId)?.name ?? "Unknown Deputy"}
-              audioPlaceholder
             />
           </button>
         {/each}
       </div>
+
+      <button
+        class="w-full rounded-2xl bg-purple-500 px-4 py-3 text-lg font-black text-purple-950 disabled:opacity-50"
+        on:click={submitVote}
+        disabled={voteSubmitted || !selectedVoteAuthorId}
+      >{voteSubmitted ? "Vote Submitted" : selectedVoteAuthorId ? "Submit Vote" : "Choose A Poster To Vote"}</button>
     </div>
 
   {:else if subPhase === "result"}
@@ -395,12 +548,10 @@
         {#each resultPosters as poster}
           <WantedPosterCard
             poster={poster}
-            targetPlayer={playerById(poster.targetPlayerId)}
             compact
             showAuthor
             authorName={state.players.get(poster.authorId)?.name ?? "Unknown Deputy"}
             showVoteCount
-            audioPlaceholder
             featuredLabel={poster.isWinner ? "Winner" : "Finalist"}
           />
         {/each}

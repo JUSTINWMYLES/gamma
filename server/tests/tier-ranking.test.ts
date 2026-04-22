@@ -9,6 +9,9 @@ import {
   isDuplicateEntry,
   haveAllExpectedPlayersResponded,
   aggregateVotes,
+  getResultsDisplayMs,
+  orderResultsForReveal,
+  RESULT_REVEAL_STEP_MS,
   scoreRound,
   CATEGORY_PICK_DURATION_SECS,
   ENTRY_SUBMIT_DURATION_SECS,
@@ -220,6 +223,34 @@ describe("aggregateVotes", () => {
   });
 });
 
+describe("orderResultsForReveal", () => {
+  it("orders reveal items from D up to S", () => {
+    const ordered = orderResultsForReveal([
+      { item: "Top Pick", tier: "S", voteCounts: { S: 3, A: 0, B: 0, C: 0, D: 0 } },
+      { item: "Mid Pick", tier: "B", voteCounts: { S: 0, A: 0, B: 3, C: 0, D: 0 } },
+      { item: "Low Pick", tier: "D", voteCounts: { S: 0, A: 0, B: 0, C: 0, D: 3 } },
+      { item: "Almost Top", tier: "A", voteCounts: { S: 0, A: 3, B: 0, C: 0, D: 0 } },
+    ]);
+
+    expect(ordered.map((entry) => `${entry.tier}:${entry.item}`)).toEqual([
+      "D:Low Pick",
+      "B:Mid Pick",
+      "A:Almost Top",
+      "S:Top Pick",
+    ]);
+  });
+
+  it("preserves original order within the same tier", () => {
+    const ordered = orderResultsForReveal([
+      { item: "First B", tier: "B", voteCounts: { S: 0, A: 0, B: 2, C: 0, D: 0 } },
+      { item: "Second B", tier: "B", voteCounts: { S: 0, A: 0, B: 2, C: 0, D: 0 } },
+      { item: "Only C", tier: "C", voteCounts: { S: 0, A: 0, B: 0, C: 2, D: 0 } },
+    ]);
+
+    expect(ordered.map((entry) => entry.item)).toEqual(["Only C", "First B", "Second B"]);
+  });
+});
+
 // ── scoreRound ──────────────────────────────────────────────────────────────
 
 describe("scoreRound", () => {
@@ -318,6 +349,12 @@ describe("constants", () => {
 
   it("RESULTS_DISPLAY_MS is 10000", () => {
     expect(RESULTS_DISPLAY_MS).toBe(10_000);
+  });
+
+  it("uses a 5 second reveal cadence and extends result time for extra items", () => {
+    expect(RESULT_REVEAL_STEP_MS).toBe(5_000);
+    expect(getResultsDisplayMs(1)).toBe(10_000);
+    expect(getResultsDisplayMs(4)).toBe(25_000);
   });
 
   it("MIN_PLAYERS is 2", () => {

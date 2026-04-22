@@ -3,6 +3,8 @@
   import {
     DEFAULT_TEXT_COLOR,
     designFromPlayer,
+    getIconStrokeRenderWidth,
+    ICON_VIEWBOX_SIZE,
     iconDesignHasVisibleContent,
   } from "../../../shared/playerIconDesign";
 
@@ -14,14 +16,10 @@
   $: fallbackText = player.name?.charAt(0)?.toUpperCase() || "?";
   $: fontSize = Math.round(size * 0.4);
 
-  function toPx(percent: number): number {
-    return (percent / 100) * size;
-  }
-
   function pointsToPath(points: Array<{ x: number; y: number }>): string {
     if (points.length === 0) return "";
     const [first, ...rest] = points;
-    return `M ${toPx(first.x)} ${toPx(first.y)} ${rest.map((point) => `L ${toPx(point.x)} ${toPx(point.y)}`).join(" ")}`;
+    return `M ${first.x} ${first.y} ${rest.map((point) => `L ${point.x} ${point.y}`).join(" ")}`;
   }
 </script>
 
@@ -31,14 +29,14 @@
   title={player.name}
 >
   {#if hasVisibleDesign}
-    <svg class="absolute inset-0 w-full h-full" viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <circle cx={size / 2} cy={size / 2} r={size / 2} fill={design.bgColor} />
+    <svg class="absolute inset-0 w-full h-full" viewBox={`0 0 ${ICON_VIEWBOX_SIZE} ${ICON_VIEWBOX_SIZE}`} aria-hidden="true">
+      <circle cx={ICON_VIEWBOX_SIZE / 2} cy={ICON_VIEWBOX_SIZE / 2} r={ICON_VIEWBOX_SIZE / 2} fill={design.bgColor} />
       {#each design.strokes as stroke}
         <path
           d={pointsToPath(stroke.points)}
           fill="none"
           stroke={stroke.color}
-          stroke-width={(stroke.size / 100) * size}
+          stroke-width={getIconStrokeRenderWidth(stroke.size)}
           stroke-linecap="round"
           stroke-linejoin="round"
         />

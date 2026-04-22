@@ -214,6 +214,13 @@
     }
   }
 
+  function stopMediaStream() {
+    if (!mediaStream) return;
+    mediaStream.getTracks().forEach((track) => track.stop());
+    mediaStream = null;
+    micAllowed = false;
+  }
+
   function clearClipTimers() {
     if (clipTimer) { clearInterval(clipTimer); clipTimer = null; }
     if (recordingStopTimer) { clearTimeout(recordingStopTimer); recordingStopTimer = null; }
@@ -270,6 +277,7 @@
       revokeAudioPreview();
       audioPreviewUrl = URL.createObjectURL(blob);
       audioBase64 = await blobToBase64(blob);
+      stopMediaStream();
 
       if (recordingTimeLeft <= 0 && !recordingSubmitted) {
         submitRecording();
@@ -313,6 +321,12 @@
   // ── Actions ─────────────────────────────────────────────────────
 
   function pickCategory(categoryId: string) {
+    const category = categories.find((entry) => entry.id === categoryId);
+    if (category) {
+      chosenCategory = category;
+      categoryRevealing = true;
+      subPhase = "category_waiting";
+    }
     room.send("game_input", { action: "select_category", category: categoryId });
   }
 
@@ -399,6 +413,7 @@
   function onCategoryChosen(data: { category: CategoryInfo; chooserName: string }) {
     chosenCategory = data.category;
     categoryRevealing = true;
+    subPhase = "category_waiting";
     if (categoryTimer) { clearInterval(categoryTimer); categoryTimer = null; }
     // The server will send gif_selection_start after a brief delay
   }
@@ -626,9 +641,7 @@
     if (mediaRecorder && mediaRecorder.state === "recording") {
       mediaRecorder.stop();
     }
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((t) => t.stop());
-    }
+    stopMediaStream();
     window.removeEventListener("pointerup", stopHeldRecording);
     window.removeEventListener("pointercancel", stopHeldRecording);
     revokeAudioPreview();

@@ -83,8 +83,5 @@
     </div>
   {/if}
 
-  <button
-    class="mt-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-lg font-bold transition-colors"
-    on:click={() => room.send("play_again", {})}
-  >Play Again</button>
+  <p class="mt-2 text-sm text-gray-500">Use the host phone to continue.</p>
 </div>

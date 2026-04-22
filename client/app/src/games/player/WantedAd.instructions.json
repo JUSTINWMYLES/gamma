@@ -1,0 +1,52 @@
+{
+  "gameId": "registry-28-wanted-ad",
+  "modes": {
+    "default": [
+      {
+        "heading": "Wanted Ad",
+        "body": "First invent a ridiculous outlaw, then help the town turn them into legend.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-orange-900 to-yellow-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-black",
+        "icon": "🤠"
+      },
+      {
+        "heading": "Create a Character",
+        "body": "Come up with a name, draw their portrait, and write a short description for your outlaw.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-orange-900 to-amber-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-bold",
+        "icon": "🖍️"
+      },
+      {
+        "heading": "Swap the Outlaws",
+        "body": "All of those characters get mixed into a pool. You will write a wanted poster for somebody else's creation.",
+        "bgClass": "bg-gradient-to-br from-stone-900 via-amber-950 to-yellow-950",
+        "headingColor": "text-yellow-200",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🎯"
+      },
+      {
+        "heading": "Fill In the Poster",
+        "body": "Write any wanted condition you like, any bounty text you want, and the reason the town is after them.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-teal-900 to-cyan-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-bold",
+        "icon": "📜"
+      },
+      {
+        "heading": "Vote for the Best",
+        "body": "When the posters go up on the wanted wall, vote for the one you like most.",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-purple-900 to-violet-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-fuchsia-100",
+        "fontClass": "font-black",
+        "icon": "🗳️"
+      }
+    ]
+  }
+}

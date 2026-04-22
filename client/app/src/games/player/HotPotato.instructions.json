@@ -1,0 +1,52 @@
+{
+  "gameId": "registry-07-hot-potato",
+  "modes": {
+    "default": [
+      {
+        "heading": "Hot Potato",
+        "body": "Don't get caught holding the potato when it blows!",
+        "bgClass": "bg-gradient-to-br from-red-900 via-orange-900 to-yellow-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "🥔"
+      },
+      {
+        "heading": "Pass It!",
+        "body": "One phone is the potato. Your screen shows who to pass it to, so hand them the phone fast.",
+        "bgClass": "bg-gradient-to-br from-orange-900 via-amber-900 to-yellow-900",
+        "headingColor": "text-orange-300",
+        "bodyColor": "text-orange-100",
+        "fontClass": "font-bold",
+        "icon": "📲"
+      },
+      {
+        "heading": "Accept It!",
+        "body": "When the potato reaches you, tap Accept on the phone. Don't delay!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-lime-900 to-green-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "👆"
+      },
+      {
+        "heading": "Boom!",
+        "body": "When the hidden timer hits zero, the holder explodes and the round gets judged.",
+        "bgClass": "bg-gradient-to-br from-red-950 via-rose-900 to-red-900",
+        "headingColor": "text-red-400",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "💥"
+      },
+      {
+        "heading": "Vote on Delays",
+        "body": "After the boom, vote on who slowed the chain down. Slow accepters get penalized!",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-purple-900 to-indigo-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      }
+    ]
+  }
+}

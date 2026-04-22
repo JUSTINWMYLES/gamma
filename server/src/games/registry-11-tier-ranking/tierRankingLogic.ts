@@ -132,6 +132,14 @@ export interface ItemResult {
   voteCounts: VoteCounts;
 }
 
+const REVEAL_TIER_ORDER: Record<Tier, number> = {
+  D: 0,
+  C: 1,
+  B: 2,
+  A: 3,
+  S: 4,
+};
+
 /**
  * Aggregate per-player tier votes and compute the consensus tier for each item.
  *
@@ -208,6 +216,21 @@ export function scoreRound(
   return scores;
 }
 
+/**
+ * Order results for the TV reveal from lowest tier to highest tier while
+ * preserving original item order within each tier.
+ */
+export function orderResultsForReveal(results: ItemResult[]): ItemResult[] {
+  return results
+    .map((result, index) => ({ result, index }))
+    .sort((a, b) => {
+      const tierDiff = REVEAL_TIER_ORDER[a.result.tier] - REVEAL_TIER_ORDER[b.result.tier];
+      if (tierDiff !== 0) return tierDiff;
+      return a.index - b.index;
+    })
+    .map(({ result }) => result);
+}
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /** Duration for the category-pick phase (seconds). */
@@ -221,6 +244,13 @@ export const TIER_RANK_DURATION_SECS = 90;
 
 /** Duration to display results before advancing (ms). */
 export const RESULTS_DISPLAY_MS = 10_000;
+
+/** Reveal cadence for the TV result board (ms). */
+export const RESULT_REVEAL_STEP_MS = 5_000;
+
+export function getResultsDisplayMs(itemCount: number): number {
+  return RESULTS_DISPLAY_MS + Math.max(0, itemCount - 1) * RESULT_REVEAL_STEP_MS;
+}
 
 /** Minimum number of connected players required to start a round. */
 export const MIN_PLAYERS = 2;

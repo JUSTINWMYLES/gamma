@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   getConcurrentPlayerCount,
   assignPhones,
@@ -15,6 +15,11 @@ import {
   type ColorSequencePlayerResult,
   type ColorSequenceStep,
 } from "../src/games/registry-10-grid-tap-colors/gridTapLogic";
+import GridTapColorsGame from "../src/games/registry-10-grid-tap-colors";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // ── getConcurrentPlayerCount ─────────────────────────────────────────────────
 
@@ -457,5 +462,122 @@ describe("integration: Grid Tap Colors game flow", () => {
     const groups = buildPlayerGroups(playerIds, concurrent);
     expect(groups.length).toBe(5); // 20 / 4 = 5 groups
     expect(groups[0].length).toBe(4);
+  });
+});
+
+describe("GridTapColorsGame turn timing", () => {
+  function createRoomStub() {
+    const players = new Map([
+      ["p1", { id: "p1", name: "Alex", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+      ["p2", { id: "p2", name: "Blair", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+      ["p3", { id: "p3", name: "Casey", score: 0, isReady: false, isEliminated: false, isConnected: true, disconnectedAt: 0 }],
+    ]);
+
+    return {
+      state: {
+        phase: "in_round",
+        selectedGame: "registry-10-grid-tap-colors",
+        hostSessionId: "p1",
+        phaseStartedAt: 0,
+        currentRound: 1,
+        isPracticeRound: false,
+        roundDurationSecs: 10,
+        gameConfig: {
+          roundCount: 1,
+          timeLimitSecs: 10,
+          practiceRoundEnabled: false,
+        },
+        players,
+      },
+      broadcast: vi.fn(),
+      clients: [
+        { sessionId: "p1", send: vi.fn() },
+        { sessionId: "p2", send: vi.fn() },
+        { sessionId: "p3", send: vi.fn() },
+      ],
+    } as any;
+  }
+
+  it("clears the previous turn timeout when a group finishes early", async () => {
+    vi.useFakeTimers();
+    const room = createRoomStub();
+    const game = new GridTapColorsGame(room) as any;
+
+    let firstWaitResolved = false;
+    const firstWait = game._waitForAllSpeedTapsComplete(["p1"]);
+    firstWait.then(() => {
+      firstWaitResolved = true;
+    });
+
+    game.activeSpeedTaps.set("p1", {
+      playerId: "p1",
+      currentPhoneIndex: 0,
+      sequence: [0],
+      litAt: 0,
+      tapTimesMs: [120],
+      startedAt: 0,
+      totalTaps: 1,
+      completed: true,
+    });
+    game._checkAllSpeedTapsDone();
+    await Promise.resolve();
+
+    expect(firstWaitResolved).toBe(true);
+    expect(game.tapResolve).toBeNull();
+    expect(game.tapTimeout).toBeNull();
+
+    game.activeSpeedTaps.delete("p1");
+    game.activeSpeedTaps.set("p2", {
+      playerId: "p2",
+      currentPhoneIndex: 1,
+      sequence: [1, 2],
+      litAt: 0,
+      tapTimesMs: [],
+      startedAt: 0,
+      totalTaps: 2,
+      completed: false,
+    });
+
+    let secondWaitResolved = false;
+    const secondWait = game._waitForAllSpeedTapsComplete(["p2"]);
+    secondWait.then(() => {
+      secondWaitResolved = true;
+    });
+
+    vi.advanceTimersByTime(19_999);
+    await Promise.resolve();
+
+    expect(secondWaitResolved).toBe(false);
+    expect(game.activeSpeedTaps.get("p2")?.completed).toBe(false);
+
+    void firstWait;
+    void secondWait;
+  });
+
+  it("re-broadcasts grid setup each round after the initial placement flow", async () => {
+    const room = createRoomStub();
+    const game = new GridTapColorsGame(room) as any;
+
+    game.phoneAssignments = [
+      { phoneId: "p1", displayNumber: 1, color: "#ff0000", groupIndex: 0 },
+      { phoneId: "p2", displayNumber: 2, color: "#00ff00", groupIndex: 0 },
+    ];
+    game.playerGroups = [["p1"], ["p2"]];
+    game.totalTaps = 10;
+
+    game._syncGridSetupState();
+    expect(room.broadcast).toHaveBeenCalledWith(
+      "grid_setup",
+      expect.objectContaining({ totalTaps: 10, phoneAssignments: expect.any(Array) }),
+    );
+
+    room.broadcast.mockClear();
+    game.gridSetupComplete = true;
+
+    game._syncGridSetupState();
+    expect(room.broadcast).toHaveBeenCalledWith(
+      "grid_setup",
+      expect.objectContaining({ totalTaps: 10, phoneAssignments: expect.any(Array) }),
+    );
   });
 });

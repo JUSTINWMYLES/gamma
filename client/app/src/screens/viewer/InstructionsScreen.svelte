@@ -12,7 +12,7 @@
   export let room: Room;
   export let state: RoomState;
 
-  $: slides = getInstructionSlides(state.selectedGame ?? "");
+  $: slides = getInstructionSlides(state.selectedGame ?? "", state.gameConfig.gameMode ?? "default");
   $: readyCount = [...state.players.values()].filter((p) => p.isReady).length;
   $: totalCount = state.players.size;
 </script>

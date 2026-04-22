@@ -1,0 +1,43 @@
+{
+  "gameId": "registry-06-sound-replication",
+  "modes": {
+    "default": [
+      {
+        "heading": "Sound Replication",
+        "body": "Listen. Replicate. Match.",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-indigo-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-black",
+        "icon": "🔊"
+      },
+      {
+        "heading": "Listen Up!",
+        "body": "A target sound plays for everyone to hear. Listen closely because you will need to replicate it.",
+        "bgClass": "bg-gradient-to-br from-cyan-900 via-teal-900 to-blue-900",
+        "headingColor": "text-cyan-300",
+        "bodyColor": "text-cyan-100",
+        "fontClass": "font-bold",
+        "icon": "👂"
+      },
+      {
+        "heading": "Your Turn to Record",
+        "body": "When it is your turn, record your best imitation using your phone's mic.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-bold",
+        "icon": "🎤"
+      },
+      {
+        "heading": "Get Scored!",
+        "body": "Your recording is analyzed for similarity. Closer matches earn more points.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-black",
+        "icon": "📊"
+      }
+    ]
+  }
+}
