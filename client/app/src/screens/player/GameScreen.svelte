@@ -26,6 +26,7 @@
   import TierRanking from "../../games/player/TierRanking.svelte";
   import MedicalStory from "../../games/player/MedicalStory.svelte";
   import WantedAd from "../../games/player/WantedAd.svelte";
+  import WesternStandoff from "../../games/player/WesternStandoff.svelte";
 
   export let room: Room;
   export let state: RoomState;
@@ -55,6 +56,7 @@
   $: isWantedAd = state.selectedGame === "registry-28-wanted-ad";
   $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
   $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
+  $: isWesternStandoff = state.selectedGame === "registry-44-western-standoff";
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
@@ -194,7 +196,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory) return; // These games handle their own listeners
+    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory || isWesternStandoff) return; // These games handle their own listeners
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -260,6 +262,9 @@
 {#if isMedicalStory}
   <!-- ── Registry-43: Medical Story ──────────────────────────────── -->
   <MedicalStory {room} {state} {me} />
+{:else if isWesternStandoff}
+  <!-- ── Registry-44: Western Standoff ───────────────────────────── -->
+  <WesternStandoff {room} {state} {me} />
 {:else if isWantedAd}
   <!-- ── Registry-28: Wanted Ad ─────────────────────────────────── -->
   <WantedAd {room} {state} {me} />

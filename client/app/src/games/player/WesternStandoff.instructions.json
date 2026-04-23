@@ -1,0 +1,43 @@
+{
+  "gameId": "registry-44-western-standoff",
+  "modes": {
+    "default": [
+      {
+        "heading": "Western Standoff",
+        "body": "Face off in a one-on-one quick-draw bracket. First clean shot wins the duel.",
+        "bgClass": "bg-gradient-to-br from-amber-950 via-orange-950 to-red-950",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-black",
+        "icon": "🤠"
+      },
+      {
+        "heading": "Calibrate Back-to-Back",
+        "body": "When your duel starts, stand back-to-back with your rival and tap the calibration button while facing away.",
+        "bgClass": "bg-gradient-to-br from-yellow-950 via-amber-900 to-orange-950",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🧭"
+      },
+      {
+        "heading": "Wait For The Draw",
+        "body": "Take three paces apart. When the TV calls the draw, turn around, raise your phone sideways like a revolver, then tap to fire.",
+        "bgClass": "bg-gradient-to-br from-stone-900 via-orange-950 to-amber-950",
+        "headingColor": "text-orange-300",
+        "bodyColor": "text-orange-100",
+        "fontClass": "font-black",
+        "icon": "🔫"
+      },
+      {
+        "heading": "Clean Shot Only",
+        "body": "Shots only count after the draw and only when you're fully turned and aiming in a landscape pose. Win your duels to claim the title.",
+        "bgClass": "bg-gradient-to-br from-red-950 via-orange-950 to-zinc-950",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-bold",
+        "icon": "🏆"
+      }
+    ]
+  }
+}

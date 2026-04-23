@@ -341,7 +341,23 @@
     <rect x="97" y="78" width="36" height="12" rx="6" fill="{accent}" fill-opacity="0.08" stroke="{accent}" stroke-width="0.6" stroke-opacity="0.2"/>
     <text x="115" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.3">vehicles</text>
     <rect x="139" y="78" width="38" height="12" rx="6" fill="{accent}" fill-opacity="0.08" stroke="{accent}" stroke-width="0.6" stroke-opacity="0.2"/>
-    <text x="158" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.3">evil laughs</text>
+     <text x="158" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.3">evil laughs</text>
+  </svg>
+
+{:else if gameId === "registry-44-western-standoff"}
+  <!-- Western Standoff: two duelists and a revolver silhouette -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <circle cx="46" cy="34" r="7" fill="{accent}" opacity="0.22"/>
+    <rect x="40" y="42" width="12" height="22" rx="4" fill="{accent}" opacity="0.18"/>
+    <line x1="52" y1="50" x2="74" y2="44" stroke="{accent}" stroke-width="2.2" stroke-linecap="round" opacity="0.35"/>
+    <circle cx="154" cy="34" r="7" fill="{accent}" opacity="0.22"/>
+    <rect x="148" y="42" width="12" height="22" rx="4" fill="{accent}" opacity="0.18"/>
+    <line x1="148" y1="50" x2="126" y2="44" stroke="{accent}" stroke-width="2.2" stroke-linecap="round" opacity="0.35"/>
+    <path d="M90 56 h18 a6 6 0 0 0 6 -6 v-5 a6 6 0 0 0 -6 -6 h-8 l-4 -6 h-8 v23" fill="rgba(255,255,255,0.03)" stroke="{accent}" stroke-width="1.5" opacity="0.45"/>
+    <circle cx="104" cy="47" r="4.5" fill="none" stroke="{accent}" stroke-width="1.1" opacity="0.35" class="standoff-cylinder"/>
+    <path d="M30 82 C52 70, 68 69, 86 78" stroke="{accent}" stroke-width="1.2" opacity="0.18" stroke-dasharray="3 3"/>
+    <path d="M170 82 C148 70, 132 69, 114 78" stroke="{accent}" stroke-width="1.2" opacity="0.18" stroke-dasharray="3 3"/>
+    <text x="100" y="93" text-anchor="middle" fill="{accent}" font-size="8" font-weight="bold" opacity="0.45">DRAW</text>
   </svg>
 
 {:else}
