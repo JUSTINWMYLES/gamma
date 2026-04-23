@@ -94,7 +94,8 @@ export default class WesternStandoffGame extends BaseGame {
   private liveResolutionTimeout: ReturnType<typeof setTimeout> | null = null;
   private matchResolve: (() => void) | null = null;
   private calibrationResolve: (() => void) | null = null;
-  private extraTimers: ReturnType<typeof setTimeout>[] = [];
+  private extraTimeouts: ReturnType<typeof setTimeout>[] = [];
+  private extraIntervals: ReturnType<typeof setInterval>[] = [];
 
   protected override async onLoad(): Promise<void> {
     for (const player of this.room.state.players.values()) {
@@ -258,10 +259,23 @@ export default class WesternStandoffGame extends BaseGame {
     super.teardown();
     this._clearLiveMonitor();
     this._clearLiveResolutionTimeout();
-    for (const timer of this.extraTimers) clearTimeout(timer);
-    this.extraTimers = [];
-    this.matchResolve = null;
-    this.calibrationResolve = null;
+    for (const timeout of this.extraTimeouts) clearTimeout(timeout);
+    for (const interval of this.extraIntervals) clearInterval(interval);
+    this.extraTimeouts = [];
+    this.extraIntervals = [];
+
+    if (this.calibrationResolve) {
+      const resolve = this.calibrationResolve;
+      this.calibrationResolve = null;
+      resolve();
+    }
+
+    if (this.matchResolve) {
+      const resolve = this.matchResolve;
+      this.matchResolve = null;
+      resolve();
+    }
+
     this.currentMatch = null;
     this.pendingScores.clear();
   }
@@ -455,8 +469,8 @@ export default class WesternStandoffGame extends BaseGame {
         finish();
       }, timeoutMs);
 
-      this.extraTimers.push(interval as unknown as ReturnType<typeof setTimeout>);
-      this.extraTimers.push(timeout);
+      this.extraIntervals.push(interval);
+      this.extraTimeouts.push(timeout);
     });
   }
 
@@ -476,7 +490,7 @@ export default class WesternStandoffGame extends BaseGame {
         this._resolveLiveTimeout(match);
       }, timeoutMs);
 
-      this.extraTimers.push(this.liveResolutionTimeout);
+      this.extraTimeouts.push(this.liveResolutionTimeout);
     });
   }
 

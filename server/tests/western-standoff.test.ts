@@ -361,4 +361,31 @@ describe("WesternStandoffGame reconnect + duel flow", () => {
     expect(game.currentMatch.ended).toBe(true);
     expect(game.currentMatch.resolutionReason).toBe("timeout");
   });
+
+  it("teardown clears pending calibration/live waits without hanging", async () => {
+    vi.useFakeTimers();
+
+    const room = createRoomStub();
+    const game = new WesternStandoffGame(room) as any;
+
+    game.currentMatch = createMatch({ matchId: "m-cal", stage: "calibrating" });
+    const calibrationWait = game._waitForCalibration(20_000);
+
+    await vi.advanceTimersByTimeAsync(250);
+    game.teardown();
+    await calibrationWait;
+
+    expect(game.currentMatch).toBeNull();
+    expect(game.calibrationResolve).toBeNull();
+
+    game.currentMatch = createMatch({ matchId: "m-live", stage: "live", drawAt: Date.now() });
+    const liveWait = game._waitForLiveResolution(12_000);
+
+    await vi.advanceTimersByTimeAsync(250);
+    game.teardown();
+    await liveWait;
+
+    expect(game.currentMatch).toBeNull();
+    expect(game.matchResolve).toBeNull();
+  });
 });
