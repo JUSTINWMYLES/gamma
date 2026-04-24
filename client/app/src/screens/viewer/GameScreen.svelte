@@ -28,6 +28,8 @@
   import TierRankingTV from "../../games/viewer/TierRankingTV.svelte";
   import MedicalStoryTV from "../../games/viewer/MedicalStoryTV.svelte";
   import WantedAdTV from "../../games/viewer/WantedAdTV.svelte";
+  import WesternStandoffTV from "../../games/viewer/WesternStandoffTV.svelte";
+  import NewsBroadcastTV from "../../games/viewer/NewsBroadcastTV.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
@@ -49,6 +51,8 @@
   $: isWantedAd = state.selectedGame === "registry-28-wanted-ad";
   $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
   $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
+  $: isWesternStandoff = state.selectedGame === "registry-44-western-standoff";
+  $: isNewsBroadcast = state.selectedGame === "registry-45-news-broadcast";
 
   const PLAYER_COLORS = [
     "#6366f1", "#ec4899", "#f59e0b", "#10b981",
@@ -63,7 +67,7 @@
   let timerInterval: ReturnType<typeof setInterval>;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory) return; // delegated components handle their own setup
+    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory || isWesternStandoff || isNewsBroadcast) return; // delegated components handle their own setup
     ctx = canvas.getContext("2d")!;
     animFrame = requestAnimationFrame(draw);
 
@@ -236,6 +240,10 @@
 
 {#if isMedicalStory}
   <MedicalStoryTV {room} {state} />
+{:else if isNewsBroadcast}
+  <NewsBroadcastTV {room} {state} />
+{:else if isWesternStandoff}
+  <WesternStandoffTV {room} {state} />
 {:else if isWantedAd}
   <WantedAdTV {room} {state} />
 {:else if isWordBuild}

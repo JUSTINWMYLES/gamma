@@ -35,6 +35,8 @@ cp .env.example .env
 make dev
 ```
 
+`make dev` starts only the Node server and unified Svelte client. News Broadcast TTS stays disabled unless `TTS_API_URL` points at a running TTS stack. For the full local News Broadcast flow with Redis, MinIO, `tts-api`, and `tts-worker`, use Docker Compose below.
+
 Open in your browser:
 - **View screen / TV display**: http://localhost:5173 (select "Host a Room")
 - **Phone controller**: http://localhost:5173 on a phone or second tab (select "Join")
@@ -45,11 +47,35 @@ Open in your browser:
 ## Quickstart: Docker Compose
 
 ```bash
-docker compose up --build
+make compose-up
+# or: docker compose up --build -d
 ```
 
-- Client: http://localhost:5173
-- Server: ws://localhost:2567
+Compose brings up the full local News Broadcast stack:
+
+- `server` — Colyseus game server
+- `client` — unified SPA served by nginx
+- `redis` — TTS queue + job metadata
+- `minio` — S3-compatible audio artifact storage
+- `tts-api` — Go job / voice / artifact API
+- `tts-worker` — Python ONNX worker for real speech generation
+
+Useful local ports and endpoints:
+
+- **Client**: http://localhost:5173
+- **Server health**: http://localhost:2567/health
+- **TTS API**: http://localhost:8090
+- **TTS API health**: http://localhost:8090/healthz
+- **TTS API readiness**: http://localhost:8090/readyz
+- **TTS voices**: http://localhost:8090/tts/voices
+- **MinIO API**: http://localhost:9000
+- **MinIO console**: http://localhost:9001
+- **Redis**: `localhost:6379`
+
+Default local object-storage credentials are `gamma` / `gammalocal`, and the default TTS artifact bucket is `gamma-tts-artifacts`.
+
+> [!TIP]
+> The worker stores model assets in the named `tts-model-cache` Docker volume. With the default local config, worker warmup is disabled so Compose starts quickly; the first real synthesis may take longer while model assets are fetched. Set `TTS_WARMUP_ENABLED=true` if you want eager startup warmup instead.
 
 ---
 
@@ -90,6 +116,11 @@ gamma/
 │       ├── vite.config.ts
 │       ├── package.json
 │       └── Dockerfile
+│
+├── tts/                           # News Broadcast text-to-speech services and assets
+│   ├── api-go/                    # Go API for async jobs, artifacts, voices, metrics
+│   ├── worker/                    # Python ONNX worker using MOSS-TTS-Nano
+│   └── voices/                    # Voice manifest, preview clips, packaged prompts
 │
 ├── operator/                      # Kubernetes operator (Go, controller-runtime)
 │
@@ -136,7 +167,7 @@ gamma/
 | `make dev` | Start server + client in watch mode |
 | `make dev-server` | Server only |
 | `make dev-client` | Client only |
-| `make compose-up` | Docker Compose (server + client) |
+| `make compose-up` | Docker Compose (server + client + Redis + MinIO + TTS) |
 | `make compose-down` | Stop Docker Compose |
 | `make compose-logs` | Stream Docker Compose logs |
 | `make build` | Build TypeScript + Svelte bundles |
@@ -144,6 +175,9 @@ gamma/
 | `make test-unit` | Server Vitest tests only |
 | `make test-e2e` | Playwright E2E tests |
 | `make test-coverage` | Server unit tests with coverage report |
+| `make tts-api-test` | Build and test the Go TTS API |
+| `make tts-worker-check` | Syntax-check the Python TTS worker |
+| `make tts-health` | Query local TTS API health + voice list |
 | `make docker-build` | Build all Docker images |
 | `make docker-push` | Tag and push Docker images |
 | `make helm-lint` | Lint the Helm chart |
@@ -169,13 +203,35 @@ See `.env.example` for full documentation.
 | `PORT` | `2567` | Colyseus server port |
 | `LOG_LEVEL` | `info` | Server log verbosity |
 | `VITE_SERVER_URL` | `ws://localhost:2567` | Local-development override for browser clients |
-| `GAMMA_SERVER_URL` | _(unset)_ | Runtime Colyseus URL injected into the deployed client container |
+| `GAMMA_SERVER_URL` | `ws://localhost:2567` | Runtime Colyseus URL injected into the deployed client container |
+| `TTS_API_URL` | _(empty)_ | Internal News Broadcast TTS API base URL; set it when running the TTS stack outside Compose |
 | `CLIENT_PORT` | `5173` | Vite dev server port for the unified client |
 | `RECONNECT_GRACE_SECONDS` | `30` | How long to hold disconnected player slots |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string for queued TTS jobs |
+| `TTS_REDIS_KEY_PREFIX` | `gamma:tts` | Redis key prefix for TTS metadata |
+| `MINIO_ENDPOINT` | `localhost:9000` | MinIO / S3-compatible endpoint for generated audio |
+| `MINIO_USE_SSL` | `false` | Use HTTPS for MinIO / S3 connections |
+| `MINIO_ACCESS_KEY` | `gamma` | Object storage access key |
+| `MINIO_SECRET_KEY` | `gammalocal` | Object storage secret key |
+| `MINIO_BUCKET_NAME` | `gamma-tts-artifacts` | Bucket used for generated News Broadcast audio |
+| `TTS_REQUIRE_WORKER_READY` | `true` | Make the TTS API wait for a healthy worker heartbeat before reporting ready |
+| `TTS_WARMUP_ENABLED` | `false` | Warm the TTS worker eagerly at startup instead of first synthesis |
+| `TTS_CPU_THREADS` | `2` | CPU thread count used by the local TTS worker |
 | `KLIPY_API_KEY` | _(empty)_ | API key for Klipy GIF search (used by Audio Overlay game) |
 | `OTEL_ENABLED` | `true` | Set to `false` to disable OpenTelemetry tracing/metrics |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | OTLP collector endpoint |
 | `OTEL_SERVICE_NAME` | `gamma-server` | Service name reported to the collector |
+
+### Docker images
+
+`make docker-build` and `make docker-push` now include these application images:
+
+- `$(REGISTRY)/gamma-server:$(TAG)`
+- `$(REGISTRY)/gamma-client:$(TAG)`
+- `$(REGISTRY)/gamma-tts-api:$(TAG)`
+- `$(REGISTRY)/gamma-tts-worker:$(TAG)`
+
+The Kubernetes operator image remains on the separate `make operator-docker-build` / `make operator-docker-push` targets.
 
 ---
 

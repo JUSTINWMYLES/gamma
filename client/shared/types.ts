@@ -94,6 +94,121 @@ export interface RoomState {
   setupStep: number;
 }
 
+export type NewsBroadcastStage =
+  | "headline_submission"
+  | "assignment_reveal"
+  | "broadcast_creation"
+  | "buffering"
+  | "presentation"
+  | "voting"
+  | "results";
+
+export interface NewsBroadcastMediaEntry {
+  provider: string;
+  providerAssetId: string;
+  label: string;
+  previewUrl: string;
+  playbackUrl: string;
+  fallbackImageUrl: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+}
+
+export interface NewsBroadcastVoiceOption {
+  id: string;
+  label: string;
+  tone: string;
+  source?: string;
+  available: boolean;
+  placeholder?: boolean;
+  availabilityReason?: string;
+}
+
+export interface NewsBroadcastSubmission {
+  playerId: string;
+  playerName: string;
+  assignedHeadline: string;
+  script: string;
+  spokenText: string;
+  voicePresetId: string;
+  voiceLabel: string;
+  selectedMedia: NewsBroadcastMediaEntry;
+  estimatedSpeechMs: number;
+  submittedAt: number;
+  ttsJobId?: string;
+  ttsStatus?: string;
+  audioDurationMs?: number;
+  audioMimeType?: string;
+}
+
+export interface NewsBroadcastPresentationUpNext {
+  playerId: string;
+  playerName: string;
+  assignedHeadline: string;
+}
+
+export interface NewsBroadcastPresentationEntry {
+  playerId: string;
+  playerName: string;
+  assignedHeadline: string;
+  script: string;
+  voicePresetId: string;
+  voiceLabel: string;
+  selectedMedia: NewsBroadcastMediaEntry;
+  estimatedSpeechMs: number;
+  artifactJobId: string | null;
+  artifactReady: boolean;
+  captionsOnly: boolean;
+}
+
+export interface NewsBroadcastVotingEntry {
+  playerId: string;
+  playerName: string;
+  assignedHeadline: string;
+  selectedMedia: NewsBroadcastMediaEntry;
+}
+
+export interface NewsBroadcastResultEntry extends NewsBroadcastSubmission {
+  voteCount: number;
+  isWinner: boolean;
+}
+
+export interface NewsBroadcastRoundResultPayload {
+  winner: string | null;
+  scores: Record<string, number>;
+  entries: NewsBroadcastResultEntry[];
+  presentationOrder: string[];
+  totalVotes: number;
+  participationPoints: number;
+}
+
+export interface NewsBroadcastSyncPayload {
+  stage: NewsBroadcastStage;
+  voices: NewsBroadcastVoiceOption[];
+  assignedHeadline: string | null;
+  headlineSubmitted: boolean;
+  broadcastSubmitted: boolean;
+  submission: NewsBroadcastSubmission | null;
+  submittedCount: number;
+  totalPlayers: number;
+  currentPresentationIndex: number;
+  presentationOrder: string[];
+}
+
+export const NEWS_BROADCAST_FALLBACK_MEDIA: NewsBroadcastMediaEntry = {
+  provider: "gamma_builtin",
+  providerAssetId: "news-broadcast-default-frame",
+  label: "Technical Difficulties",
+  previewUrl: "/news-broadcast-default-frame.svg",
+  playbackUrl: "",
+  fallbackImageUrl: "/news-broadcast-default-frame.svg",
+  mimeType: "image/svg+xml",
+  width: 1280,
+  height: 720,
+};
+
 /** Tile IDs from the server tilemap — shared knowledge for rendering. */
 export const TILE = {
   WALL: 1,
@@ -314,6 +429,32 @@ export const GAME_REGISTRY: GameMeta[] = [
     minPlayers: 3,
     maxPlayers: 12,
     tags: ["creative", "voting", "party", "funny"],
+    estimatedMinutes: 10,
+  },
+  {
+    id: "registry-44-western-standoff",
+    label: "Western Standoff",
+    description: "Back-to-back duelists turn, aim, and tap first in a western quick-draw bracket.",
+    detailDescription: "Two players at a time face off in a same-room western duel. After a short match preview, both players calibrate while standing back-to-back, take three paces apart, then wait for the draw signal. The server only accepts shots after the signal and only when the phone has fully turned and is held in a sideways aiming pose. First valid shot wins and advances through the single-elimination bracket.",
+    activityLevel: "some",
+    requiresSameRoom: true,
+    requiresSecondaryDisplay: true,
+    minPlayers: 2,
+    maxPlayers: 16,
+    tags: ["western", "bracket", "reaction", "sensor"],
+    estimatedMinutes: 6,
+  },
+  {
+    id: "registry-45-news-broadcast",
+    label: "News Broadcast",
+    description: "Write a headline, produce someone else's story, and air a ridiculous TV news segment.",
+    detailDescription: "Everyone writes one fake headline, then gets somebody else's headline to turn into a full absurd broadcast. On your phone, choose media, write a short caption script, and pick an anchor voice. The TV presents each finished segment visually in captions-only mode for now, then the room votes for the best newscast.",
+    activityLevel: "none",
+    requiresSameRoom: true,
+    requiresSecondaryDisplay: true,
+    minPlayers: 2,
+    maxPlayers: 12,
+    tags: ["creative", "tv", "captions", "voting"],
     estimatedMinutes: 10,
   },
   {

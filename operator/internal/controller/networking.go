@@ -64,6 +64,22 @@ func (r *GammaInstanceReconciler) reconcileIngress(ctx context.Context, instance
 				IngressRuleValue: networkingv1.IngressRuleValue{
 					HTTP: &networkingv1.HTTPIngressRuleValue{
 						Paths: []networkingv1.HTTPIngressPath{
+							// Browsers fetch News Broadcast audio from the Gamma server,
+							// which proxies private TTS artifact requests upstream.
+							// Keep /api/tts routed to the server service instead of
+							// exposing the TTS API directly at the ingress edge.
+							{
+								Path:     "/api/tts",
+								PathType: &pathTypePrefix,
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: serverName,
+										Port: networkingv1.ServiceBackendPort{
+											Number: wsPort,
+										},
+									},
+								},
+							},
 							{
 								Path:     "/ws",
 								PathType: &pathTypePrefix,
