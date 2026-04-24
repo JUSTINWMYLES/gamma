@@ -1,30 +1,37 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONDITION_SUGGESTIONS,
-  MAX_BOUNTY,
+  buildCharacterAssignments,
+  CHARACTER_CREATION_DURATION_SECS,
+  computeRoundPoints,
+  createRoundAssignments,
+  haveAllExpectedPlayersResponded,
+  MAX_BOUNTY_LENGTH,
+  MAX_CHARACTER_DESCRIPTION_LENGTH,
+  MAX_CHARACTER_NAME_LENGTH,
   MAX_CONDITION_LENGTH,
   MAX_REASON_LENGTH,
   MIN_PLAYERS,
   PARTICIPATION_POINTS,
   POSTER_REVEAL_MS,
+  POSTER_SUBMISSION_DURATION_SECS,
   RESULTS_DISPLAY_MS,
-  SUBMISSION_DURATION_SECS,
-  VOTING_DURATION_SECS,
-  VOTE_RECEIVED_POINTS,
-  WINNER_BONUS,
-  computeRoundPoints,
-  createRoundAssignments,
-  haveAllExpectedPlayersResponded,
   normalizeBounty,
+  normalizeCharacterDescription,
+  normalizeCharacterName,
   normalizeCondition,
   normalizeReason,
   tallyPosterVotes,
+  type WantedCharacterSubmission,
   type WantedPosterSubmission,
+  VOTING_DURATION_SECS,
+  VOTE_RECEIVED_POINTS,
+  WINNER_BONUS,
 } from "../src/games/registry-28-wanted-ad/wantedAdLogic";
 
 describe("wanted ad constants", () => {
-  it("matches the requested round timing", () => {
-    expect(SUBMISSION_DURATION_SECS).toBe(45);
+  it("matches the requested two-minute creation windows", () => {
+    expect(CHARACTER_CREATION_DURATION_SECS).toBe(120);
+    expect(POSTER_SUBMISSION_DURATION_SECS).toBe(120);
     expect(POSTER_REVEAL_MS).toBe(10_000);
     expect(VOTING_DURATION_SECS).toBe(20);
     expect(RESULTS_DISPLAY_MS).toBe(15_000);
@@ -36,43 +43,30 @@ describe("wanted ad constants", () => {
     expect(VOTE_RECEIVED_POINTS).toBe(50);
     expect(WINNER_BONUS).toBe(100);
   });
+});
 
-  it("includes western-style condition suggestions", () => {
-    expect(CONDITION_SUGGESTIONS).toContain("Dead or Alive");
-    expect(CONDITION_SUGGESTIONS).toContain("Horse Optional");
+describe("character normalization", () => {
+  it("normalizes names and descriptions safely", () => {
+    expect(normalizeCharacterName("   Dusty    Sam   ")).toBe("Dusty Sam");
+    expect(normalizeCharacterName("x".repeat(100)).length).toBe(MAX_CHARACTER_NAME_LENGTH);
+    expect(normalizeCharacterDescription("   stole   every pie   in town   ")).toBe("stole every pie in town");
+    expect(normalizeCharacterDescription("x".repeat(300)).length).toBe(MAX_CHARACTER_DESCRIPTION_LENGTH);
   });
 });
 
-describe("normalizeCondition", () => {
-  it("trims, collapses whitespace, and limits length", () => {
-    const value = normalizeCondition("   Bring   in   gently   after supper, sheriff   ");
-    expect(value).toBe("Bring in gently after supper");
-    expect(value.length).toBeLessThanOrEqual(MAX_CONDITION_LENGTH);
-  });
-});
-
-describe("normalizeReason", () => {
-  it("trims, collapses whitespace, and limits length", () => {
-    const value = normalizeReason("   Stole    every   pie in town and blamed the horse for it.   ");
-    expect(value).toBe("Stole every pie in town and blamed the horse for it.");
-    expect(value.length).toBeLessThanOrEqual(MAX_REASON_LENGTH);
-  });
-});
-
-describe("normalizeBounty", () => {
-  it("accepts plain numbers and currency strings", () => {
-    expect(normalizeBounty(1250)).toBe(1250);
-    expect(normalizeBounty("$4,500")).toBe(4500);
+describe("poster normalization", () => {
+  it("trims, collapses whitespace, and limits condition/reason length", () => {
+    expect(normalizeCondition("   Bring   in   gently   after supper, sheriff   ")).toBe("Bring in gently after supper");
+    expect(normalizeCondition("x".repeat(100)).length).toBe(MAX_CONDITION_LENGTH);
+    expect(normalizeReason("   Stole    every   pie in town and blamed the horse for it.   ")).toBe("Stole every pie in town and blamed the horse for it.");
+    expect(normalizeReason("x".repeat(300)).length).toBe(MAX_REASON_LENGTH);
   });
 
-  it("rejects invalid and negative inputs", () => {
-    expect(normalizeBounty("")).toBeNull();
-    expect(normalizeBounty("none")).toBeNull();
-    expect(normalizeBounty(-50)).toBeNull();
-  });
-
-  it("caps overly large bounties", () => {
-    expect(normalizeBounty("999999999")).toBe(MAX_BOUNTY);
+  it("keeps bounty free-form text instead of coercing to dollars", () => {
+    expect(normalizeBounty("$4,500 reward")).toBe("$4,500 reward");
+    expect(normalizeBounty("Three chickens and a favor")).toBe("Three chickens and a favor");
+    expect(normalizeBounty(null)).toBe("");
+    expect(normalizeBounty("x".repeat(100)).length).toBe(MAX_BOUNTY_LENGTH);
   });
 });
 
@@ -95,6 +89,24 @@ describe("createRoundAssignments", () => {
   });
 });
 
+describe("buildCharacterAssignments", () => {
+  it("reassigns authored characters so nobody writes their own poster", () => {
+    const characters: WantedCharacterSubmission[] = [
+      { creatorId: "a", name: "Dusty Sam", description: "Pie thief", portraitDesign: "{}", submittedAt: 1 },
+      { creatorId: "b", name: "Cactus Jill", description: "Duel champion", portraitDesign: "{}", submittedAt: 2 },
+      { creatorId: "c", name: "Snake Teeth", description: "Horse scammer", portraitDesign: "{}", submittedAt: 3 },
+    ];
+
+    const assignments = buildCharacterAssignments(characters, () => 0);
+    expect(assignments.size).toBe(3);
+    for (const [authorId, assignment] of assignments.entries()) {
+      expect(assignment.creatorId).not.toBe(authorId);
+      expect(assignment.name.length).toBeGreaterThan(0);
+      expect(assignment.portraitDesign).toBe("{}");
+    }
+  });
+});
+
 describe("haveAllExpectedPlayersResponded", () => {
   it("returns true only when all expected players are present", () => {
     expect(haveAllExpectedPlayersResponded(new Set(["a", "b"]), ["a", "b"])).toBe(true);
@@ -104,9 +116,9 @@ describe("haveAllExpectedPlayersResponded", () => {
 
 describe("tallyPosterVotes", () => {
   const posters: WantedPosterSubmission[] = [
-    { authorId: "p1", targetPlayerId: "p2", condition: "Alive", bounty: 1000, reason: "Pie theft", submittedAt: 10 },
-    { authorId: "p2", targetPlayerId: "p3", condition: "Dead or Alive", bounty: 2500, reason: "Train robbery", submittedAt: 20 },
-    { authorId: "p3", targetPlayerId: "p1", condition: "No Questions Asked", bounty: null, reason: "Horse whispering fraud", submittedAt: 30 },
+    { authorId: "p1", characterCreatorId: "c2", characterName: "Dusty Sam", characterDescription: "Pie thief", portraitDesign: "{}", condition: "Alive", bounty: "1000 gold", reason: "Pie theft", submittedAt: 10 },
+    { authorId: "p2", characterCreatorId: "c3", characterName: "Cactus Jill", characterDescription: "Duel champion", portraitDesign: "{}", condition: "Dead or Alive", bounty: "Train shares", reason: "Train robbery", submittedAt: 20 },
+    { authorId: "p3", characterCreatorId: "c1", characterName: "Snake Teeth", characterDescription: "Horse scammer", portraitDesign: "{}", condition: "No Questions Asked", bounty: "", reason: "Horse whispering fraud", submittedAt: 30 }
   ];
 
   it("counts votes and marks tied winners", () => {
@@ -148,8 +160,8 @@ describe("tallyPosterVotes", () => {
 describe("computeRoundPoints", () => {
   it("awards participation, votes received, and winner bonus", () => {
     const scores = computeRoundPoints([
-      { authorId: "p1", targetPlayerId: "p2", condition: "Alive", bounty: 1000, reason: "Pie theft", submittedAt: 10, voteCount: 2, isWinner: true },
-      { authorId: "p2", targetPlayerId: "p3", condition: "Dead", bounty: 500, reason: "Fence jumping", submittedAt: 20, voteCount: 1, isWinner: false },
+      { authorId: "p1", characterCreatorId: "c2", characterName: "Dusty Sam", characterDescription: "Pie thief", portraitDesign: "{}", condition: "Alive", bounty: "1000 gold", reason: "Pie theft", submittedAt: 10, voteCount: 2, isWinner: true },
+      { authorId: "p2", characterCreatorId: "c3", characterName: "Cactus Jill", characterDescription: "Duel champion", portraitDesign: "{}", condition: "Dead", bounty: "Wanted poster fame", reason: "Fence jumping", submittedAt: 20, voteCount: 1, isWinner: false },
     ]);
 
     expect(scores.get("p1")).toBe(PARTICIPATION_POINTS + 2 * VOTE_RECEIVED_POINTS + WINNER_BONUS);

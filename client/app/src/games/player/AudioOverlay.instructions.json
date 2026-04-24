@@ -1,0 +1,146 @@
+{
+  "gameId": "registry-26-audio-overlay",
+  "modes": {
+    "default": [
+      {
+        "heading": "Audio Overlay",
+        "body": "Pick a GIF, dub audio over it, and make everyone laugh!",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-pink-900 to-rose-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "🎬"
+      },
+      {
+        "heading": "Pick a Category",
+        "body": "One player chooses the vibe: animals, evil laughs, vehicles, and more!",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-indigo-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-bold",
+        "icon": "🎯"
+      },
+      {
+        "heading": "Choose a GIF",
+        "body": "Browse the pool and pick a GIF that fits the category. Choose wisely!",
+        "bgClass": "bg-gradient-to-br from-teal-900 via-cyan-900 to-blue-900",
+        "headingColor": "text-teal-300",
+        "bodyColor": "text-teal-100",
+        "fontClass": "font-bold",
+        "icon": "🔀"
+      },
+      {
+        "heading": "Record Your Dub",
+        "body": "Your GIF gets swapped. Record audio over someone else's pick.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "🎤"
+      },
+      {
+        "heading": "Vote for the Best!",
+        "body": "Watch all the dubs on the big screen, then vote for the funniest one!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-amber-900 to-orange-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      }
+    ],
+    "randomized": [
+      {
+        "heading": "Audio Overlay",
+        "body": "Pick a GIF, dub audio over it, and make everyone laugh!",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-pink-900 to-rose-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "🎬"
+      },
+      {
+        "heading": "Pick a Category",
+        "body": "One player chooses the vibe: animals, evil laughs, vehicles, and more!",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-indigo-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-bold",
+        "icon": "🎯"
+      },
+      {
+        "heading": "Choose a GIF",
+        "body": "Browse the pool and pick a GIF that fits the category. Choose wisely!",
+        "bgClass": "bg-gradient-to-br from-teal-900 via-cyan-900 to-blue-900",
+        "headingColor": "text-teal-300",
+        "bodyColor": "text-teal-100",
+        "fontClass": "font-bold",
+        "icon": "🔀"
+      },
+      {
+        "heading": "Swap and Dub",
+        "body": "Your GIF gets reassigned. Record audio over the clip somebody else picked.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "🎤"
+      },
+      {
+        "heading": "Vote for the Best!",
+        "body": "Watch all the dubs on the big screen, then vote for the funniest one!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-amber-900 to-orange-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      }
+    ],
+    "record_own": [
+      {
+        "heading": "Audio Overlay",
+        "body": "Pick a GIF, dub your own pick, and make everyone laugh!",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-pink-900 to-rose-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "🎬"
+      },
+      {
+        "heading": "Pick a Category",
+        "body": "One player chooses the vibe: animals, evil laughs, vehicles, and more!",
+        "bgClass": "bg-gradient-to-br from-purple-900 via-violet-900 to-indigo-900",
+        "headingColor": "text-purple-300",
+        "bodyColor": "text-purple-100",
+        "fontClass": "font-bold",
+        "icon": "🎯"
+      },
+      {
+        "heading": "Choose a GIF",
+        "body": "Browse the pool and pick a GIF that fits the category. This one stays yours.",
+        "bgClass": "bg-gradient-to-br from-teal-900 via-cyan-900 to-blue-900",
+        "headingColor": "text-teal-300",
+        "bodyColor": "text-teal-100",
+        "fontClass": "font-bold",
+        "icon": "📼"
+      },
+      {
+        "heading": "Record Your Dub",
+        "body": "No swap this round. Record audio over the GIF you picked yourself.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-rose-900 to-pink-900",
+        "headingColor": "text-red-300",
+        "bodyColor": "text-red-100",
+        "fontClass": "font-black",
+        "icon": "🎤"
+      },
+      {
+        "heading": "Vote for the Best!",
+        "body": "Watch all the dubs on the big screen, then vote for the funniest one!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-amber-900 to-orange-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      }
+    ]
+  }
+}

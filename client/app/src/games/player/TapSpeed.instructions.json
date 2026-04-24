@@ -1,0 +1,43 @@
+{
+  "gameId": "registry-03-tap-speed",
+  "modes": {
+    "default": [
+      {
+        "heading": "Tap Speed",
+        "body": "A lightning-fast tapping tournament!",
+        "bgClass": "bg-gradient-to-br from-yellow-900 via-amber-900 to-orange-900",
+        "headingColor": "text-yellow-300",
+        "bodyColor": "text-yellow-100",
+        "fontClass": "font-black",
+        "icon": "⚡"
+      },
+      {
+        "heading": "Bracket Matches",
+        "body": "You are in a single-elimination bracket. Win your match to advance!",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "🏆"
+      },
+      {
+        "heading": "Tap Tap Tap!",
+        "body": "When the round starts, hammer the button as fast as you can. More taps wins.",
+        "bgClass": "bg-gradient-to-br from-green-900 via-emerald-900 to-teal-900",
+        "headingColor": "text-green-300",
+        "bodyColor": "text-green-100",
+        "fontClass": "font-black",
+        "icon": "📱"
+      },
+      {
+        "heading": "Last One Standing",
+        "body": "Keep winning head-to-head matches until only one champion remains.",
+        "bgClass": "bg-gradient-to-br from-rose-900 via-red-900 to-orange-900",
+        "headingColor": "text-rose-300",
+        "bodyColor": "text-rose-100",
+        "fontClass": "font-bold",
+        "icon": "👑"
+      }
+    ]
+  }
+}

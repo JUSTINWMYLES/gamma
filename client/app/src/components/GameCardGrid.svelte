@@ -121,6 +121,12 @@
     dispatch("select", { gameId: game.id });
   }
 
+  function handleCardKeydown(event: KeyboardEvent, game: GameMeta, unavailable: string | null) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    handleClick(game, unavailable);
+  }
+
   function handleDetailClick(e: Event, game: GameMeta) {
     e.stopPropagation();
     dispatch("detail", { gameId: game.id });
@@ -132,18 +138,21 @@
     {@const theme = getTheme(game.id)}
     {@const unavailable = getGameUnavailableReason(game, state)}
     {@const selected = state.selectedGame === game.id}
-    <button
+    <div
       class="card"
       class:selected
       class:unavailable={!!unavailable}
       class:readonly
       style="--glow: {theme.glow}; --footer-bg: {theme.footerBg}; --border-color: {theme.border}; --name-color: {theme.nameColor}; --meta-color: {theme.metaColor};"
+      role="button"
+      tabindex="0"
+      aria-disabled={!!unavailable && !readonly}
       on:click={() => handleClick(game, unavailable)}
-      disabled={!!unavailable || readonly}
+      on:keydown={(event) => handleCardKeydown(event, game, unavailable)}
     >
       <div class="card-art" style="background: {theme.bg}">
         <GameCardArt gameId={game.id} accent={theme.nameColor} />
-        <button class="card-info-btn" on:click={(e) => handleDetailClick(e, game)} title="View details">
+        <button type="button" class="card-info-btn" on:click={(e) => handleDetailClick(e, game)} title="View details">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
             <line x1="7" y1="6" x2="7" y2="10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
@@ -169,7 +178,7 @@
       {#if selected}
         <div class="card-selected-ring"></div>
       {/if}
-    </button>
+    </div>
   {/each}
 </div>
 
@@ -217,8 +226,8 @@
   }
 
   .card.unavailable {
-    opacity: 0.4;
-    cursor: not-allowed;
+    opacity: 0.5;
+    cursor: default;
     filter: grayscale(0.5);
   }
 
@@ -326,6 +335,11 @@
     justify-content: center;
     z-index: 5;
     border-radius: 12px;
+    pointer-events: none;
+  }
+
+  .card.unavailable .card-info-btn {
+    opacity: 0.9;
   }
 
   .card-unavailable-text {

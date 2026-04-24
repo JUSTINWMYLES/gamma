@@ -1,0 +1,146 @@
+{
+  "gameId": "registry-25-lowball-marketplace",
+  "modes": {
+    "default": [
+      {
+        "heading": "Lowball Marketplace",
+        "body": "Welcome to the world's most ridiculous marketplace!",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-black",
+        "icon": "🛒"
+      },
+      {
+        "heading": "Browse and Bid",
+        "body": "Absurd items appear with asking prices. Place your lowball bid, but don't go so low it gets rejected!",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "💰"
+      },
+      {
+        "heading": "Read the Clues",
+        "body": "Each item has condition and description hints. Use them to guess the hidden reserve price.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-bold",
+        "icon": "🔍"
+      },
+      {
+        "heading": "Closest Accepted Offer Wins",
+        "body": "You want the lowest bid that still clears the reserve. Smart cheapness beats wild guessing.",
+        "bgClass": "bg-gradient-to-br from-pink-900 via-rose-900 to-red-900",
+        "headingColor": "text-pink-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "📉"
+      },
+      {
+        "heading": "Results Matter",
+        "body": "Watch what everyone offered and learn how close your lowball landed.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "📊"
+      }
+    ],
+    "classic": [
+      {
+        "heading": "Lowball Marketplace",
+        "body": "Welcome to the world's most ridiculous marketplace!",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-black",
+        "icon": "🛒"
+      },
+      {
+        "heading": "Browse and Bid",
+        "body": "Absurd items appear with asking prices. Place your lowball bid, but don't go so low it gets rejected!",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "💰"
+      },
+      {
+        "heading": "Read the Clues",
+        "body": "Each item has condition and description hints. Use them to guess the hidden reserve price.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-bold",
+        "icon": "🔍"
+      },
+      {
+        "heading": "Closest Accepted Offer Wins",
+        "body": "You want the lowest bid that still clears the reserve. Smart cheapness beats wild guessing.",
+        "bgClass": "bg-gradient-to-br from-pink-900 via-rose-900 to-red-900",
+        "headingColor": "text-pink-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "📉"
+      },
+      {
+        "heading": "Results Matter",
+        "body": "Watch what everyone offered and learn how close your lowball landed.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "📊"
+      }
+    ],
+    "funny_messages": [
+      {
+        "heading": "Lowball Marketplace",
+        "body": "This time the goal is comedy. Write the funniest buyer message you can.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-black",
+        "icon": "📝"
+      },
+      {
+        "heading": "Study the Item",
+        "body": "You still get a ridiculous listing, but now it is fuel for your joke instead of a price guess.",
+        "bgClass": "bg-gradient-to-br from-blue-900 via-indigo-900 to-violet-900",
+        "headingColor": "text-blue-300",
+        "bodyColor": "text-blue-100",
+        "fontClass": "font-bold",
+        "icon": "🔍"
+      },
+      {
+        "heading": "Write the Pitch",
+        "body": "Send the most absurd lowball message you can dream up, like a chaotic buyer in the wild.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-yellow-900 to-orange-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-bold",
+        "icon": "💬"
+      },
+      {
+        "heading": "Watch the Reveal",
+        "body": "All the messages get shown on the big screen, so commit to the bit.",
+        "bgClass": "bg-gradient-to-br from-pink-900 via-rose-900 to-red-900",
+        "headingColor": "text-pink-300",
+        "bodyColor": "text-pink-100",
+        "fontClass": "font-black",
+        "icon": "🎭"
+      },
+      {
+        "heading": "Vote for the Funniest",
+        "body": "Pick the message that made the room laugh the hardest.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "🗳️"
+      }
+    ]
+  }
+}
