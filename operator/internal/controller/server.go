@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,7 +13,7 @@ import (
 
 // reconcileServerDeployment ensures the server Deployment exists and matches the desired state.
 func (r *GammaInstanceReconciler) reconcileServerDeployment(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
-	serverName := fmt.Sprintf("%s-server", instance.Name)
+	serverName := serverName(instance)
 	labels := labelsForComponent(instance, "server")
 	selectorLabels := selectorLabelsForComponent(instance, "server")
 	replicas := instance.Spec.Server.ServerReplicas()
@@ -129,8 +128,7 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 	var env []corev1.EnvVar
 
 	if instance.Spec.Redis.IsRedisEnabled() {
-		redisURL := fmt.Sprintf("redis://%s-redis.%s.svc.cluster.local:6379",
-			instance.Name, instance.Namespace)
+		redisURL := redisServiceURL(instance)
 		env = append(env,
 			corev1.EnvVar{Name: "STATE_BACKEND", Value: "redis"},
 			corev1.EnvVar{Name: "REDIS_URL", Value: redisURL},
@@ -157,6 +155,10 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 		}
 	}
 
+	if instance.Spec.TTS.IsTTSEnabled() {
+		env = append(env, corev1.EnvVar{Name: "TTS_API_URL", Value: ttsAPIServiceURL(instance)})
+	}
+
 	// Append user-supplied env vars.
 	env = append(env, instance.Spec.Server.Env...)
 
@@ -180,7 +182,7 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 
 // reconcileServerService ensures the server Service exists with sticky sessions.
 func (r *GammaInstanceReconciler) reconcileServerService(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
-	serverName := fmt.Sprintf("%s-server", instance.Name)
+	serverName := serverName(instance)
 	port := instance.Spec.Server.ServerPort()
 	timeoutSeconds := int32(3600)
 

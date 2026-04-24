@@ -4,11 +4,12 @@
  * Shared Colyseus connection helpers used by both TV and phone clients.
  *
  * Server URL resolution (in priority order):
- *   1. Build-time define: __SERVER_URL__ (set via VITE_SERVER_URL env var at build time)
- *   2. Runtime env var:   import.meta.env.VITE_SERVER_URL
- *   3. Auto-derived:      ws(s)://<same-host-as-page>:2567
+ *   1. Runtime config:    window.__GAMMA_CONFIG__.serverUrl
+ *   2. Build-time define: __SERVER_URL__ (set via VITE_SERVER_URL env var at build time)
+ *   3. Runtime env var:   import.meta.env.VITE_SERVER_URL
+ *   4. Auto-derived:      ws(s)://<same-host-as-page>:2567 or /ws
  *
- * The auto-derive strategy (3) means that when a phone opens the page via the
+ * The auto-derive strategy (4) means that when a phone opens the page via the
  * host machine's LAN IP (e.g. http://192.168.1.5:5174), the server URL is
  * automatically resolved to ws://192.168.1.5:2567 — no manual config needed.
  *
@@ -92,9 +93,29 @@ function resolveServerUrl(): string {
   return "ws://localhost:2567";
 }
 
+function resolveServerHttpBaseUrl(serverUrl: string): string {
+  try {
+    const parsed = new URL(serverUrl);
+    parsed.protocol = parsed.protocol === "wss:" ? "https:" : parsed.protocol === "ws:" ? "http:" : parsed.protocol;
+    parsed.search = "";
+    parsed.hash = "";
+    parsed.pathname = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    if (serverUrl.startsWith("wss://")) return serverUrl.replace(/^wss:\/\//, "https://").replace(/\/$/, "");
+    if (serverUrl.startsWith("ws://")) return serverUrl.replace(/^ws:\/\//, "http://").replace(/\/$/, "");
+    return serverUrl.replace(/\/$/, "");
+  }
+}
+
 const SERVER_URL: string = resolveServerUrl();
+const SERVER_HTTP_BASE_URL: string = resolveServerHttpBaseUrl(SERVER_URL);
 
 let _client: Colyseus.Client | null = null;
+
+export function getServerHttpBaseUrl(): string {
+  return SERVER_HTTP_BASE_URL;
+}
 
 export function getClient(): Colyseus.Client {
   if (!_client) _client = new Colyseus.Client(SERVER_URL);

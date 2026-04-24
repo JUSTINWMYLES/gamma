@@ -1,6 +1,118 @@
 version: "3.9"
 
+x-tts-common-env: &tts-common-env
+  REDIS_URL: redis://redis:6379/0
+  TTS_REDIS_KEY_PREFIX: ${TTS_REDIS_KEY_PREFIX:-gamma:tts}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-gamma}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-gammalocal}
+  MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-gamma-tts-artifacts}
+  TTS_MAX_RETRIES: ${TTS_MAX_RETRIES:-3}
+  TTS_MODEL_VERSION: ${TTS_MODEL_VERSION:-OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX}
+
 services:
+  # ── Redis queue metadata for News Broadcast TTS ──────────────────
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── S3-compatible artifact storage for generated audio ────────────
+  minio:
+    image: minio/minio
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-gamma}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-gammalocal}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # ── Go API for queued TTS jobs and artifacts ──────────────────────
+  tts-api:
+    build:
+      context: .
+      dockerfile: tts/api-go/Dockerfile
+    ports:
+      - "8090:8090"
+    environment:
+      <<: *tts-common-env
+      PORT: 8090
+      TTS_REQUIRE_WORKER_READY: ${TTS_REQUIRE_WORKER_READY:-true}
+      TTS_REQUIRE_CUSTOM_VOICE_PACK: ${TTS_REQUIRE_CUSTOM_VOICE_PACK:-false}
+      TTS_WORKER_HEARTBEAT_MAX_AGE: ${TTS_WORKER_HEARTBEAT_MAX_AGE:-45s}
+      TTS_RETENTION: ${TTS_RETENTION:-2h}
+      TTS_CLEANUP_INTERVAL: ${TTS_CLEANUP_INTERVAL:-10m}
+      TTS_LEASE_RECOVERY_INTERVAL: ${TTS_LEASE_RECOVERY_INTERVAL:-15s}
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8090/readyz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+
+  # ── Python worker running MOSS-TTS-Nano ONNX on CPU ──────────────
+  tts-worker:
+    build:
+      context: .
+      dockerfile: tts/worker/Dockerfile
+    environment:
+      <<: *tts-common-env
+      TTS_MODEL_DIR: ${TTS_MODEL_DIR:-/tmp/tts-models}
+      TTS_WARMUP_ENABLED: ${TTS_WARMUP_ENABLED:-false}
+      TTS_CPU_THREADS: ${TTS_CPU_THREADS:-2}
+      TTS_LOG_LEVEL: ${TTS_LOG_LEVEL:-INFO}
+      TTS_WORKER_HEARTBEAT_INTERVAL: ${TTS_WORKER_HEARTBEAT_INTERVAL:-10s}
+      TTS_WORKER_HEARTBEAT_MAX_AGE: ${TTS_WORKER_HEARTBEAT_MAX_AGE:-45s}
+      TTS_WORKER_LEASE_DURATION: ${TTS_WORKER_LEASE_DURATION:-90s}
+      TTS_WORKER_POLL_INTERVAL: ${TTS_WORKER_POLL_INTERVAL:-1s}
+      TTS_WORKER_BUSY_POLL_INTERVAL: ${TTS_WORKER_BUSY_POLL_INTERVAL:-250ms}
+      TTS_WORKER_QUEUE_CLAIM_BATCH_SIZE: ${TTS_WORKER_QUEUE_CLAIM_BATCH_SIZE:-10}
+      TTS_MP3_BITRATE_KBPS: ${TTS_MP3_BITRATE_KBPS:-128}
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - tts-model-cache:/tmp/tts-models
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "from tts.worker.settings import load_config; from tts.worker.redis_store import RedisStore; from tts.worker.object_store import ObjectStore; cfg = load_config(); RedisStore(cfg).ping(); ObjectStore(cfg).ensure_bucket()",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # ── Colyseus game server ──────────────────────────────────────────
   server:
     build:
@@ -10,14 +122,19 @@ services:
       - "2567:2567"
     environment:
       PORT: 2567
-      LOG_LEVEL: info
-      RECONNECT_GRACE_SECONDS: 30
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RECONNECT_GRACE_SECONDS: ${RECONNECT_GRACE_SECONDS:-30}
+      TTS_API_URL: http://tts-api:8090
+    depends_on:
+      tts-api:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:2567/health"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:2567/health || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
 
   # ── Unified client (served by nginx) ─────────────────────────────
   client:
@@ -26,9 +143,21 @@ services:
       dockerfile: client/app/Dockerfile
       args:
         VITE_SERVER_URL: ws://localhost:2567
+    environment:
+      GAMMA_SERVER_URL: ws://localhost:2567
     ports:
       - "5173:80"
     depends_on:
       server:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  minio-data:
+  tts-model-cache:

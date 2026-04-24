@@ -183,6 +183,109 @@ func TestReconcile_DerivesClientServerURLFromIngress(t *testing.T) {
 	assert.True(t, found, "GAMMA_SERVER_URL env var should be derived from ingress")
 }
 
+func TestReconcile_CreatesTTSResourcesWhenEnabled(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.TTS = gammav1alpha1.TTSSpec{
+		Enabled: true,
+	}
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	apiDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiDeploy)
+	require.NoError(t, err)
+	assert.Equal(t, "ghcr.io/gamma/gamma-tts-api:latest", apiDeploy.Spec.Template.Spec.Containers[0].Image)
+
+	workerDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-worker", Namespace: "default"}, workerDeploy)
+	require.NoError(t, err)
+	workerContainer := workerDeploy.Spec.Template.Spec.Containers[0]
+	assert.Equal(t, "ghcr.io/gamma/gamma-tts-worker:latest", workerContainer.Image)
+	assert.NotNil(t, workerContainer.ReadinessProbe)
+	assert.NotNil(t, workerContainer.LivenessProbe)
+	workerEnv := map[string]string{}
+	for _, env := range workerContainer.Env {
+		workerEnv[env.Name] = env.Value
+	}
+	assert.Equal(t, defaultTTSWorkerHealthFile, workerEnv["TTS_WORKER_HEALTH_FILE"])
+
+	minioDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio", Namespace: "default"}, minioDeploy)
+	require.NoError(t, err)
+	assert.Equal(t, "minio/minio:latest", minioDeploy.Spec.Template.Spec.Containers[0].Image)
+
+	apiService := &corev1.Service{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiService)
+	require.NoError(t, err)
+
+	minioService := &corev1.Service{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio", Namespace: "default"}, minioService)
+	require.NoError(t, err)
+
+	pvc := &corev1.PersistentVolumeClaim{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio-data", Namespace: "default"}, pvc)
+	require.NoError(t, err)
+}
+
+func TestReconcile_InjectsTTSAPIURLIntoServerWhenEnabled(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.TTS = gammav1alpha1.TTSSpec{Enabled: true}
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	deploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-server", Namespace: "default"}, deploy)
+	require.NoError(t, err)
+
+	envMap := map[string]string{}
+	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
+		envMap[env.Name] = env.Value
+	}
+	assert.Equal(t, "http://my-gamma-tts-api.default.svc.cluster.local:8090", envMap["TTS_API_URL"])
+}
+
+func TestReconcile_FailsWhenTTSEnabledWithoutRedis(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.Redis.Enabled = boolPtr(false)
+	instance.Spec.TTS = gammav1alpha1.TTSSpec{Enabled: true}
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "spec.tts.enabled=true requires spec.redis.enabled=true")
+}
+
 func TestReconcile_DoesNotInjectClientServerURLWithoutIngressOrOverride(t *testing.T) {
 	s := newScheme()
 	instance := newTestInstance("my-gamma", "default")
@@ -436,9 +539,14 @@ func TestReconcile_CreatesIngressWhenEnabled(t *testing.T) {
 
 	assert.Equal(t, "nginx", *ingress.Spec.IngressClassName)
 	assert.Equal(t, "gamma.example.com", ingress.Spec.Rules[0].Host)
-	require.Len(t, ingress.Spec.Rules[0].HTTP.Paths, 2)
-	assert.Equal(t, "/ws", ingress.Spec.Rules[0].HTTP.Paths[0].Path)
-	assert.Equal(t, "/", ingress.Spec.Rules[0].HTTP.Paths[1].Path)
+	require.Len(t, ingress.Spec.Rules[0].HTTP.Paths, 3)
+	assert.Equal(t, "/api/tts", ingress.Spec.Rules[0].HTTP.Paths[0].Path)
+	if assert.NotNil(t, ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service) {
+		assert.Equal(t, "my-gamma-server", ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name)
+		assert.EqualValues(t, 2567, ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number)
+	}
+	assert.Equal(t, "/ws", ingress.Spec.Rules[0].HTTP.Paths[1].Path)
+	assert.Equal(t, "/", ingress.Spec.Rules[0].HTTP.Paths[2].Path)
 
 	// Verify sticky session annotations.
 	assert.Equal(t, "cookie", ingress.Annotations["nginx.ingress.kubernetes.io/affinity"])
@@ -647,7 +755,7 @@ func TestBuildServerEnv_RedisEnabled(t *testing.T) {
 		envMap[e.Name] = e.Value
 	}
 	assert.Equal(t, "redis", envMap["STATE_BACKEND"])
-	assert.Equal(t, "redis://my-gamma-redis.test-ns.svc.cluster.local:6379", envMap["REDIS_URL"])
+	assert.Equal(t, "redis://my-gamma-redis.test-ns.svc.cluster.local:6379/0", envMap["REDIS_URL"])
 	assert.Equal(t, "debug", envMap["LOG_LEVEL"])
 }
 
