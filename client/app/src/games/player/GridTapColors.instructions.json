@@ -1,0 +1,52 @@
+{
+  "gameId": "registry-10-grid-tap-colors",
+  "modes": {
+    "default": [
+      {
+        "heading": "Grid Tap Colors",
+        "body": "Lay your phones on the ground to form a grid, then race to tap!",
+        "bgClass": "bg-gradient-to-br from-cyan-900 via-blue-900 to-indigo-900",
+        "headingColor": "text-cyan-300",
+        "bodyColor": "text-cyan-100",
+        "fontClass": "font-black",
+        "icon": "📱"
+      },
+      {
+        "heading": "Set Up the Grid",
+        "body": "Each phone shows a number. Place them face-up in order following the pattern shown on TV.",
+        "bgClass": "bg-gradient-to-br from-slate-900 via-gray-900 to-zinc-900",
+        "headingColor": "text-amber-400",
+        "bodyColor": "text-gray-200",
+        "fontClass": "font-bold",
+        "icon": "🔢"
+      },
+      {
+        "heading": "Speed Tap Mode",
+        "body": "One phone lights up at a time. Tap it fast and the next phone lights immediately.",
+        "bgClass": "bg-gradient-to-br from-red-900 via-orange-900 to-amber-900",
+        "headingColor": "text-orange-300",
+        "bodyColor": "text-orange-100",
+        "fontClass": "font-black",
+        "icon": "⚡"
+      },
+      {
+        "heading": "One Player at a Time",
+        "body": "Each player gets announced with time to get into position, then runs the full sequence on their own turn.",
+        "bgClass": "bg-gradient-to-br from-emerald-900 via-green-900 to-teal-900",
+        "headingColor": "text-emerald-300",
+        "bodyColor": "text-emerald-100",
+        "fontClass": "font-bold",
+        "icon": "👆"
+      },
+      {
+        "heading": "Three Ways to Win",
+        "body": "Round points go to the fastest overall time, fastest average press, and fastest single press.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-purple-900 to-fuchsia-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-black",
+        "icon": "🏆"
+      }
+    ]
+  }
+}

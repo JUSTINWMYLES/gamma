@@ -8,7 +8,7 @@
   export let state: RoomState;
   export let me: PlayerState | undefined;
 
-  $: slides = getInstructionSlides(state.selectedGame ?? "");
+  $: slides = getInstructionSlides(state.selectedGame ?? "", state.gameConfig.gameMode ?? "default");
   $: amReady = me?.isReady ?? false;
 
   function confirm() { room.send("player_ready", {}); }

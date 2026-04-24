@@ -145,11 +145,11 @@
 
   // ── Message handlers ─────────────────────────────────────────────────
 
-  function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number }) {
+  function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number; serverTimestamp: number }) {
     subPhase = "role_voting";
     playerList = data.playerList;
     roleVoteDurationMs = data.durationMs;
-    roleVoteEndTime = Date.now() + data.durationMs;
+    roleVoteEndTime = data.serverTimestamp + data.durationMs;
     roleVoteSubmitted = false;
     selectedPatient = "";
     selectedDoctor = "";
@@ -173,10 +173,10 @@
   let previewEndTime = 0;
   let previewTimer: ReturnType<typeof setInterval> | null = null;
 
-  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number }) {
+  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number; serverTimestamp: number }) {
     subPhase = "phase_preview";
     currentPhase = data.phase;
-    previewEndTime = Date.now() + data.durationMs;
+    previewEndTime = data.serverTimestamp + data.durationMs;
 
     clearAllTimers();
     previewTimer = setInterval(() => {
@@ -187,6 +187,7 @@
   function onSubmissionPhase(data: {
     phase: typeof currentPhase;
     durationMs: number;
+    serverTimestamp: number;
     bodyParts?: string[];
     actions?: string[];
     tests?: string[];
@@ -196,7 +197,7 @@
     subPhase = "submission";
     currentPhase = data.phase;
     submissionDurationMs = data.durationMs;
-    submissionEndTime = Date.now() + data.durationMs;
+    submissionEndTime = data.serverTimestamp + data.durationMs;
     bodyParts = data.bodyParts ?? [];
     actions = data.actions ?? [];
     funnyTests = data.tests ?? [];
@@ -230,12 +231,13 @@
     phase: typeof currentPhase;
     submissions: typeof votingSubmissions;
     durationMs: number;
+    serverTimestamp: number;
     history?: PhaseHistoryEntry[];
   }) {
     subPhase = "voting";
     currentPhase = data.phase;
     votingDurationMs = data.durationMs;
-    votingEndTime = Date.now() + data.durationMs;
+    votingEndTime = data.serverTimestamp + data.durationMs;
     votingSubmissions = data.submissions.filter((s) => s.playerId !== me?.id);
     phaseHistory = data.history ?? phaseHistory;
     votedFor = "";

@@ -2,13 +2,12 @@
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState, GameMeta, DevicePermissionState } from "../../../../shared/types";
   import { GAME_REGISTRY, getGameUnavailableReason } from "../../../../shared/types";
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import GameCardGrid from "../../components/GameCardGrid.svelte";
-  import GameShelf from "../../components/GameShelf.svelte";
   import GameDetailView from "../../components/GameDetailView.svelte";
   import PlayerCustomizer from "../../components/PlayerCustomizer.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
-  import { cacheMicStream, markMotionPermissionGranted, isMotionPermissionGrantedThisSession } from "../../lib/permissions";
+  import { markMotionPermissionGranted, isMotionPermissionGrantedThisSession } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -28,6 +27,8 @@
   }
   let permResult: PermissionResult | null = null;
   let permissionMessage = "";
+  let pendingSetupChoice: string | null = null;
+  let setupChoiceTimer: ReturnType<typeof setTimeout> | null = null;
 
   type PermissionRequester = {
     requestPermission?: () => Promise<string>;
@@ -110,9 +111,9 @@
     try {
       if (navigator.mediaDevices?.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Cache the live stream so game components can reuse it without
-        // triggering a second browser permission prompt.
-        cacheMicStream(stream);
+        // Only use the stream long enough to trigger the browser permission
+        // grant. Games should open the microphone later, only while recording.
+        stream.getTracks().forEach((track) => track.stop());
         result.mic = "granted";
       }
     } catch {
@@ -158,33 +159,6 @@
         ? "Denied"
         : "Not enabled";
   }
-
-  // ── Touch discrimination ────────────────────────────────────────────────
-  // On mobile, scrolling through the game list can falsely trigger a tap.
-  // Track touchstart position and only treat it as a tap if the finger
-  // moved less than 10 px.
-  let touchStartY = 0;
-  let touchMoved = false;
-
-  function onTouchStart(e: TouchEvent) {
-    touchStartY = e.touches[0].clientY;
-    touchMoved = false;
-  }
-
-  function onTouchMove(e: TouchEvent) {
-    if (Math.abs(e.touches[0].clientY - touchStartY) > 10) {
-      touchMoved = true;
-    }
-  }
-
-  function onGameTap(id: string, unavailable: string | null) {
-    if (touchMoved || unavailable) return;
-    selectGame(id);
-  }
-
-  // ── View mode for game picker ────────────────────────────────────────────
-  type GameView = "cards" | "shelf" | "list";
-  let gameView: GameView = "cards";
 
   // ── Game detail overlay ─────────────────────────────────────────────────
   let detailGameId: string | null = null;
@@ -265,6 +239,28 @@
 
   function selectDisplay(has: boolean) {
     sendSetup({ hasSecondaryDisplay: has, setupStep: 4 });
+  }
+
+  function chooseSetupOption(choiceId: string, apply: () => void) {
+    if (setupChoiceTimer) {
+      clearTimeout(setupChoiceTimer);
+      setupChoiceTimer = null;
+    }
+
+    pendingSetupChoice = choiceId;
+    setupChoiceTimer = setTimeout(() => {
+      pendingSetupChoice = null;
+      setupChoiceTimer = null;
+      apply();
+    }, 150);
+  }
+
+  function setupOptionClass(choiceId: string): string {
+    return pendingSetupChoice === choiceId ? "is-pending" : "";
+  }
+
+  function setupOptionDescriptionClass(choiceId: string): string {
+    return pendingSetupChoice === choiceId ? "is-pending" : "";
   }
 
   function resetSetup() {
@@ -354,6 +350,13 @@
       showConsent = true;
     }
   });
+
+  onDestroy(() => {
+    if (setupChoiceTimer) {
+      clearTimeout(setupChoiceTimer);
+      setupChoiceTimer = null;
+    }
+  });
 </script>
 
 <div class="flex-1 flex flex-col items-center gap-6 p-6 pt-10 overflow-y-auto touch-manipulation" data-testid="phone-lobby">
@@ -364,7 +367,7 @@
       <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl">
         <h3 class="text-lg font-bold text-white">Enable Game Features</h3>
         <p class="text-sm text-gray-400 leading-relaxed">
-          Some games use your microphone plus motion and tilt sensors. Grant access here so you never have to approve them mid-game.
+          Some games use your microphone plus motion and tilt sensors. Grant access here so games can turn them on only while they are actually in use.
         </p>
         {#if permissionMessage}
           <p class="text-xs text-amber-300 leading-relaxed">{permissionMessage}</p>
@@ -412,23 +415,23 @@
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">Are you all in the same room?</h2>
           <div class="space-y-3">
             <button
-              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectLocation("same")}
+              class={`setup-option w-full min-h-[104px] flex items-center gap-4 p-6 rounded-2xl border-2 transition-all ${setupOptionClass("location-same")}`}
+              on:click={() => chooseSetupOption("location-same", () => selectLocation("same"))}
             >
               <span class="text-4xl">🏠</span>
               <div class="text-left">
-                <span class="font-bold block">Together</span>
-                <span class="text-xs text-gray-400">Everyone is in the same physical room</span>
+                <span class="text-lg font-black block">Together</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("location-same")}`}>Everyone is in the same physical room</span>
               </div>
             </button>
             <button
-              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectLocation("remote")}
+              class={`setup-option w-full min-h-[104px] flex items-center gap-4 p-6 rounded-2xl border-2 transition-all ${setupOptionClass("location-remote")}`}
+              on:click={() => chooseSetupOption("location-remote", () => selectLocation("remote"))}
             >
               <span class="text-4xl">🌍</span>
               <div class="text-left">
-                <span class="font-bold block">Remote</span>
-                <span class="text-xs text-gray-400">Players are in different locations</span>
+                <span class="text-lg font-black block">Remote</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("location-remote")}`}>Players are in different locations</span>
               </div>
             </button>
           </div>
@@ -438,33 +441,33 @@
           <div class="space-y-3">
             <button
               data-testid="setup-activity-none"
-              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectActivity("none")}
+              class={`setup-option w-full min-h-[96px] flex items-center gap-4 p-5 rounded-2xl border-2 transition-all ${setupOptionClass("activity-none")}`}
+              on:click={() => chooseSetupOption("activity-none", () => selectActivity("none"))}
             >
               <span class="text-3xl">🛋️</span>
               <div class="text-left">
-                <span class="text-sm font-bold block">None</span>
-                <span class="text-xs text-gray-400">Stay seated — all phone-based games</span>
+                <span class="text-base font-black block">None</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("activity-none")}`}>Stay seated — all phone-based games</span>
               </div>
             </button>
             <button
-              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectActivity("some")}
+              class={`setup-option w-full min-h-[96px] flex items-center gap-4 p-5 rounded-2xl border-2 transition-all ${setupOptionClass("activity-some")}`}
+              on:click={() => chooseSetupOption("activity-some", () => selectActivity("some"))}
             >
               <span class="text-3xl">🚶</span>
               <div class="text-left">
-                <span class="text-sm font-bold block">Some</span>
-                <span class="text-xs text-gray-400">Light movement — passing phones, standing up</span>
+                <span class="text-base font-black block">Some</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("activity-some")}`}>Light movement — passing phones, standing up</span>
               </div>
             </button>
             <button
-              class="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectActivity("full")}
+              class={`setup-option w-full min-h-[96px] flex items-center gap-4 p-5 rounded-2xl border-2 transition-all ${setupOptionClass("activity-full")}`}
+              on:click={() => chooseSetupOption("activity-full", () => selectActivity("full"))}
             >
               <span class="text-3xl">🏃</span>
               <div class="text-left">
-                <span class="text-sm font-bold block">Full</span>
-                <span class="text-xs text-gray-400">Running, shaking, physical challenges</span>
+                <span class="text-base font-black block">Full</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("activity-full")}`}>Running, shaking, physical challenges</span>
               </div>
             </button>
           </div>
@@ -473,23 +476,23 @@
           <h2 class="text-xl font-bold text-center mb-4 text-indigo-400">Using a shared screen?</h2>
           <div class="space-y-3">
             <button
-              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectDisplay(true)}
+              class={`setup-option w-full min-h-[104px] flex items-center gap-4 p-6 rounded-2xl border-2 transition-all ${setupOptionClass("display-yes")}`}
+              on:click={() => chooseSetupOption("display-yes", () => selectDisplay(true))}
             >
               <span class="text-4xl">📺</span>
               <div class="text-left">
-                <span class="font-bold block">Yes</span>
-                <span class="text-xs text-gray-400">TV, laptop, or projector as a shared display</span>
+                <span class="text-lg font-black block">Yes</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("display-yes")}`}>TV, laptop, or projector as a shared display</span>
               </div>
             </button>
             <button
-              class="w-full flex items-center gap-4 p-5 rounded-xl border-2 border-gray-700 bg-gray-800 hover:border-indigo-500 active:bg-indigo-900 active:border-indigo-500 active:scale-[0.98] transition-all"
-              on:click={() => selectDisplay(false)}
+              class={`setup-option w-full min-h-[104px] flex items-center gap-4 p-6 rounded-2xl border-2 transition-all ${setupOptionClass("display-no")}`}
+              on:click={() => chooseSetupOption("display-no", () => selectDisplay(false))}
             >
               <span class="text-4xl">📱</span>
               <div class="text-left">
-                <span class="font-bold block">Phone only</span>
-                <span class="text-xs text-gray-400">Everyone plays on their own phone — no shared screen</span>
+                <span class="text-lg font-black block">Phone only</span>
+                <span class={`setup-option-description text-sm ${setupOptionDescriptionClass("display-no")}`}>Everyone plays on their own phone — no shared screen</span>
               </div>
             </button>
           </div>
@@ -551,7 +554,7 @@
         {#each [...state.players.values()] as p}
           <li class="flex items-center justify-between text-sm">
             <span class="flex items-center gap-1.5">
-              <PlayerIcon player={p} size={24} />
+              <PlayerIcon player={p} size={34} />
               {#if p.id === state.hostSessionId}
                 <span class="text-yellow-400 text-xs" title="Host">&#x1F451;</span>
               {/if}
@@ -684,65 +687,9 @@
           {/if}
         </div>
       {:else}
-        <!-- Single game mode: view toggle + game picker -->
-        <div class="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'cards' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "cards")}
-          >Cards</button>
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'shelf' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "shelf")}
-          >Shelf</button>
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "list")}
-          >List</button>
+        <div class="w-full overflow-x-auto px-2">
+          <GameCardGrid {state} on:select={(e) => selectGame(e.detail.gameId)} on:detail={(e) => openDetail(e.detail.gameId)} />
         </div>
-
-        {#if gameView === "cards"}
-          <div class="w-full overflow-x-auto px-2">
-            <GameCardGrid {state} on:select={(e) => selectGame(e.detail.gameId)} on:detail={(e) => openDetail(e.detail.gameId)} />
-          </div>
-        {:else if gameView === "shelf"}
-          <div class="w-full overflow-x-auto px-2">
-            <GameShelf {state} on:select={(e) => selectGame(e.detail.gameId)} />
-          </div>
-        {:else}
-          <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
-            {#each GAME_REGISTRY as g}
-              {@const unavailableReason = getGameUnavailableReason(g, state)}
-              <div class="relative">
-                <button
-                  class="w-full text-left px-4 py-3 pr-10 rounded-lg border transition-colors
-                    {state.selectedGame === g.id
-                      ? 'border-indigo-500 bg-indigo-900 text-white'
-                      : unavailableReason
-                        ? 'border-gray-700 bg-gray-900 text-gray-500 opacity-60'
-                        : 'border-gray-700 bg-gray-800 text-gray-300 active:border-gray-500'}"
-                  on:touchstart={onTouchStart}
-                  on:touchmove={onTouchMove}
-                  on:click={() => onGameTap(g.id, unavailableReason)}
-                  disabled={!!unavailableReason}
-                >
-                  <p class="font-semibold text-sm">{g.label}</p>
-                  <p class="text-xs mt-0.5 {unavailableReason ? 'text-gray-600' : 'text-gray-400'}">{g.description}</p>
-                  {#if unavailableReason}
-                    <p class="text-xs text-gray-600 mt-1">{unavailableReason}</p>
-                  {/if}
-                </button>
-                <button
-                  class="absolute top-3 right-3 w-6 h-6 rounded-full bg-gray-700 text-gray-400 flex items-center justify-center text-xs hover:text-white hover:bg-gray-600 transition-colors"
-                  title="View details"
-                  on:click|stopPropagation={() => openDetail(g.id)}
-                >i</button>
-              </div>
-            {/each}
-          </div>
-        {/if}
       {/if}
 
       <!-- Config (shown in both single + playlist modes when a game is selected) -->
@@ -856,55 +803,64 @@
           <p class="text-gray-400 text-sm text-center">Host is picking a game…</p>
         {/if}
 
-        <!-- Browsable game list (always visible for non-host) -->
-        <div class="flex items-center gap-1 bg-gray-800 rounded-lg p-1">
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'cards' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "cards")}
-          >Cards</button>
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'shelf' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "shelf")}
-          >Shelf</button>
-          <button
-            class="px-3 py-1.5 text-xs font-semibold rounded-md transition-colors
-              {gameView === 'list' ? 'bg-indigo-600 text-white' : 'text-gray-400 active:text-white'}"
-            on:click={() => (gameView = "list")}
-          >List</button>
+        <div class="w-full overflow-x-auto px-2">
+          <GameCardGrid {state} readonly={true} on:detail={(e) => openDetail(e.detail.gameId)} />
         </div>
-        {#if gameView === "cards"}
-          <div class="w-full overflow-x-auto px-2">
-            <GameCardGrid {state} readonly={true} on:detail={(e) => openDetail(e.detail.gameId)} />
-          </div>
-        {:else if gameView === "shelf"}
-          <div class="w-full overflow-x-auto px-2">
-            <GameShelf {state} readonly={true} />
-          </div>
-        {:else}
-          <div class="w-full max-w-xs space-y-2 overflow-y-auto max-h-[50vh] -mx-1 px-1">
-            {#each GAME_REGISTRY as g}
-              {@const unavailable = getGameUnavailableReason(g, state)}
-              <button
-                class="w-full text-left px-4 py-3 rounded-lg border cursor-pointer transition-colors
-                  {state.selectedGame === g.id
-                    ? 'border-indigo-500 bg-indigo-900/50'
-                    : unavailable
-                      ? 'border-gray-700 bg-gray-900 opacity-50'
-                      : 'border-gray-700 bg-gray-800 active:border-gray-600'}"
-                on:click={() => openDetail(g.id)}
-              >
-                <p class="font-semibold text-sm {state.selectedGame === g.id ? 'text-indigo-300' : unavailable ? 'text-gray-500' : 'text-gray-200'}">{g.label}</p>
-                <p class="text-xs mt-0.5 text-gray-400">{g.description}</p>
-                {#if unavailable}
-                  <p class="text-xs text-gray-600 mt-0.5">{unavailable}</p>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        {/if}
       {/if}
     {/if}
   {/if}
 </div>
+
+<style>
+  .setup-option {
+    border-color: #374151;
+    background: rgba(31, 41, 55, 0.9);
+    color: #ffffff;
+  }
+
+  .setup-option:hover {
+    border-color: #6366f1;
+    background: rgba(49, 46, 129, 0.9);
+  }
+
+  .setup-option.is-pending {
+    border-color: #818cf8;
+    background: rgba(49, 46, 129, 0.9);
+    transform: scale(0.99);
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
+  }
+
+  .setup-option-description {
+    color: #9ca3af;
+  }
+
+  .setup-option-description.is-pending {
+    color: #e0e7ff;
+  }
+
+  :global(.light) .setup-option {
+    border-color: #d1d5db;
+    background: #ffffff;
+    color: #111827;
+  }
+
+  :global(.light) .setup-option:hover {
+    border-color: #818cf8;
+    background: #eef2ff;
+  }
+
+  :global(.light) .setup-option.is-pending {
+    border-color: #818cf8;
+    background: #eef2ff;
+    color: #111827;
+    box-shadow: 0 18px 40px rgba(129, 140, 248, 0.22);
+  }
+
+  :global(.light) .setup-option-description {
+    color: #6b7280;
+  }
+
+  :global(.light) .setup-option-description.is-pending {
+    color: #4338ca;
+  }
+</style>

@@ -94,7 +94,9 @@
 
   type TrackId =
     | "cloud"
+    | "discovery_hit"
     | "fart"
+    | "newer_wave"
     | "zazie"
     | "pixelland"
     | "vivacity"
@@ -105,9 +107,11 @@
     | "two_finger_johnny"
     | "pinball_spring_160";
 
-  const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string }> = {
+  const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string; loop?: boolean }> = {
     cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    discovery_hit:  { file: "/discovery_hit.mp3",   volume: 0.35, attribution: '"Discovery Hit" — Kevin MacLeod (incompetech.com), CC BY 4.0', loop: false },
     fart:           { file: "/farting_around.mp3",   volume: 0.42, attribution: '"Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    newer_wave:     { file: "/newer_wave.mp3",       volume: 0.35, attribution: '"Newer Wave" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     zazie:          { file: "/zazie.mp3",            volume: 0.35, attribution: '"Zazie" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     pixelland:      { file: "/pixelland.mp3",        volume: 0.35, attribution: '"Pixelland" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     vivacity:       { file: "/vivacity.mp3",         volume: 0.35, attribution: '"Vivacity" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
@@ -142,12 +146,16 @@
     "registry-20-odd-one-out":           "thinking",
     "registry-40-paint-match":           "thinking",
     "registry-10-grid-tap-colors":       "ouroboros",
+    "registry-11-tier-ranking":          "newer_wave",
   };
 
   function desiredTrack(): TrackId | null {
     if (role !== "viewer" || !state) return null;
     if (phase === "lobby") {
       return "cloud";
+    }
+    if (phase === "game_over") {
+      return "discovery_hit";
     }
     if (
       state.selectedGame === "registry-43-medical-story" &&
@@ -156,7 +164,7 @@
       return "entertainer";
     }
     if (state.selectedGame === "registry-26-audio-overlay") {
-      if (phase === "instructions") {
+      if (phase === "instructions" || phase === "countdown") {
         return "two_finger_johnny";
       }
       return phase === "in_round" ? viewerTrackOverride : null;
@@ -178,6 +186,7 @@
     const next = desiredTrack();
     if (!next) {
       pauseAllTracks();
+      musicAudio.loop = false;
       if (musicAudio) musicAudio.currentTime = 0;
       currentTrack = null;
       return;
@@ -187,7 +196,7 @@
     const targetSrc = new URL(config.file, window.location.href).href;
     const sourceChanged = musicAudio.src !== targetSrc;
 
-    musicAudio.loop = false;
+    musicAudio.loop = config.loop ?? true;
     musicAudio.volume = config.volume;
     // Start muted if the user hasn't interacted yet — browsers allow muted autoplay.
     // Once the user has interacted, play unmuted.
@@ -218,6 +227,9 @@
 
     const next = desiredTrack();
     if (!next || currentTrack !== next) return;
+
+    const config = TRACK_CONFIG[next];
+    if (config.loop === false) return;
 
     musicAudio.currentTime = 0;
     musicAudio.play().catch(() => {

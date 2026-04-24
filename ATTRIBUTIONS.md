@@ -15,10 +15,22 @@ License CC0: https://creativecommons.org/publicdomain/zero/1.0/
   - Used in: TV viewer lobby (main game room / sign-in and game selection waiting area)
   - Changes: none
 
+- "Discovery Hit" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer during the shared `game_over` final results screen for every game
+  - Changes: none
+
 - "Farting Around" — Kevin MacLeod (incompetech.com)
   - License: CC BY 4.0
   - License URL: https://creativecommons.org/licenses/by/4.0/
   - Used in: TV viewer during `registry-19-shave-the-yak` active round gameplay
+  - Changes: none
+
+- "Newer Wave" — Kevin MacLeod (incompetech.com)
+  - License: CC BY 4.0
+  - License URL: https://creativecommons.org/licenses/by/4.0/
+  - Used in: TV viewer during `registry-11-tier-ranking` instructions, countdown, and active round gameplay
   - Changes: none
 
 - "Zazie" — Kevin MacLeod (incompetech.com)

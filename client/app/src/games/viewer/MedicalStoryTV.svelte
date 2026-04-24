@@ -185,11 +185,11 @@
 
   // ── Message handlers ─────────────────────────────────────────────────
 
-  function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number }) {
+  function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number; serverTimestamp: number }) {
     subPhase = "role_voting";
     playerList = data.playerList;
     roleVoteDurationMs = data.durationMs;
-    roleVoteEndTime = Date.now() + data.durationMs;
+    roleVoteEndTime = data.serverTimestamp + data.durationMs;
 
     clearAllTimers();
     roleVoteTimer = setInterval(() => {
@@ -209,11 +209,11 @@
   let previewEndTime = 0;
   let previewTimer: ReturnType<typeof setInterval> | null = null;
 
-  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number; history?: PhaseHistoryEntry[] }) {
+  function onPhasePreview(data: { phase: typeof currentPhase; durationMs: number; serverTimestamp: number; history?: PhaseHistoryEntry[] }) {
     subPhase = "phase_preview";
     currentPhase = data.phase;
     previewDurationMs = data.durationMs;
-    previewEndTime = Date.now() + data.durationMs;
+    previewEndTime = data.serverTimestamp + data.durationMs;
     phaseHistory = data.history ?? phaseHistory;
 
     if (data.history) {
@@ -229,6 +229,7 @@
   function onSubmissionPhase(data: {
     phase: typeof currentPhase;
     durationMs: number;
+    serverTimestamp: number;
     scene3dPlaceholder?: { type: string; description: string };
     history?: PhaseHistoryEntry[];
     tests?: string[];
@@ -237,7 +238,7 @@
     subPhase = "submission";
     currentPhase = data.phase;
     submissionDurationMs = data.durationMs;
-    submissionEndTime = Date.now() + data.durationMs;
+    submissionEndTime = data.serverTimestamp + data.durationMs;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? [];
     funnyTests = data.tests ?? [];
@@ -258,13 +259,14 @@
     phase: typeof currentPhase;
     submissions: typeof votingSubmissions;
     durationMs: number;
+    serverTimestamp: number;
     scene3dPlaceholder?: { type: string; description: string };
     history?: PhaseHistoryEntry[];
   }) {
     subPhase = "voting";
     currentPhase = data.phase;
     votingDurationMs = data.durationMs;
-    votingEndTime = Date.now() + data.durationMs;
+    votingEndTime = data.serverTimestamp + data.durationMs;
     votingSubmissions = data.submissions;
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? phaseHistory;
@@ -404,8 +406,8 @@
   });
 </script>
 
-<div class="flex-1 flex" data-testid="medical-story-tv">
-  <div class="w-72 border-r border-gray-800 bg-gray-900/70 pt-14 px-4 pb-4 flex flex-col gap-3 flex-shrink-0">
+<div class="flex-1 flex pt-16 pl-28" data-testid="medical-story-tv">
+  <div class="w-72 border-r border-gray-800 bg-gray-900/70 pt-6 px-4 pb-4 flex flex-col gap-3 flex-shrink-0">
     <div>
       <p class="text-xs text-gray-300 uppercase tracking-widest font-semibold">Story So Far</p>
       <p class="mt-1 text-sm text-gray-400">Winning entries stay visible all round.</p>
@@ -489,11 +491,11 @@
         <h2 class="text-4xl font-black text-emerald-400">Roles Assigned!</h2>
         <div class="flex flex-wrap gap-4 justify-center">
           {#each Object.entries(roles) as [playerId, role]}
-            <div class="bg-gray-800 rounded-2xl p-6 text-center min-w-[150px]
-              {role === 'patient' ? 'border-2 border-red-500' : role === 'doctor' ? 'border-2 border-blue-500' : role === 'nurse' ? 'border-2 border-pink-500' : 'border border-gray-700'}">
+            <div class="bg-gray-800 rounded-2xl p-6 text-center min-w-[150px] shadow-[0_18px_40px_rgba(0,0,0,0.24)]
+              {role === 'patient' ? 'border-2 border-red-500 bg-red-950/35' : role === 'doctor' ? 'border-2 border-blue-500 bg-blue-950/35' : role === 'nurse' ? 'border-2 border-fuchsia-500 bg-fuchsia-950/35' : 'border border-gray-700'}">
               <p class="text-3xl mb-2">{getRoleEmoji(role)}</p>
               <p class="text-lg font-bold text-white">{getPlayerName(playerId)}</p>
-              <p class="text-sm text-gray-400 capitalize">{role}</p>
+              <p class="text-sm font-semibold capitalize {role === 'patient' ? 'text-red-100' : role === 'doctor' ? 'text-blue-100' : role === 'nurse' ? 'text-fuchsia-100' : 'text-gray-200'}">{role}</p>
             </div>
           {/each}
         </div>

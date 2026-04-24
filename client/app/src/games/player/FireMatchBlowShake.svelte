@@ -198,9 +198,7 @@
 
   // ── Colyseus message handlers ─────────────────────────────────────────────
   onMount(() => {
-    if (micGranted) {
-      startMic();
-    } else {
+    if (!micGranted) {
       micMsg = "Enable microphone in the lobby to play the blow stage.";
     }
 
@@ -224,6 +222,7 @@
       myTotalContribution = 0;
 
       // Find my initial state.
+      const previousStage = myStage;
       const myState = d.players.find((p) => p.playerId === me?.id);
       if (myState) {
         myStageIndex = myState.stageIndex;
@@ -235,6 +234,14 @@
         myStage = "strike";
         myCurrent = 0;
         myTarget = 0;
+      }
+
+      if (previousStage !== myStage) {
+        if (myStage === "blow" && micGranted) {
+          void startMic();
+        } else if (previousStage === "blow") {
+          stopMic();
+        }
       }
 
       startTimer(d.totalDurationMs, d.serverTimestamp);
@@ -249,12 +256,19 @@
       // Update my own progress from server state.
       const myState = d.players.find((p) => p.playerId === me?.id);
       if (myState) {
+        const previousStage = myStage;
         myStageIndex = myState.stageIndex;
         if (myState.stage) myStage = myState.stage as FireStage;
         myCurrent = myState.current;
         myTarget = myState.target;
         myTotalContribution = myState.totalContribution;
         myFinished = myState.finished;
+
+        if ((previousStage === "blow" && myStage !== "blow") || myFinished) {
+          stopMic();
+        } else if (previousStage !== "blow" && myStage === "blow" && micGranted && !myFinished) {
+          void startMic();
+        }
       }
     });
 

@@ -47,6 +47,7 @@
   // ── Results ──────────────────────────────────────────────────────
   const TIERS = ["S", "A", "B", "C", "D"] as const;
   type Tier = (typeof TIERS)[number];
+  const REVEAL_TIERS = ["D", "C", "B", "A", "S"] as const;
 
   interface FinalTier {
     item: string;
@@ -57,6 +58,7 @@
   let roundScores: Record<string, number> = {};
   let resultCategory = "";
   let revealedCount = 0;
+  let revealStepMs = 5000;
 
   // ── Round skipped ────────────────────────────────────────────────
   let roundSkipped = false;
@@ -94,7 +96,7 @@
       } else {
         if (revealInterval) clearInterval(revealInterval);
       }
-    }, 800);
+    }, revealStepMs);
   }
 
   // ── Message handlers ─────────────────────────────────────────────
@@ -150,10 +152,12 @@
     finalTiers: FinalTier[];
     scores: Record<string, number>;
     category: string;
+    revealStepMs?: number;
   }) {
     clearTimer();
     roundScores = data.scores;
     resultCategory = data.category;
+    revealStepMs = data.revealStepMs ?? 5000;
     subPhase = "result";
     startReveal(data.finalTiers);
   }
@@ -185,17 +189,31 @@
   $: sortedPlayers = [...state.players.values()].sort(
     (a, b) => (roundScores[b.id] ?? 0) - (roundScores[a.id] ?? 0),
   );
+  $: revealedItems = finalTiers.slice(0, revealedCount);
+  $: currentlyRevealedItem = revealedItems[revealedItems.length - 1] ?? null;
+  $: tierBoard = REVEAL_TIERS.map((tier) => ({
+    tier,
+    items: revealedItems.filter((entry) => entry.tier === tier),
+  }));
 
-  const TIER_BG: Record<string, string> = {
-    S: "bg-yellow-500",
-    A: "bg-green-600",
-    B: "bg-blue-600",
-    C: "bg-purple-600",
-    D: "bg-gray-600",
+  const TIER_BG: Record<Tier, string> = {
+    S: "bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-400",
+    A: "bg-gradient-to-r from-emerald-400 to-green-500",
+    B: "bg-gradient-to-r from-sky-400 to-blue-500",
+    C: "bg-gradient-to-r from-violet-400 to-purple-500",
+    D: "bg-gradient-to-r from-slate-500 to-gray-600",
+  };
+
+  const TIER_TEXT: Record<Tier, string> = {
+    S: "text-amber-950",
+    A: "text-emerald-950",
+    B: "text-blue-950",
+    C: "text-violet-950",
+    D: "text-slate-100",
   };
 </script>
 
-<div class="flex-1 flex flex-col items-center justify-center gap-8 p-12" data-testid="tier-ranking-tv">
+<div class="flex-1 flex flex-col items-center justify-center gap-8 bg-[#09090f] p-12 text-white" data-testid="tier-ranking-tv">
   {#if roundSkipped}
     <h2 class="text-3xl font-black text-yellow-400">Round Skipped</h2>
     <p class="text-xl text-gray-300">{skipReason}</p>
@@ -272,44 +290,73 @@
     </div>
 
   {:else if subPhase === "result"}
-    <div class="w-full max-w-4xl space-y-6">
-      <div class="text-center space-y-1">
-        <p class="text-xl text-gray-400 uppercase tracking-widest">Results</p>
-        <p class="text-3xl font-black text-white">{resultCategory}</p>
+    <div class="w-full max-w-[1200px] space-y-6">
+      <div class="grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="space-y-2">
+          <p class="text-sm uppercase tracking-[0.4em] text-amber-300/70">Consensus Tier Board</p>
+          <p class="text-5xl font-black text-white">{resultCategory}</p>
+          <p class="text-lg text-gray-400">Revealing one item every 5 seconds, from the basement tiers up to the all-time greats.</p>
+        </div>
+
+        <div class="min-h-[150px] rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+          <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Latest Reveal</p>
+          {#if currentlyRevealedItem}
+            <div class="mt-3 flex items-center gap-4">
+              <div class={`flex h-16 w-16 items-center justify-center rounded-2xl text-3xl font-black ${TIER_BG[currentlyRevealedItem.tier]} ${TIER_TEXT[currentlyRevealedItem.tier]}`}>
+                {currentlyRevealedItem.tier}
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-2xl font-black text-white">{currentlyRevealedItem.item}</p>
+                <div class="mt-2 flex gap-3 text-sm">
+                  {#each REVEAL_TIERS.slice().reverse() as t}
+                    <span class={t === currentlyRevealedItem.tier ? 'font-black text-white' : 'text-gray-300'}>{t}:{currentlyRevealedItem.voteCounts[t]}</span>
+                  {/each}
+                </div>
+              </div>
+            </div>
+          {:else}
+            <div class="mt-4 flex h-[88px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/20 text-sm uppercase tracking-[0.3em] text-gray-400">
+              Waiting for first reveal
+            </div>
+          {/if}
+        </div>
       </div>
 
-      <!-- Tier list reveal -->
-      <div class="space-y-3">
-        {#each finalTiers.slice(0, revealedCount) as { item, tier, voteCounts }}
-          <div class="flex items-center gap-4 bg-gray-800 rounded-xl px-6 py-3">
-            <!-- Tier badge -->
-            <span class="w-12 h-12 rounded-xl font-black text-xl text-white flex items-center justify-center flex-shrink-0 {TIER_BG[tier]}">
-              {tier}
-            </span>
-            <!-- Item name -->
-            <p class="flex-1 text-xl font-bold text-white">{item}</p>
-            <!-- Vote distribution -->
-            <div class="flex gap-3 text-sm">
-              {#each TIERS as t}
-                <span class="{t === tier ? 'text-white font-black' : 'text-gray-500'}">
-                  {t}: {voteCounts[t]}
-                </span>
-              {/each}
+      <div class="space-y-3 rounded-[32px] border border-white/10 bg-[#0f1020] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+        {#each tierBoard.slice().reverse() as row}
+          <div class="grid min-h-[92px] grid-cols-[110px_1fr] overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
+            <div class={`flex items-center justify-center text-5xl font-black ${TIER_BG[row.tier]} ${TIER_TEXT[row.tier]}`}>
+              {row.tier}
+            </div>
+            <div class="flex min-h-[92px] flex-wrap items-center gap-3 px-4 py-3">
+              {#if row.items.length > 0}
+                {#each row.items as item}
+                  <div class="max-w-[220px] rounded-2xl border border-white/10 bg-black/30 px-4 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
+                    <p class="text-lg font-black text-white leading-tight">{item.item}</p>
+                    <p class="mt-2 text-xs uppercase tracking-[0.2em] text-gray-400">
+                      {#each REVEAL_TIERS.slice().reverse() as t, index}
+                        <span class={t === item.tier ? 'font-black text-white' : 'text-gray-300'}>{t}:{item.voteCounts[t]}</span>{index < REVEAL_TIERS.length - 1 ? ' ' : ''}
+                      {/each}
+                    </p>
+                  </div>
+                {/each}
+              {:else}
+                <p class="text-sm uppercase tracking-[0.3em] text-gray-400">Waiting for reveal...</p>
+              {/if}
             </div>
           </div>
         {/each}
       </div>
 
-      <!-- Top scores -->
       {#if revealedCount >= finalTiers.length}
-        <div class="mt-6">
-          <p class="text-center text-lg text-gray-400 uppercase tracking-widest mb-3">Round Scores</p>
-          <div class="flex flex-wrap gap-3 justify-center">
+        <div class="mt-2 space-y-3">
+          <p class="text-center text-sm uppercase tracking-[0.35em] text-gray-500">Round Scores</p>
+          <div class="flex flex-wrap justify-center gap-3">
             {#each sortedPlayers as p}
-              <div class="bg-gray-800 rounded-xl px-4 py-2 text-center flex items-center gap-3">
+              <div class="flex min-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
                 <PlayerIcon player={p} size={24} />
-                <p class="flex-1 text-sm text-gray-400 text-left">{p.name}</p>
-                <p class="text-2xl font-black {(roundScores[p.id] ?? 0) > 0 ? 'text-yellow-400' : 'text-gray-500'}">
+                <p class="flex-1 truncate text-sm text-gray-300">{p.name}</p>
+                <p class={`text-2xl font-black ${(roundScores[p.id] ?? 0) > 0 ? 'text-amber-300' : 'text-gray-300'}`}>
                   +{roundScores[p.id] ?? 0}
                 </p>
               </div>
