@@ -5,7 +5,6 @@ import {
   BROADCAST_CREATION_DURATION_MS,
   BUFFERING_MAX_WAIT_MS,
   buildFallbackScript,
-  buildSpokenText,
   computeRoundPoints,
   createHeadlineAssignments,
   createPresentationOrder,
@@ -522,7 +521,7 @@ export default class NewsBroadcastGame extends BaseGame {
     const resolvedVoice = this._resolveVoiceOption(input.voicePresetId ?? draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID);
     if (!media || !normalizedScript || !resolvedVoice.available) return null;
 
-    let spokenText = buildSpokenText(assignedHeadline, normalizedScript);
+    let spokenText = normalizeSpokenText(normalizedScript);
     if (!validateSpokenTextWithinBudget(spokenText)) {
       if (!allowFallbacks) return null;
       spokenText = trimTextToSpeechBudget(spokenText);

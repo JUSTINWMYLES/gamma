@@ -201,6 +201,7 @@ func buildTTSEnv(instance *gammav1alpha1.GammaInstance, isAPI bool) []corev1.Env
 			corev1.EnvVar{Name: "TTS_WORKER_HEALTH_FILE", Value: defaultTTSWorkerHealthFile},
 			corev1.EnvVar{Name: "TTS_WORKER_HEALTH_MAX_AGE_SECONDS", Value: defaultTTSWorkerHealthMaxAgeSeconds},
 			corev1.EnvVar{Name: "TTS_WARMUP_ENABLED", Value: "true"},
+			corev1.EnvVar{Name: "TTS_WORKER_LEASE_DURATION", Value: "300s"},
 		)
 	}
 
