@@ -34,9 +34,9 @@ Build two services:
 
 Jobs are queued in Redis using three priority lanes (`blocker`, `next`, `background`). The worker claims jobs with a lease TTL and heartbeats during processing. Failed jobs retry with exponential backoff.
 
-### Audio delivery: Server proxy to MinIO object storage
+### Audio delivery: Server proxy to SeaweedFS object storage
 
-Generated MP3 artifacts are stored in MinIO (S3-compatible). The Gamma server exposes `GET /api/tts/audio/:jobId`, which proxies the request to `tts-api` or serves from MinIO directly. Browsers never contact the TTS worker or MinIO directly.
+Generated MP3 artifacts are stored in SeaweedFS (S3-compatible via `weed s3`). The Gamma server exposes `GET /api/tts/audio/:jobId`, which proxies the request to `tts-api` or serves from SeaweedFS directly. Browsers never contact the TTS worker or SeaweedFS directly.
 
 ### Model: MOSS-TTS-Nano-100M-ONNX
 
@@ -57,11 +57,11 @@ Use `OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX` in preset voice mode only. The ONNX 
 - **Worker is heavy.** It loads a ~100M parameter model into memory and should run one job at a time (concurrency = 1) for predictable latency.
 - **Lifecycle decoupling.** API can be updated without restarting model-warm workers.
 
-### Why MinIO over Redis or filesystem?
+### Why SeaweedFS over Redis or filesystem?
 
 - **Redis rejected for audio storage.** Audio blobs are large, memory-inefficient, and increase eviction risk.
-- **Filesystem rejected for Kubernetes.** Shared filesystems require NFS or hostPath, which add operational complexity. MinIO provides S3 semantics with a simple Deployment + PVC.
-- **MinIO chosen.** It is self-contained, S3-compatible, and runs as a single Deployment with a PVC. For larger deployments, it can be swapped for AWS S3 without code changes.
+- **Filesystem rejected for Kubernetes.** Shared filesystems require NFS or hostPath, which add operational complexity. SeaweedFS provides S3 semantics with a simple Deployment + PVC.
+- **SeaweedFS chosen.** It is self-contained, S3-compatible via `weed s3`, and runs as a single Deployment with a PVC. For larger deployments, it can be swapped for AWS S3 without code changes. The upstream MinIO Docker image was discontinued, making SeaweedFS the preferred self-hosted S3-compatible store.
 
 ### Why server proxy instead of direct client access?
 
@@ -112,8 +112,8 @@ Artifacts expire 2 hours after room completion. Explicit deletion is triggered o
 
 - `Deployment` for `tts-api`
 - `Deployment` for `tts-worker`
-- `Deployment` for `minio`
-- `PersistentVolumeClaim` for MinIO data
+- `Deployment` for `seaweedfs`
+- `PersistentVolumeClaim` for SeaweedFS data
 
 All managed by the Gamma operator when `spec.tts.enabled: true`.
 
@@ -124,7 +124,7 @@ All managed by the Gamma operator when `spec.tts.enabled: true`.
 - Worker memory footprint is 4-6 GiB per replica. Production deployments should size nodes accordingly.
 - The Gamma server must poll job status or receive notifications. The current implementation polls `tts-api` every few seconds.
 - If TTS is completely unavailable (no `TTS_API_URL` env var), the game degrades to captions-only presentation.
-- The CRD gains a `tts` stanza with `api`, `worker`, `minio`, and `config` sub-fields. This increases CRD surface but keeps TTS configuration declarative.
+- The CRD gains a `tts` stanza with `api`, `worker`, `objectStore`, and `config` sub-fields. This increases CRD surface but keeps TTS configuration declarative.
 
 ## Related Documents
 

@@ -706,17 +706,17 @@ spec:
                     description: Whether to deploy TTS infrastructure and wire the
                       Gamma server to it.
                     type: boolean
-                  minio:
-                    description: MinIO configures the self-contained object store
-                      used for TTS artifacts.
+                  objectStore:
+                    description: ObjectStore configures the self-contained S3-compatible
+                      object store (SeaweedFS) used for TTS artifacts.
                     properties:
                       credentials:
-                        description: Bootstrap credentials used by MinIO and by the
-                          TTS API/worker.
+                        description: Bootstrap credentials used by the object store
+                          and by the TTS API/worker.
                         properties:
                           secretRef:
                             description: |-
-                              SecretRef references a Kubernetes Secret that holds MinIO credentials.
+                              SecretRef references a Kubernetes Secret that holds object store credentials.
                               The secret must contain keys named "accessKey" and "secretKey".
                             properties:
                               name:
@@ -732,29 +732,29 @@ spec:
                             x-kubernetes-map-type: atomic
                         type: object
                       image:
-                        default: minio/minio:latest
-                        description: Container image for MinIO.
+                        default: chrislusf/seaweedfs:4.21
+                        description: Container image for the object store.
                         type: string
                       ports:
-                        description: Service ports exposed by MinIO.
+                        description: Service ports exposed by the object store.
                         properties:
                           api:
-                            default: 9000
+                            default: 8333
                             description: API is the S3-compatible API port.
                             format: int32
                             maximum: 65535
                             minimum: 1024
                             type: integer
                           console:
-                            default: 9001
-                            description: Console is the MinIO web console port.
+                            default: 9333
+                            description: Console is the web console port.
                             format: int32
                             maximum: 65535
                             minimum: 1024
                             type: integer
                         type: object
                       resources:
-                        description: Resource requirements for the MinIO pod.
+                        description: Resource requirements for the object store pod.
                         properties:
                           claims:
                             description: |-
@@ -817,7 +817,7 @@ spec:
                         properties:
                           size:
                             default: 5Gi
-                            description: PVC size for MinIO data.
+                            description: PVC size for object store data.
                             type: string
                           storageClassName:
                             description: StorageClass name. Empty uses cluster default.
@@ -1006,14 +1006,14 @@ spec:
                 description: Number of ready TTS API replicas.
                 format: int32
                 type: integer
-              ttsMinioConsoleEndpoint:
-                description: TTS MinIO console endpoint.
+              ttsObjectStoreConsoleEndpoint:
+                description: TTS object store console endpoint.
                 type: string
-              ttsMinioEndpoint:
-                description: TTS MinIO API endpoint.
+              ttsObjectStoreEndpoint:
+                description: TTS object store API endpoint.
                 type: string
-              ttsMinioReady:
-                description: Whether MinIO backing the TTS stack is ready.
+              ttsObjectStoreReady:
+                description: Whether the TTS object store is ready.
                 type: boolean
               ttsReady:
                 description: Whether the TTS stack is fully ready.

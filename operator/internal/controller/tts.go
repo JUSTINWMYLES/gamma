@@ -163,14 +163,14 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 }
 
 func buildTTSEnv(instance *gammav1alpha1.GammaInstance, isAPI bool) []corev1.EnvVar {
-	minioEndpoint := minioServiceEndpoint(instance)
+	objectStoreEndpoint := objectStoreServiceEndpoint(instance)
 	env := []corev1.EnvVar{
 		{Name: "REDIS_URL", Value: redisServiceURL(instance)},
 		{Name: "TTS_REDIS_KEY_PREFIX", Value: instance.Spec.TTS.Config.RedisKeyPrefixValue()},
-		{Name: "MINIO_ENDPOINT", Value: minioEndpoint},
+		{Name: "MINIO_ENDPOINT", Value: objectStoreEndpoint},
 		{Name: "MINIO_USE_SSL", Value: "false"},
-		instance.Spec.TTS.MinIO.Credentials.AccessKeyEnvVar(),
-		instance.Spec.TTS.MinIO.Credentials.SecretKeyEnvVar(),
+		instance.Spec.TTS.ObjectStore.Credentials.AccessKeyEnvVar(),
+		instance.Spec.TTS.ObjectStore.Credentials.SecretKeyEnvVar(),
 		{Name: "MINIO_BUCKET_NAME", Value: instance.Spec.TTS.Config.BucketNameValue()},
 		{Name: "TTS_MODEL_VERSION", Value: instance.Spec.TTS.Config.ModelVersionValue()},
 		{Name: "TTS_VOICE_MANIFEST_PATH", Value: "/app/voices/manifest.json"},
@@ -179,9 +179,9 @@ func buildTTSEnv(instance *gammav1alpha1.GammaInstance, isAPI bool) []corev1.Env
 	// Rename the env var names for API/worker containers
 	for i := range env {
 		switch env[i].Name {
-		case "MINIO_ROOT_USER":
+		case "WEED_S3_ACCESS_KEY":
 			env[i].Name = "MINIO_ACCESS_KEY"
-		case "MINIO_ROOT_PASSWORD":
+		case "WEED_S3_SECRET_KEY":
 			env[i].Name = "MINIO_SECRET_KEY"
 		}
 	}
@@ -217,9 +217,9 @@ func (r *GammaInstanceReconciler) cleanupTTS(ctx context.Context, instance *gamm
 		{name: ttsWorkerName(instance), object: &appsv1.Deployment{}},
 		{name: ttsAPIName(instance), object: &appsv1.Deployment{}},
 		{name: ttsAPIName(instance), object: &corev1.Service{}},
-		{name: ttsMinIOName(instance), object: &appsv1.Deployment{}},
-		{name: ttsMinIOName(instance), object: &corev1.Service{}},
-		{name: ttsMinIOPVCName(instance), object: &corev1.PersistentVolumeClaim{}},
+		{name: ttsObjectStoreName(instance), object: &appsv1.Deployment{}},
+		{name: ttsObjectStoreName(instance), object: &corev1.Service{}},
+		{name: ttsObjectStorePVCName(instance), object: &corev1.PersistentVolumeClaim{}},
 	}
 
 	for _, item := range objects {

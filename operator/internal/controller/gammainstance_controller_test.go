@@ -194,8 +194,8 @@ func TestReconcile_CreatesTTSResourcesWhenEnabled(t *testing.T) {
 		Worker: gammav1alpha1.TTSWorkerSpec{
 			Image: "ghcr.io/gamma/gamma-tts-worker:latest",
 		},
-		MinIO: gammav1alpha1.TTSMinIOSpec{
-			Image: "minio/minio:latest",
+		ObjectStore: gammav1alpha1.TTSObjectStoreSpec{
+			Image: "chrislusf/seaweedfs:4.21",
 		},
 	}
 
@@ -231,21 +231,21 @@ func TestReconcile_CreatesTTSResourcesWhenEnabled(t *testing.T) {
 	}
 	assert.Equal(t, defaultTTSWorkerHealthFile, workerEnv["TTS_WORKER_HEALTH_FILE"])
 
-	minioDeploy := &appsv1.Deployment{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio", Namespace: "default"}, minioDeploy)
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
 	require.NoError(t, err)
-	assert.Equal(t, "minio/minio:latest", minioDeploy.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, "chrislusf/seaweedfs:4.21", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
 
 	apiService := &corev1.Service{}
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiService)
 	require.NoError(t, err)
 
-	minioService := &corev1.Service{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio", Namespace: "default"}, minioService)
+	objectStoreService := &corev1.Service{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreService)
 	require.NoError(t, err)
 
 	pvc := &corev1.PersistentVolumeClaim{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio-data", Namespace: "default"}, pvc)
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store-data", Namespace: "default"}, pvc)
 	require.NoError(t, err)
 }
 
@@ -260,8 +260,8 @@ func TestReconcile_UsesCustomTTSImagesWhenSpecified(t *testing.T) {
 		Worker: gammav1alpha1.TTSWorkerSpec{
 			Image: "custom-registry/gamma-tts-worker:v2",
 		},
-		MinIO: gammav1alpha1.TTSMinIOSpec{
-			Image: "custom-registry/minio:v2",
+		ObjectStore: gammav1alpha1.TTSObjectStoreSpec{
+			Image: "custom-registry/seaweedfs:v2",
 		},
 	}
 
@@ -287,10 +287,10 @@ func TestReconcile_UsesCustomTTSImagesWhenSpecified(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "custom-registry/gamma-tts-worker:v2", workerDeploy.Spec.Template.Spec.Containers[0].Image)
 
-	minioDeploy := &appsv1.Deployment{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-minio", Namespace: "default"}, minioDeploy)
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
 	require.NoError(t, err)
-	assert.Equal(t, "custom-registry/minio:v2", minioDeploy.Spec.Template.Spec.Containers[0].Image)
+	assert.Equal(t, "custom-registry/seaweedfs:v2", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
 }
 
 func TestReconcile_InjectsTTSAPIURLIntoServerWhenEnabled(t *testing.T) {

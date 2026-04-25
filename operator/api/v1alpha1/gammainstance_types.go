@@ -133,9 +133,9 @@ type TTSSpec struct {
 	// Worker configures the synthesis worker deployment.
 	// +optional
 	Worker TTSWorkerSpec `json:"worker,omitempty"`
-	// MinIO configures the self-contained object store used for TTS artifacts.
+	// ObjectStore configures the self-contained S3-compatible object store (SeaweedFS) used for TTS artifacts.
 	// +optional
-	MinIO TTSMinIOSpec `json:"minio,omitempty"`
+	ObjectStore TTSObjectStoreSpec `json:"objectStore,omitempty"`
 	// Config contains shared runtime settings applied to the TTS API and worker.
 	// +optional
 	Config TTSConfigSpec `json:"config,omitempty"`
@@ -182,29 +182,29 @@ type TTSWorkerSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
-// TTSMinIOSpec defines the desired state for the MinIO object store.
-type TTSMinIOSpec struct {
-	// Container image for MinIO.
-	// +kubebuilder:default="minio/minio:latest"
+// TTSObjectStoreSpec defines the desired state for the S3-compatible object store (SeaweedFS).
+type TTSObjectStoreSpec struct {
+	// Container image for the object store.
+	// +kubebuilder:default="chrislusf/seaweedfs:4.21"
 	// +optional
 	Image string `json:"image,omitempty"`
-	// Resource requirements for the MinIO pod.
+	// Resource requirements for the object store pod.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 	// Persistent storage configuration for TTS artifacts.
 	// +optional
-	Storage TTSMinIOStorageSpec `json:"storage,omitempty"`
-	// Service ports exposed by MinIO.
+	Storage TTSObjectStoreStorageSpec `json:"storage,omitempty"`
+	// Service ports exposed by the object store.
 	// +optional
-	Ports TTSMinIOPortsSpec `json:"ports,omitempty"`
-	// Bootstrap credentials used by MinIO and by the TTS API/worker.
+	Ports TTSObjectStorePortsSpec `json:"ports,omitempty"`
+	// Bootstrap credentials used by the object store and by the TTS API/worker.
 	// +optional
-	Credentials TTSMinIOCredentialsSpec `json:"credentials,omitempty"`
+	Credentials TTSObjectStoreCredentialsSpec `json:"credentials,omitempty"`
 }
 
-// TTSMinIOStorageSpec defines MinIO persistent storage settings.
-type TTSMinIOStorageSpec struct {
-	// PVC size for MinIO data.
+// TTSObjectStoreStorageSpec defines object store persistent storage settings.
+type TTSObjectStoreStorageSpec struct {
+	// PVC size for object store data.
 	// +kubebuilder:default="5Gi"
 	// +optional
 	Size string `json:"size,omitempty"`
@@ -213,25 +213,25 @@ type TTSMinIOStorageSpec struct {
 	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
-// TTSMinIOPortsSpec defines the service ports exposed by MinIO.
-type TTSMinIOPortsSpec struct {
+// TTSObjectStorePortsSpec defines the service ports exposed by the object store.
+type TTSObjectStorePortsSpec struct {
 	// API is the S3-compatible API port.
-	// +kubebuilder:default=9000
+	// +kubebuilder:default=8333
 	// +kubebuilder:validation:Minimum=1024
 	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	API int32 `json:"api,omitempty"`
-	// Console is the MinIO web console port.
-	// +kubebuilder:default=9001
+	// Console is the web console port.
+	// +kubebuilder:default=9333
 	// +kubebuilder:validation:Minimum=1024
 	// +kubebuilder:validation:Maximum=65535
 	// +optional
 	Console int32 `json:"console,omitempty"`
 }
 
-// TTSMinIOCredentialsSpec defines the MinIO bootstrap credentials.
-type TTSMinIOCredentialsSpec struct {
-	// SecretRef references a Kubernetes Secret that holds MinIO credentials.
+// TTSObjectStoreCredentialsSpec defines the object store bootstrap credentials.
+type TTSObjectStoreCredentialsSpec struct {
+	// SecretRef references a Kubernetes Secret that holds object store credentials.
 	// The secret must contain keys named "accessKey" and "secretKey".
 	// +optional
 	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`
@@ -368,9 +368,9 @@ type GammaInstanceStatus struct {
 	// Number of ready TTS worker replicas.
 	// +optional
 	TTSWorkerReadyReplicas int32 `json:"ttsWorkerReadyReplicas,omitempty"`
-	// Whether MinIO backing the TTS stack is ready.
+	// Whether the TTS object store is ready.
 	// +optional
-	TTSMinIOReady bool `json:"ttsMinioReady,omitempty"`
+	TTSObjectStoreReady bool `json:"ttsObjectStoreReady,omitempty"`
 	// Server service endpoint.
 	// +optional
 	ServerEndpoint string `json:"serverEndpoint,omitempty"`
@@ -383,12 +383,12 @@ type GammaInstanceStatus struct {
 	// TTS API service endpoint.
 	// +optional
 	TTSAPIEndpoint string `json:"ttsApiEndpoint,omitempty"`
-	// TTS MinIO API endpoint.
+	// TTS object store API endpoint.
 	// +optional
-	TTSMinIOEndpoint string `json:"ttsMinioEndpoint,omitempty"`
-	// TTS MinIO console endpoint.
+	TTSObjectStoreEndpoint string `json:"ttsObjectStoreEndpoint,omitempty"`
+	// TTS object store console endpoint.
 	// +optional
-	TTSMinIOConsoleEndpoint string `json:"ttsMinioConsoleEndpoint,omitempty"`
+	TTSObjectStoreConsoleEndpoint string `json:"ttsObjectStoreConsoleEndpoint,omitempty"`
 	// Status conditions for each component.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -523,43 +523,43 @@ func (s *TTSWorkerSpec) WorkerReplicas() int32 {
 	return 1
 }
 
-// MinIOImage returns the MinIO container image.
-func (s *TTSMinIOSpec) MinIOImage() string {
+// ObjectStoreImage returns the object store container image.
+func (s *TTSObjectStoreSpec) ObjectStoreImage() string {
 	if s.Image != "" {
 		return s.Image
 	}
-	return "minio/minio:latest"
+	return "chrislusf/seaweedfs:4.21"
 }
 
-// StorageSize returns the MinIO PVC size.
-func (s *TTSMinIOStorageSpec) StorageSize() string {
+// StorageSize returns the object store PVC size.
+func (s *TTSObjectStoreStorageSpec) StorageSize() string {
 	if s.Size != "" {
 		return s.Size
 	}
 	return "5Gi"
 }
 
-// APIPort returns the MinIO S3-compatible API port.
-func (s *TTSMinIOPortsSpec) APIPort() int32 {
+// APIPort returns the object store S3-compatible API port.
+func (s *TTSObjectStorePortsSpec) APIPort() int32 {
 	if s.API != 0 {
 		return s.API
 	}
-	return 9000
+	return 8333
 }
 
-// ConsolePort returns the MinIO web console port.
-func (s *TTSMinIOPortsSpec) ConsolePort() int32 {
+// ConsolePort returns the object store web console port.
+func (s *TTSObjectStorePortsSpec) ConsolePort() int32 {
 	if s.Console != 0 {
 		return s.Console
 	}
-	return 9001
+	return 9333
 }
 
-// AccessKeyValue returns the MinIO access key env-var source for the pod.
-func (s *TTSMinIOCredentialsSpec) AccessKeyEnvVar() corev1.EnvVar {
+// AccessKeyEnvVar returns the object store access key env-var source for the pod.
+func (s *TTSObjectStoreCredentialsSpec) AccessKeyEnvVar() corev1.EnvVar {
 	if s.SecretRef != nil {
 		return corev1.EnvVar{
-			Name: "MINIO_ROOT_USER",
+			Name: "WEED_S3_ACCESS_KEY",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: *s.SecretRef,
@@ -568,14 +568,14 @@ func (s *TTSMinIOCredentialsSpec) AccessKeyEnvVar() corev1.EnvVar {
 			},
 		}
 	}
-	return corev1.EnvVar{Name: "MINIO_ROOT_USER", Value: "gamma"}
+	return corev1.EnvVar{Name: "WEED_S3_ACCESS_KEY", Value: "gamma"}
 }
 
-// SecretKeyValue returns the MinIO secret key env-var source for the pod.
-func (s *TTSMinIOCredentialsSpec) SecretKeyEnvVar() corev1.EnvVar {
+// SecretKeyEnvVar returns the object store secret key env-var source for the pod.
+func (s *TTSObjectStoreCredentialsSpec) SecretKeyEnvVar() corev1.EnvVar {
 	if s.SecretRef != nil {
 		return corev1.EnvVar{
-			Name: "MINIO_ROOT_PASSWORD",
+			Name: "WEED_S3_SECRET_KEY",
 			ValueFrom: &corev1.EnvVarSource{
 				SecretKeyRef: &corev1.SecretKeySelector{
 					LocalObjectReference: *s.SecretRef,
@@ -584,7 +584,7 @@ func (s *TTSMinIOCredentialsSpec) SecretKeyEnvVar() corev1.EnvVar {
 			},
 		}
 	}
-	return corev1.EnvVar{Name: "MINIO_ROOT_PASSWORD", Value: "gammalocal"}
+	return corev1.EnvVar{Name: "WEED_S3_SECRET_KEY", Value: "gammalocal"}
 }
 
 // BucketNameValue returns the MinIO bucket used for synthesized artifacts.

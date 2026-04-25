@@ -88,14 +88,14 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Step 2: Reconcile News Broadcast TTS stack.
 	if instance.Spec.TTS.IsTTSEnabled() {
-		if err := r.reconcileMinIOPVC(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSMinIOPVC", err)
+		if err := r.reconcileObjectStorePVC(ctx, instance); err != nil {
+			return r.setFailedStatus(ctx, instance, "TTSObjectStorePVC", err)
 		}
-		if err := r.reconcileMinIOService(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSMinIOService", err)
+		if err := r.reconcileObjectStoreService(ctx, instance); err != nil {
+			return r.setFailedStatus(ctx, instance, "TTSObjectStoreService", err)
 		}
-		if err := r.reconcileMinIODeployment(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSMinIODeployment", err)
+		if err := r.reconcileObjectStoreDeployment(ctx, instance); err != nil {
+			return r.setFailedStatus(ctx, instance, "TTSObjectStoreDeployment", err)
 		}
 		if err := r.reconcileTTSAPIService(ctx, instance); err != nil {
 			return r.setFailedStatus(ctx, instance, "TTSAPIService", err)
@@ -311,13 +311,13 @@ func (r *GammaInstanceReconciler) updateTTSStatus(ctx context.Context, instance 
 		instance.Status.TTSReady = false
 		instance.Status.TTSAPIReadyReplicas = 0
 		instance.Status.TTSWorkerReadyReplicas = 0
-		instance.Status.TTSMinIOReady = false
+		instance.Status.TTSObjectStoreReady = false
 		instance.Status.TTSAPIEndpoint = ""
-		instance.Status.TTSMinIOEndpoint = ""
-		instance.Status.TTSMinIOConsoleEndpoint = ""
+		instance.Status.TTSObjectStoreEndpoint = ""
+		instance.Status.TTSObjectStoreConsoleEndpoint = ""
 		removeCondition(&instance.Status.Conditions, "TTSAPIReady")
 		removeCondition(&instance.Status.Conditions, "TTSWorkerReady")
-		removeCondition(&instance.Status.Conditions, "TTSMinIOReady")
+		removeCondition(&instance.Status.Conditions, "TTSObjectStoreReady")
 		removeCondition(&instance.Status.Conditions, "TTSReady")
 		return nil
 	}
@@ -376,45 +376,45 @@ func (r *GammaInstanceReconciler) updateTTSStatus(ctx context.Context, instance 
 		})
 	}
 
-	minioDeploy := &appsv1.Deployment{}
-	minioName := ttsMinIOName(instance)
-	minioErr := r.Get(ctx, types.NamespacedName{Name: minioName, Namespace: instance.Namespace}, minioDeploy)
-	if minioErr != nil {
-		if !errors.IsNotFound(minioErr) {
-			return minioErr
+	objectStoreDeploy := &appsv1.Deployment{}
+	objectStoreName := ttsObjectStoreName(instance)
+	objectStoreErr := r.Get(ctx, types.NamespacedName{Name: objectStoreName, Namespace: instance.Namespace}, objectStoreDeploy)
+	if objectStoreErr != nil {
+		if !errors.IsNotFound(objectStoreErr) {
+			return objectStoreErr
 		}
-		instance.Status.TTSMinIOReady = false
-		instance.Status.TTSMinIOEndpoint = ""
-		instance.Status.TTSMinIOConsoleEndpoint = ""
+		instance.Status.TTSObjectStoreReady = false
+		instance.Status.TTSObjectStoreEndpoint = ""
+		instance.Status.TTSObjectStoreConsoleEndpoint = ""
 		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:               "TTSMinIOReady",
+			Type:               "TTSObjectStoreReady",
 			Status:             metav1.ConditionFalse,
 			Reason:             "DeploymentMissing",
-			Message:            "tts minio deployment not found",
+			Message:            "tts object store deployment not found",
 			LastTransitionTime: metav1.Now(),
 		})
 	} else {
-		instance.Status.TTSMinIOReady = minioDeploy.Status.ReadyReplicas > 0
-		instance.Status.TTSMinIOEndpoint = serviceEndpoint(instance, minioName, instance.Spec.TTS.MinIO.Ports.APIPort())
-		instance.Status.TTSMinIOConsoleEndpoint = serviceEndpoint(instance, minioName, instance.Spec.TTS.MinIO.Ports.ConsolePort())
+		instance.Status.TTSObjectStoreReady = objectStoreDeploy.Status.ReadyReplicas > 0
+		instance.Status.TTSObjectStoreEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.APIPort())
+		instance.Status.TTSObjectStoreConsoleEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.ConsolePort())
 		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:               "TTSMinIOReady",
-			Status:             conditionStatus(minioDeploy.Status.ReadyReplicas > 0),
+			Type:               "TTSObjectStoreReady",
+			Status:             conditionStatus(objectStoreDeploy.Status.ReadyReplicas > 0),
 			Reason:             "DeploymentStatus",
-			Message:            fmt.Sprintf("%d/1 replicas ready", minioDeploy.Status.ReadyReplicas),
+			Message:            fmt.Sprintf("%d/1 replicas ready", objectStoreDeploy.Status.ReadyReplicas),
 			LastTransitionTime: metav1.Now(),
 		})
 	}
 
 	instance.Status.TTSReady = instance.Status.TTSAPIReadyReplicas >= instance.Spec.TTS.API.APIReplicas() &&
 		instance.Status.TTSWorkerReadyReplicas >= instance.Spec.TTS.Worker.WorkerReplicas() &&
-		instance.Status.TTSMinIOReady
+		instance.Status.TTSObjectStoreReady
 
 	meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:               "TTSReady",
 		Status:             conditionStatus(instance.Status.TTSReady),
 		Reason:             "ComponentStatus",
-		Message:            fmt.Sprintf("api=%d/%d worker=%d/%d minio=%t", instance.Status.TTSAPIReadyReplicas, instance.Spec.TTS.API.APIReplicas(), instance.Status.TTSWorkerReadyReplicas, instance.Spec.TTS.Worker.WorkerReplicas(), instance.Status.TTSMinIOReady),
+		Message:            fmt.Sprintf("api=%d/%d worker=%d/%d objectStore=%t", instance.Status.TTSAPIReadyReplicas, instance.Spec.TTS.API.APIReplicas(), instance.Status.TTSWorkerReadyReplicas, instance.Spec.TTS.Worker.WorkerReplicas(), instance.Status.TTSObjectStoreReady),
 		LastTransitionTime: metav1.Now(),
 	})
 
@@ -435,7 +435,7 @@ func computePhase(instance *gammav1alpha1.GammaInstance) string {
 	if instance.Status.ServerReadyReplicas > 0 ||
 		instance.Status.ClientReadyReplicas > 0 ||
 		(instance.Spec.Redis.IsRedisEnabled() && instance.Status.RedisReady) ||
-		(instance.Spec.TTS.IsTTSEnabled() && (instance.Status.TTSAPIReadyReplicas > 0 || instance.Status.TTSWorkerReadyReplicas > 0 || instance.Status.TTSMinIOReady)) {
+		(instance.Spec.TTS.IsTTSEnabled() && (instance.Status.TTSAPIReadyReplicas > 0 || instance.Status.TTSWorkerReadyReplicas > 0 || instance.Status.TTSObjectStoreReady)) {
 		return "Degraded"
 	}
 
@@ -502,12 +502,12 @@ func ttsWorkerName(instance *gammav1alpha1.GammaInstance) string {
 	return fmt.Sprintf("%s-tts-worker", instance.Name)
 }
 
-func ttsMinIOName(instance *gammav1alpha1.GammaInstance) string {
-	return fmt.Sprintf("%s-tts-minio", instance.Name)
+func ttsObjectStoreName(instance *gammav1alpha1.GammaInstance) string {
+	return fmt.Sprintf("%s-tts-object-store", instance.Name)
 }
 
-func ttsMinIOPVCName(instance *gammav1alpha1.GammaInstance) string {
-	return fmt.Sprintf("%s-tts-minio-data", instance.Name)
+func ttsObjectStorePVCName(instance *gammav1alpha1.GammaInstance) string {
+	return fmt.Sprintf("%s-tts-object-store-data", instance.Name)
 }
 
 func serviceEndpoint(instance *gammav1alpha1.GammaInstance, serviceName string, port int32) string {
@@ -526,8 +526,8 @@ func ttsAPIServiceURL(instance *gammav1alpha1.GammaInstance) string {
 	return serviceURL(instance, ttsAPIName(instance), instance.Spec.TTS.API.APIPort(), "http")
 }
 
-func minioServiceEndpoint(instance *gammav1alpha1.GammaInstance) string {
-	return serviceEndpoint(instance, ttsMinIOName(instance), instance.Spec.TTS.MinIO.Ports.APIPort())
+func objectStoreServiceEndpoint(instance *gammav1alpha1.GammaInstance) string {
+	return serviceEndpoint(instance, ttsObjectStoreName(instance), instance.Spec.TTS.ObjectStore.Ports.APIPort())
 }
 
 // createOrUpdate is a helper that wraps controllerutil.CreateOrUpdate with owner references.
