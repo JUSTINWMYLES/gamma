@@ -64,8 +64,8 @@ describe("constants", () => {
     expect(BROADCAST_CREATION_DURATION_MS).toBe(180_000);
   });
 
-  it("BUFFERING_MAX_WAIT_MS is 12_000", () => {
-    expect(BUFFERING_MAX_WAIT_MS).toBe(12_000);
+  it("BUFFERING_MAX_WAIT_MS is 45_000", () => {
+    expect(BUFFERING_MAX_WAIT_MS).toBe(45_000);
   });
 
   it("PRESENTATION_PREPARE_MS is 2_000", () => {
@@ -76,8 +76,8 @@ describe("constants", () => {
     expect(PRESENTATION_END_HOLD_MS).toBe(4_000);
   });
 
-  it("PRESENTATION_EXTRA_WAIT_MS is 6_000", () => {
-    expect(PRESENTATION_EXTRA_WAIT_MS).toBe(6_000);
+  it("PRESENTATION_EXTRA_WAIT_MS is 20_000", () => {
+    expect(PRESENTATION_EXTRA_WAIT_MS).toBe(20_000);
   });
 
   it("VOTING_DURATION_MS is 30_000", () => {
