@@ -88,8 +88,9 @@ func (r *GammaInstanceReconciler) reconcileTTSAPIDeployment(ctx context.Context,
 										Port: intstr.FromInt32(port),
 									},
 								},
-								InitialDelaySeconds: 5,
+								InitialDelaySeconds: 60,
 								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -145,6 +146,7 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 								},
 								InitialDelaySeconds: 10,
 								PeriodSeconds:       20,
+								TimeoutSeconds:      10,
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
@@ -152,6 +154,7 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 								},
 								InitialDelaySeconds: 60,
 								PeriodSeconds:       30,
+								TimeoutSeconds:      10,
 							},
 						},
 					},
