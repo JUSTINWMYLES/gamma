@@ -70,10 +70,10 @@ spec:
       resources:
         requests:
           cpu: "500m"
-          memory: "512Mi"
+          memory: "4Gi"
         limits:
-          cpu: "2000m"
-          memory: "1Gi"
+          cpu: "4000m"
+          memory: "6Gi"
     minio:
       credentials:
         accessKey: REPLACE_ME
