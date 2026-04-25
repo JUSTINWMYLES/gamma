@@ -84,7 +84,7 @@ async function main() {
   const gameServer = new Server({
     transport: new WebSocketTransport({
       server: httpServer,
-      maxPayload: 4 * 1024 * 1024, // 4 MB – default 4 KB kills audio payloads
+      maxPayload: 4 * 1024 * 1024, // 4 MB – accommodates large game state payloads
     }),
   });
 

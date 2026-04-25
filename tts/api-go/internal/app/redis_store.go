@@ -187,9 +187,18 @@ func (s *RedisStore) ListExpiredLeaseJobIDs(ctx context.Context, now time.Time, 
 }
 
 func (s *RedisStore) ListWorkerHeartbeats(ctx context.Context) ([]WorkerHeartbeat, error) {
-	keys, err := s.client.Keys(ctx, s.workerHeartbeatPattern()).Result()
-	if err != nil {
-		return nil, err
+	var cursor uint64
+	var keys []string
+	for {
+		batch, nextCursor, err := s.client.Scan(ctx, cursor, s.workerHeartbeatPattern(), 100).Result()
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, batch...)
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
 	}
 	beats := make([]WorkerHeartbeat, 0, len(keys))
 	for _, key := range keys {
