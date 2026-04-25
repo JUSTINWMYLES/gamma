@@ -11,3 +11,4 @@ Platform-level ADRs for Gamma. Each decision lives in its own file.
 | [005](005-lobby-setup-flow.md) | Lobby Setup Flow (3-step wizard) | Active |
 | [006](006-control-modes.md) | Control Modes — Joystick vs Tilt | Active |
 | [007](007-kubernetes-operator-and-redis.md) | Kubernetes Operator Design and Redis for Game State | Active |
+| [008](008-async-tts-service.md) | Async TTS Service for News Broadcast | Active |
