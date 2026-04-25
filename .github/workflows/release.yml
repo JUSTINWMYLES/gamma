@@ -121,6 +121,12 @@ jobs:
           - name: gamma-operator
             context: operator
             dockerfile: operator/Dockerfile
+          - name: gamma-tts-api
+            context: .
+            dockerfile: tts/api-go/Dockerfile
+          - name: gamma-tts-worker
+            context: .
+            dockerfile: tts/worker/Dockerfile
     steps:
       - uses: actions/checkout@v4
         with:
