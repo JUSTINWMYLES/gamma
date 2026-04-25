@@ -89,6 +89,44 @@ jobs:
         run: go test ./...
         working-directory: operator
 
+  # ── News Broadcast TTS API: build + tests ──────────────────────────────────
+  lint-test-tts-api:
+    name: Lint & Test – TTS API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tts/api-go/go.mod
+          cache-dependency-path: tts/api-go/go.sum
+
+      - name: Vet TTS API
+        run: go vet ./...
+        working-directory: tts/api-go
+
+      - name: Run TTS API tests
+        run: go test ./...
+        working-directory: tts/api-go
+
+      - name: Build TTS API
+        run: go build ./...
+        working-directory: tts/api-go
+
+  # ── News Broadcast TTS worker: lightweight syntax validation ───────────────
+  lint-tts-worker:
+    name: Lint – TTS Worker Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python worker modules
+        run: python -m compileall -q tts/worker
+
   # ── Helm chart: lint ───────────────────────────────────────────────────────
   lint-helm:
     name: Lint – Helm Chart

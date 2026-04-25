@@ -22,8 +22,15 @@ import { createServer } from "http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { GammaRoom } from "./rooms/GammaRoom";
+import { fetchTTSArtifact, isTTSEnabled } from "./games/registry-45-news-broadcast/ttsApiClient";
 
 const PORT = Number(process.env.PORT ?? 2567);
+const TTS_JOB_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,127})$/;
+
+function sanitizeTTSJobId(value: string): string | null {
+  const trimmed = value.trim();
+  return TTS_JOB_ID_PATTERN.test(trimmed) ? trimmed : null;
+}
 
 async function main() {
   // Initialise OpenTelemetry before setting up the server
@@ -39,13 +46,45 @@ async function main() {
     res.json({ status: "ok", ts: Date.now() });
   });
 
+  const handleTTSAudioProxy: express.RequestHandler = async (req, res) => {
+    const jobId = sanitizeTTSJobId(req.params.jobId ?? "");
+    if (!jobId) {
+      res.status(400).json({ error: "invalid jobId" });
+      return;
+    }
+
+    if (!isTTSEnabled()) {
+      res.status(503).json({ error: "TTS is not enabled" });
+      return;
+    }
+
+    const artifact = await fetchTTSArtifact(jobId);
+    if (!artifact) {
+      res.status(502).json({ error: "Failed to reach TTS artifact service" });
+      return;
+    }
+
+    if (!artifact.ok) {
+      res.status(artifact.status).json({ error: artifact.error });
+      return;
+    }
+
+    res.setHeader("Content-Type", artifact.contentType);
+    res.setHeader("Content-Length", artifact.bytes.byteLength.toString());
+    res.setHeader("Cache-Control", artifact.cacheControl ?? "private, max-age=30");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.status(200).send(artifact.bytes);
+  };
+
+  app.get(["/api/tts/audio/:jobId", "/ws/api/tts/audio/:jobId"], handleTTSAudioProxy);
+
   const httpServer = createServer(app);
 
   // ── Colyseus WebSocket layer ────────────────────────────────────────────────
   const gameServer = new Server({
     transport: new WebSocketTransport({
       server: httpServer,
-      maxPayload: 4 * 1024 * 1024, // 4 MB – default 4 KB kills audio payloads
+      maxPayload: 4 * 1024 * 1024, // 4 MB – accommodates large game state payloads
     }),
   });
 

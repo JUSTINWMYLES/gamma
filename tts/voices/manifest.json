@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "description": "Gamma News Broadcast voice preset manifest. Builtin mappings provide immediate usability while voice_pack entries reserve product IDs for packaged custom presets.",
+  "voices": [
+    {
+      "id": "anchor_classic_a",
+      "label": "Classic Anchor",
+      "tone": "Formal nightly news",
+      "source": "builtin",
+      "engineVoiceName": "Junhao",
+      "previewPath": "previews/anchor_classic_a.mp3"
+    },
+    {
+      "id": "anchor_classic_b",
+      "label": "Veteran Anchor",
+      "tone": "Older and steady",
+      "source": "builtin",
+      "engineVoiceName": "Zhiming",
+      "previewPath": "previews/anchor_classic_b.mp3"
+    },
+    {
+      "id": "anchor_local_fast",
+      "label": "Local Reporter",
+      "tone": "Fast and energetic",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_local_fast/prompt.wav",
+      "previewPath": "previews/anchor_local_fast.mp3"
+    },
+    {
+      "id": "anchor_tabloid",
+      "label": "Tabloid Host",
+      "tone": "Dramatic and urgent",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_tabloid/prompt.wav",
+      "previewPath": "previews/anchor_tabloid.mp3"
+    },
+    {
+      "id": "anchor_calm_night",
+      "label": "Overnight Desk",
+      "tone": "Calm and dry",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_calm_night/prompt.wav",
+      "previewPath": "previews/anchor_calm_night.mp3"
+    },
+    {
+      "id": "anchor_breaking",
+      "label": "Breaking News",
+      "tone": "High urgency",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_breaking/prompt.wav",
+      "previewPath": "previews/anchor_breaking.mp3"
+    },
+    {
+      "id": "anchor_morning",
+      "label": "Morning Show",
+      "tone": "Lighter delivery",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_morning/prompt.wav",
+      "previewPath": "previews/anchor_morning.mp3"
+    },
+    {
+      "id": "anchor_deadpan",
+      "label": "Deadpan Desk",
+      "tone": "Flat comedic contrast",
+      "source": "voice_pack",
+      "placeholder": true,
+      "packPromptAudio": "packs/anchor_deadpan/prompt.wav",
+      "previewPath": "previews/anchor_deadpan.mp3"
+    }
+  ]
+}

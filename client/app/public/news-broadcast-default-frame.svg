@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Technical Difficulties news frame</title>
+  <desc id="desc">Fallback news broadcast frame used when no media clip is selected.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#020617" />
+      <stop offset="60%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="ticker" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#7c2d12" />
+      <stop offset="100%" stop-color="#b91c1c" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" fill="url(#bg)" />
+  <rect x="40" y="40" width="1200" height="640" rx="36" fill="#0b1120" stroke="#334155" stroke-width="4" />
+  <rect x="78" y="78" width="1124" height="472" rx="28" fill="#111827" stroke="#1e293b" stroke-width="3" />
+
+  <g opacity="0.12">
+    <circle cx="210" cy="180" r="180" fill="#38bdf8" />
+    <circle cx="1070" cy="160" r="150" fill="#2563eb" />
+    <circle cx="1020" cy="430" r="210" fill="#0ea5e9" />
+  </g>
+
+  <rect x="78" y="78" width="1124" height="70" rx="28" fill="url(#panel)" />
+  <text x="122" y="122" fill="#e0f2fe" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" letter-spacing="4">GAMMA NEWSROOM</text>
+  <text x="1118" y="122" text-anchor="end" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">LIVE</text>
+
+  <g transform="translate(168 206)">
+    <rect x="0" y="0" width="944" height="226" rx="30" fill="#020617" stroke="#475569" stroke-width="3" />
+    <text x="472" y="88" text-anchor="middle" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="60" font-weight="800">TECHNICAL DIFFICULTIES</text>
+    <text x="472" y="144" text-anchor="middle" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="600">Our newsroom is lining up the next absurd segment.</text>
+    <text x="472" y="188" text-anchor="middle" fill="#94a3b8" font-family="Arial, Helvetica, sans-serif" font-size="22">Please stand by while the anchor finds a dramatic visual.</text>
+  </g>
+
+  <g transform="translate(110 588)">
+    <rect x="0" y="0" width="1060" height="54" rx="18" fill="url(#ticker)" />
+    <text x="30" y="35" fill="#fecaca" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" letter-spacing="2">BREAKING</text>
+    <text x="176" y="35" fill="#fff7ed" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600">Default backup frame engaged until a fresh clip is ready.</text>
+  </g>
+
+  <g transform="translate(110 494)">
+    <rect x="0" y="0" width="272" height="68" rx="20" fill="#0f172a" stroke="#334155" stroke-width="2" />
+    <text x="20" y="28" fill="#93c5fd" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" letter-spacing="2">SEGMENT STATUS</text>
+    <text x="20" y="50" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">Awaiting visuals</text>
+  </g>
+</svg>

@@ -1,0 +1,52 @@
+{
+  "gameId": "registry-45-news-broadcast",
+  "modes": {
+    "default": [
+      {
+        "heading": "News Broadcast",
+        "body": "Write a fake breaking headline, then turn somebody else's chaos into a complete TV segment.",
+        "bgClass": "bg-gradient-to-br from-sky-900 via-blue-900 to-indigo-900",
+        "headingColor": "text-sky-300",
+        "bodyColor": "text-sky-100",
+        "fontClass": "font-black",
+        "icon": "📰"
+      },
+      {
+        "heading": "Pitch The Headline",
+        "body": "Start by inventing one absurd headline on your phone. Keep it short, specific, and ridiculous.",
+        "bgClass": "bg-gradient-to-br from-violet-900 via-fuchsia-900 to-purple-900",
+        "headingColor": "text-violet-300",
+        "bodyColor": "text-violet-100",
+        "fontClass": "font-bold",
+        "icon": "✍️"
+      },
+      {
+        "heading": "Swap Stories",
+        "body": "Headlines get reassigned, so you will produce the segment for somebody else's breaking news.",
+        "bgClass": "bg-gradient-to-br from-slate-900 via-slate-800 to-sky-950",
+        "headingColor": "text-cyan-300",
+        "bodyColor": "text-cyan-100",
+        "fontClass": "font-bold",
+        "icon": "🔀"
+      },
+      {
+        "heading": "Build The Broadcast",
+        "body": "Search for a visual, choose an anchor voice, and write the script the newsroom will read on air.",
+        "bgClass": "bg-gradient-to-br from-fuchsia-900 via-pink-900 to-rose-900",
+        "headingColor": "text-fuchsia-300",
+        "bodyColor": "text-fuchsia-100",
+        "fontClass": "font-bold",
+        "icon": "🎙️"
+      },
+      {
+        "heading": "Watch And Vote",
+        "body": "The TV plays every segment. Then everyone votes on the funniest full newscast package.",
+        "bgClass": "bg-gradient-to-br from-amber-900 via-orange-900 to-red-900",
+        "headingColor": "text-amber-300",
+        "bodyColor": "text-amber-100",
+        "fontClass": "font-black",
+        "icon": "🗳️"
+      }
+    ]
+  }
+}
