@@ -40,6 +40,7 @@ type GammaInstanceReconciler struct {
 // Reconcile performs a single reconciliation loop for a GammaInstance CR.
 func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+	requeueSoon := false
 
 	instance := &gammav1alpha1.GammaInstance{}
 	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
@@ -97,14 +98,29 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.reconcileObjectStoreDeployment(ctx, instance); err != nil {
 			return r.setFailedStatus(ctx, instance, "TTSObjectStoreDeployment", err)
 		}
-		if err := r.reconcileTTSAPIService(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSAPIService", err)
-		}
-		if err := r.reconcileTTSAPIDeployment(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSAPIDeployment", err)
-		}
-		if err := r.reconcileTTSWorkerDeployment(ctx, instance); err != nil {
-			return r.setFailedStatus(ctx, instance, "TTSWorkerDeployment", err)
+
+		// Gate API and worker creation on object store readiness.
+		objectStoreDeploy := &appsv1.Deployment{}
+		objectStoreErr := r.Get(ctx, types.NamespacedName{Name: ttsObjectStoreName(instance), Namespace: instance.Namespace}, objectStoreDeploy)
+		if objectStoreErr != nil {
+			if !errors.IsNotFound(objectStoreErr) {
+				return r.setFailedStatus(ctx, instance, "TTSObjectStoreCheck", objectStoreErr)
+			}
+			logger.Info("TTS object store deployment not found yet, skipping API and worker", "deployment", ttsObjectStoreName(instance))
+			requeueSoon = true
+		} else if objectStoreDeploy.Status.ReadyReplicas == 0 {
+			logger.Info("TTS object store deployment not ready yet, skipping API and worker", "deployment", ttsObjectStoreName(instance), "readyReplicas", objectStoreDeploy.Status.ReadyReplicas)
+			requeueSoon = true
+		} else {
+			if err := r.reconcileTTSAPIService(ctx, instance); err != nil {
+				return r.setFailedStatus(ctx, instance, "TTSAPIService", err)
+			}
+			if err := r.reconcileTTSAPIDeployment(ctx, instance); err != nil {
+				return r.setFailedStatus(ctx, instance, "TTSAPIDeployment", err)
+			}
+			if err := r.reconcileTTSWorkerDeployment(ctx, instance); err != nil {
+				return r.setFailedStatus(ctx, instance, "TTSWorkerDeployment", err)
+			}
 		}
 	} else {
 		if err := r.cleanupTTS(ctx, instance); err != nil {
@@ -156,6 +172,9 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if requeueSoon {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
 	return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 }
 
