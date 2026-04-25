@@ -211,6 +211,21 @@ func TestReconcile_CreatesTTSResourcesWhenEnabled(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// First reconcile creates object store but not API/worker (waiting for readiness).
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
+	require.NoError(t, err)
+	assert.Equal(t, "chrislusf/seaweedfs:4.21", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
+
+	// Simulate object store becoming ready.
+	objectStoreDeploy.Status.ReadyReplicas = 1
+	require.NoError(t, client.Status().Update(context.Background(), objectStoreDeploy))
+
+	_, err = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
 	apiDeploy := &appsv1.Deployment{}
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiDeploy)
 	require.NoError(t, err)
@@ -230,11 +245,6 @@ func TestReconcile_CreatesTTSResourcesWhenEnabled(t *testing.T) {
 		}
 	}
 	assert.Equal(t, defaultTTSWorkerHealthFile, workerEnv["TTS_WORKER_HEALTH_FILE"])
-
-	objectStoreDeploy := &appsv1.Deployment{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
-	require.NoError(t, err)
-	assert.Equal(t, "chrislusf/seaweedfs:4.21", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
 
 	apiService := &corev1.Service{}
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiService)
@@ -277,6 +287,21 @@ func TestReconcile_UsesCustomTTSImagesWhenSpecified(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	// First reconcile creates object store but not API/worker (waiting for readiness).
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
+	require.NoError(t, err)
+	assert.Equal(t, "custom-registry/seaweedfs:v2", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
+
+	// Simulate object store becoming ready.
+	objectStoreDeploy.Status.ReadyReplicas = 1
+	require.NoError(t, client.Status().Update(context.Background(), objectStoreDeploy))
+
+	_, err = r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
 	apiDeploy := &appsv1.Deployment{}
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-api", Namespace: "default"}, apiDeploy)
 	require.NoError(t, err)
@@ -286,11 +311,6 @@ func TestReconcile_UsesCustomTTSImagesWhenSpecified(t *testing.T) {
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-worker", Namespace: "default"}, workerDeploy)
 	require.NoError(t, err)
 	assert.Equal(t, "custom-registry/gamma-tts-worker:v2", workerDeploy.Spec.Template.Spec.Containers[0].Image)
-
-	objectStoreDeploy := &appsv1.Deployment{}
-	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
-	require.NoError(t, err)
-	assert.Equal(t, "custom-registry/seaweedfs:v2", objectStoreDeploy.Spec.Template.Spec.Containers[0].Image)
 }
 
 func TestReconcile_InjectsTTSAPIURLIntoServerWhenEnabled(t *testing.T) {

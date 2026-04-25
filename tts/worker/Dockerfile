@@ -13,7 +13,7 @@ COPY tts/worker/requirements.txt /tmp/tts-worker-requirements.txt
 RUN pip install --no-cache-dir -r /tmp/tts-worker-requirements.txt
 
 COPY tts/worker /app/tts/worker
-COPY tts/voices /app/tts/voices
+COPY tts/voices /app/voices
 
 RUN useradd --system --create-home --home-dir /home/gamma gamma && chown -R gamma:gamma /app
 USER gamma

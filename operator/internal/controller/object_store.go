@@ -111,6 +111,7 @@ func (r *GammaInstanceReconciler) reconcileObjectStoreDeployment(ctx context.Con
 								"-dir=/data",
 								"-s3",
 								fmt.Sprintf("-s3.port=%d", apiPort),
+								fmt.Sprintf("-master.port=%d", consolePort+1),
 								fmt.Sprintf("-filer.port=%d", consolePort),
 							},
 							Env: []corev1.EnvVar{
