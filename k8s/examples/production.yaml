@@ -53,6 +53,45 @@ spec:
       size: 5Gi
       storageClassName: gp3
 
+  # News Broadcast TTS artifacts stay private behind the Gamma server proxy.
+  tts:
+    enabled: true
+    api:
+      replicas: 2
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+    worker:
+      replicas: 2 # each worker pod processes one job at a time
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "4Gi"
+        limits:
+          cpu: "4000m"
+          memory: "6Gi"
+    minio:
+      credentials:
+        accessKey: REPLACE_ME
+        secretKey: REPLACE_ME
+      storage:
+        size: 20Gi
+        storageClassName: gp3
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+    config:
+      modelVersion: OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX
+      requireWorkerReady: true
+
   networking:
     ingress:
       enabled: true

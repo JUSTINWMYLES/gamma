@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: install dev dev-server dev-client compose-up compose-down compose-logs build docker-build docker-push test test-unit test-e2e test-e2e-headed test-coverage smoke lint helm-lint helm-template helm-install-operator helm-uninstall-operator operator-manifests operator-build operator-test operator-docker-build operator-docker-push clean help
+.PHONY: install dev dev-server dev-client compose-up compose-down compose-logs build docker-build docker-push tts-api-test tts-worker-check tts-health test test-unit test-e2e test-e2e-headed test-coverage smoke lint helm-lint helm-template helm-install-operator helm-uninstall-operator operator-manifests operator-build operator-test operator-docker-build operator-docker-push clean help
 
 # ── Variables ────────────────────────────────────────────────────────────────
 REGISTRY   ?= ghcr.io/gamma
@@ -23,7 +23,7 @@ dev-client: ## Start only the unified client Vite dev server
 	npm run dev:client
 
 # ── Docker Compose ────────────────────────────────────────────────────────────
-compose-up: ## Bring up server + client via Docker Compose
+compose-up: ## Bring up Gamma + News Broadcast TTS stack via Docker Compose
 	docker compose up --build -d
 
 compose-down: ## Tear down Docker Compose services
@@ -36,13 +36,27 @@ compose-logs: ## View live logs from Compose services
 build: ## Build server TypeScript + Svelte client bundles
 	npm run build
 
-docker-build: ## Build Docker images for server and client
+docker-build: ## Build Docker images for Gamma and TTS services
 	docker build -t $(REGISTRY)/gamma-server:$(TAG) -f server/Dockerfile .
 	docker build -t $(REGISTRY)/gamma-client:$(TAG) -f client/app/Dockerfile .
+	docker build -t $(REGISTRY)/gamma-tts-api:$(TAG) -f tts/api-go/Dockerfile .
+	docker build -t $(REGISTRY)/gamma-tts-worker:$(TAG) -f tts/worker/Dockerfile .
 
 docker-push: docker-build ## Tag and push Docker images (requires docker login)
 	docker push $(REGISTRY)/gamma-server:$(TAG)
 	docker push $(REGISTRY)/gamma-client:$(TAG)
+	docker push $(REGISTRY)/gamma-tts-api:$(TAG)
+	docker push $(REGISTRY)/gamma-tts-worker:$(TAG)
+
+tts-api-test: ## Build and test the Go TTS API
+	cd tts/api-go && go test ./... && go build ./...
+
+tts-worker-check: ## Syntax-check the Python TTS worker
+	python3 -c "from pathlib import Path; [compile(path.read_text(encoding='utf-8'), str(path), 'exec') for path in Path('tts/worker').rglob('*.py')]"
+
+tts-health: ## Check local TTS API health and voice list
+	curl -fsS http://localhost:8090/healthz
+	curl -fsS http://localhost:8090/tts/voices
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 test: test-unit test-e2e ## Run all tests (unit + e2e)

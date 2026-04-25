@@ -14,6 +14,9 @@ type GammaInstanceSpec struct {
 	// Redis configuration for game state persistence.
 	// +optional
 	Redis RedisSpec `json:"redis,omitempty"`
+	// TTS provisions News Broadcast speech synthesis infrastructure.
+	// +optional
+	TTS TTSSpec `json:"tts,omitempty"`
 	// Networking configuration (ingress).
 	// +optional
 	Networking NetworkingSpec `json:"networking,omitempty"`
@@ -23,6 +26,9 @@ type GammaInstanceSpec struct {
 	// Observability configures OpenTelemetry tracing and metrics export.
 	// +optional
 	Observability ObservabilitySpec `json:"observability,omitempty"`
+	// Region is an informational label for future multi-region federation.
+	// +optional
+	Region string `json:"region,omitempty"`
 }
 
 // ServerSpec defines the desired state for the Gamma server component.
@@ -115,6 +121,150 @@ type RedisStorageSpec struct {
 	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
+// TTSSpec defines the desired state for the News Broadcast TTS stack.
+type TTSSpec struct {
+	// Whether to deploy TTS infrastructure and wire the Gamma server to it.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// API configures the HTTP service that accepts jobs and exposes artifacts.
+	// +optional
+	API TTSAPISpec `json:"api,omitempty"`
+	// Worker configures the synthesis worker deployment.
+	// +optional
+	Worker TTSWorkerSpec `json:"worker,omitempty"`
+	// MinIO configures the self-contained object store used for TTS artifacts.
+	// +optional
+	MinIO TTSMinIOSpec `json:"minio,omitempty"`
+	// Config contains shared runtime settings applied to the TTS API and worker.
+	// +optional
+	Config TTSConfigSpec `json:"config,omitempty"`
+}
+
+// TTSAPISpec defines the desired state for the TTS API component.
+type TTSAPISpec struct {
+	// Container image for the Go TTS API.
+	// +kubebuilder:default="ghcr.io/gamma/gamma-tts-api:latest"
+	// +optional
+	Image string `json:"image,omitempty"`
+	// Number of TTS API pod replicas.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+	// Port the TTS API listens on.
+	// +kubebuilder:default=8090
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Port int32 `json:"port,omitempty"`
+	// Resource requirements for TTS API pods.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// TTSWorkerSpec defines the desired state for the TTS worker component.
+type TTSWorkerSpec struct {
+	// Container image for the TTS worker.
+	// +kubebuilder:default="ghcr.io/gamma/gamma-tts-worker:latest"
+	// +optional
+	Image string `json:"image,omitempty"`
+	// Number of worker pod replicas.
+	// The worker runtime still processes one job at a time per worker pod.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	Replicas *int32 `json:"replicas,omitempty"`
+	// Resource requirements for worker pods.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// TTSMinIOSpec defines the desired state for the MinIO object store.
+type TTSMinIOSpec struct {
+	// Container image for MinIO.
+	// +kubebuilder:default="minio/minio:latest"
+	// +optional
+	Image string `json:"image,omitempty"`
+	// Resource requirements for the MinIO pod.
+	// +optional
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Persistent storage configuration for TTS artifacts.
+	// +optional
+	Storage TTSMinIOStorageSpec `json:"storage,omitempty"`
+	// Service ports exposed by MinIO.
+	// +optional
+	Ports TTSMinIOPortsSpec `json:"ports,omitempty"`
+	// Bootstrap credentials used by MinIO and by the TTS API/worker.
+	// +optional
+	Credentials TTSMinIOCredentialsSpec `json:"credentials,omitempty"`
+}
+
+// TTSMinIOStorageSpec defines MinIO persistent storage settings.
+type TTSMinIOStorageSpec struct {
+	// PVC size for MinIO data.
+	// +kubebuilder:default="5Gi"
+	// +optional
+	Size string `json:"size,omitempty"`
+	// StorageClass name. Empty uses cluster default.
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
+}
+
+// TTSMinIOPortsSpec defines the service ports exposed by MinIO.
+type TTSMinIOPortsSpec struct {
+	// API is the S3-compatible API port.
+	// +kubebuilder:default=9000
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	API int32 `json:"api,omitempty"`
+	// Console is the MinIO web console port.
+	// +kubebuilder:default=9001
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	Console int32 `json:"console,omitempty"`
+}
+
+// TTSMinIOCredentialsSpec defines the MinIO bootstrap credentials.
+type TTSMinIOCredentialsSpec struct {
+	// AccessKey is the MinIO access key / root user.
+	// +kubebuilder:default="gamma"
+	// +optional
+	AccessKey string `json:"accessKey,omitempty"`
+	// SecretKey is the MinIO secret key / root password.
+	// +kubebuilder:default="gammalocal"
+	// +optional
+	SecretKey string `json:"secretKey,omitempty"`
+}
+
+// TTSConfigSpec defines shared TTS runtime configuration.
+type TTSConfigSpec struct {
+	// BucketName is the MinIO bucket used to store synthesized artifacts.
+	// +kubebuilder:default="gamma-tts-artifacts"
+	// +optional
+	BucketName string `json:"bucketName,omitempty"`
+	// ModelVersion is recorded on jobs and shared between the API and worker.
+	// +kubebuilder:default="OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX"
+	// +optional
+	ModelVersion string `json:"modelVersion,omitempty"`
+	// RedisKeyPrefix namespaces TTS queue state inside Redis.
+	// +kubebuilder:default="gamma:tts"
+	// +optional
+	RedisKeyPrefix string `json:"redisKeyPrefix,omitempty"`
+	// RequireWorkerReady keeps the API unready until a healthy worker heartbeat exists.
+	// +kubebuilder:default=true
+	// +optional
+	RequireWorkerReady *bool `json:"requireWorkerReady,omitempty"`
+	// RequireCustomVoicePack keeps the API unready until packaged custom voice packs exist.
+	// +kubebuilder:default=false
+	// +optional
+	RequireCustomVoicePack *bool `json:"requireCustomVoicePack,omitempty"`
+}
+
 // NetworkingSpec defines networking settings.
 type NetworkingSpec struct {
 	// Ingress configuration.
@@ -201,6 +351,7 @@ type ObservabilitySpec struct {
 // GammaInstanceStatus defines the observed state of a Gamma deployment.
 type GammaInstanceStatus struct {
 	// Current phase of the deployment.
+	// +kubebuilder:validation:Enum=Pending;Deploying;Running;Degraded;Failed
 	// +optional
 	Phase string `json:"phase,omitempty"`
 	// Number of ready server replicas.
@@ -212,6 +363,18 @@ type GammaInstanceStatus struct {
 	// Whether Redis is ready.
 	// +optional
 	RedisReady bool `json:"redisReady,omitempty"`
+	// Whether the TTS stack is fully ready.
+	// +optional
+	TTSReady bool `json:"ttsReady,omitempty"`
+	// Number of ready TTS API replicas.
+	// +optional
+	TTSAPIReadyReplicas int32 `json:"ttsApiReadyReplicas,omitempty"`
+	// Number of ready TTS worker replicas.
+	// +optional
+	TTSWorkerReadyReplicas int32 `json:"ttsWorkerReadyReplicas,omitempty"`
+	// Whether MinIO backing the TTS stack is ready.
+	// +optional
+	TTSMinIOReady bool `json:"ttsMinioReady,omitempty"`
 	// Server service endpoint.
 	// +optional
 	ServerEndpoint string `json:"serverEndpoint,omitempty"`
@@ -221,6 +384,15 @@ type GammaInstanceStatus struct {
 	// Redis service endpoint.
 	// +optional
 	RedisEndpoint string `json:"redisEndpoint,omitempty"`
+	// TTS API service endpoint.
+	// +optional
+	TTSAPIEndpoint string `json:"ttsApiEndpoint,omitempty"`
+	// TTS MinIO API endpoint.
+	// +optional
+	TTSMinIOEndpoint string `json:"ttsMinioEndpoint,omitempty"`
+	// TTS MinIO console endpoint.
+	// +optional
+	TTSMinIOConsoleEndpoint string `json:"ttsMinioConsoleEndpoint,omitempty"`
 	// Status conditions for each component.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -230,11 +402,13 @@ type GammaInstanceStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:shortName=gi
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
 // +kubebuilder:printcolumn:name="Server",type=integer,JSONPath=`.status.serverReadyReplicas`
 // +kubebuilder:printcolumn:name="Client",type=integer,JSONPath=`.status.clientReadyReplicas`
 // +kubebuilder:printcolumn:name="Redis",type=boolean,JSONPath=`.status.redisReady`
+// +kubebuilder:printcolumn:name="TTS",type=boolean,JSONPath=`.status.ttsReady`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // GammaInstance is the Schema for the gammainstances API.
@@ -306,4 +480,137 @@ func (s *RedisStorageSpec) RedisStorageSize() string {
 		return s.Size
 	}
 	return "1Gi"
+}
+
+// IsTTSEnabled returns whether the News Broadcast TTS stack is enabled.
+func (t *TTSSpec) IsTTSEnabled() bool {
+	return t.Enabled
+}
+
+// APIImage returns the TTS API container image.
+func (s *TTSAPISpec) APIImage() string {
+	if s.Image != "" {
+		return s.Image
+	}
+	return "ghcr.io/gamma/gamma-tts-api:latest"
+}
+
+// APIReplicas returns the desired TTS API replica count.
+func (s *TTSAPISpec) APIReplicas() int32 {
+	if s.Replicas != nil {
+		return *s.Replicas
+	}
+	return 1
+}
+
+// APIPort returns the TTS API service port.
+func (s *TTSAPISpec) APIPort() int32 {
+	if s.Port != 0 {
+		return s.Port
+	}
+	return 8090
+}
+
+// WorkerImage returns the TTS worker container image.
+func (s *TTSWorkerSpec) WorkerImage() string {
+	if s.Image != "" {
+		return s.Image
+	}
+	return "ghcr.io/gamma/gamma-tts-worker:latest"
+}
+
+// WorkerReplicas returns the desired worker replica count.
+func (s *TTSWorkerSpec) WorkerReplicas() int32 {
+	if s.Replicas != nil {
+		return *s.Replicas
+	}
+	return 1
+}
+
+// MinIOImage returns the MinIO container image.
+func (s *TTSMinIOSpec) MinIOImage() string {
+	if s.Image != "" {
+		return s.Image
+	}
+	return "minio/minio:latest"
+}
+
+// StorageSize returns the MinIO PVC size.
+func (s *TTSMinIOStorageSpec) StorageSize() string {
+	if s.Size != "" {
+		return s.Size
+	}
+	return "5Gi"
+}
+
+// APIPort returns the MinIO S3-compatible API port.
+func (s *TTSMinIOPortsSpec) APIPort() int32 {
+	if s.API != 0 {
+		return s.API
+	}
+	return 9000
+}
+
+// ConsolePort returns the MinIO web console port.
+func (s *TTSMinIOPortsSpec) ConsolePort() int32 {
+	if s.Console != 0 {
+		return s.Console
+	}
+	return 9001
+}
+
+// AccessKeyValue returns the MinIO access key.
+func (s *TTSMinIOCredentialsSpec) AccessKeyValue() string {
+	if s.AccessKey != "" {
+		return s.AccessKey
+	}
+	return "gamma"
+}
+
+// SecretKeyValue returns the MinIO secret key.
+func (s *TTSMinIOCredentialsSpec) SecretKeyValue() string {
+	if s.SecretKey != "" {
+		return s.SecretKey
+	}
+	return "gammalocal"
+}
+
+// BucketNameValue returns the MinIO bucket used for synthesized artifacts.
+func (s *TTSConfigSpec) BucketNameValue() string {
+	if s.BucketName != "" {
+		return s.BucketName
+	}
+	return "gamma-tts-artifacts"
+}
+
+// ModelVersionValue returns the configured TTS model version.
+func (s *TTSConfigSpec) ModelVersionValue() string {
+	if s.ModelVersion != "" {
+		return s.ModelVersion
+	}
+	return "OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX"
+}
+
+// RedisKeyPrefixValue returns the Redis key prefix for TTS state.
+func (s *TTSConfigSpec) RedisKeyPrefixValue() string {
+	if s.RedisKeyPrefix != "" {
+		return s.RedisKeyPrefix
+	}
+	return "gamma:tts"
+}
+
+// RequireWorkerReadyEnabled returns whether API readiness should require a worker heartbeat.
+func (s *TTSConfigSpec) RequireWorkerReadyEnabled() bool {
+	if s.RequireWorkerReady != nil {
+		return *s.RequireWorkerReady
+	}
+	return true
+}
+
+// RequireCustomVoicePackEnabled returns whether API readiness requires packaged custom voice packs.
+func (s *TTSConfigSpec) RequireCustomVoicePackEnabled() bool {
+	if s.RequireCustomVoicePack != nil {
+		return *s.RequireCustomVoicePack
+	}
+	return false
 }
