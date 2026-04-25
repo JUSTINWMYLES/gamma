@@ -169,11 +169,21 @@ func buildTTSEnv(instance *gammav1alpha1.GammaInstance, isAPI bool) []corev1.Env
 		{Name: "TTS_REDIS_KEY_PREFIX", Value: instance.Spec.TTS.Config.RedisKeyPrefixValue()},
 		{Name: "MINIO_ENDPOINT", Value: minioEndpoint},
 		{Name: "MINIO_USE_SSL", Value: "false"},
-		{Name: "MINIO_ACCESS_KEY", Value: instance.Spec.TTS.MinIO.Credentials.AccessKeyValue()},
-		{Name: "MINIO_SECRET_KEY", Value: instance.Spec.TTS.MinIO.Credentials.SecretKeyValue()},
+		instance.Spec.TTS.MinIO.Credentials.AccessKeyEnvVar(),
+		instance.Spec.TTS.MinIO.Credentials.SecretKeyEnvVar(),
 		{Name: "MINIO_BUCKET_NAME", Value: instance.Spec.TTS.Config.BucketNameValue()},
 		{Name: "TTS_MODEL_VERSION", Value: instance.Spec.TTS.Config.ModelVersionValue()},
 		{Name: "TTS_VOICE_MANIFEST_PATH", Value: "/app/voices/manifest.json"},
+	}
+
+	// Rename the env var names for API/worker containers
+	for i := range env {
+		switch env[i].Name {
+		case "MINIO_ROOT_USER":
+			env[i].Name = "MINIO_ACCESS_KEY"
+		case "MINIO_ROOT_PASSWORD":
+			env[i].Name = "MINIO_SECRET_KEY"
+		}
 	}
 
 	if isAPI {

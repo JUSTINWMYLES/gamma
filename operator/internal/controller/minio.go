@@ -112,8 +112,8 @@ func (r *GammaInstanceReconciler) reconcileMinIODeployment(ctx context.Context, 
 								fmt.Sprintf(":%d", consolePort),
 							},
 							Env: []corev1.EnvVar{
-								{Name: "MINIO_ROOT_USER", Value: instance.Spec.TTS.MinIO.Credentials.AccessKeyValue()},
-								{Name: "MINIO_ROOT_PASSWORD", Value: instance.Spec.TTS.MinIO.Credentials.SecretKeyValue()},
+								instance.Spec.TTS.MinIO.Credentials.AccessKeyEnvVar(),
+								instance.Spec.TTS.MinIO.Credentials.SecretKeyEnvVar(),
 							},
 							Ports: []corev1.ContainerPort{
 								{Name: "api", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},

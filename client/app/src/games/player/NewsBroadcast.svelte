@@ -601,7 +601,7 @@
     if (fallbackVoice) selectedVoicePresetId = fallbackVoice.id;
   }
   $: scriptCharsLeft = Math.max(0, MAX_SCRIPT_LENGTH - scriptInput.length);
-  $: canSubmitBroadcast = Boolean(assignedHeadline) && Boolean(scriptInput.trim()) && Boolean(selectedMedia) && Boolean(selectedVoice?.available);
+  $: canSubmitBroadcast = Boolean(assignedHeadline) && Boolean(scriptInput.trim()) && Boolean(selectedVoice?.available);
   $: myResult = results?.entries.find((entry) => entry.playerId === me?.id) ?? null;
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
   $: draftSignature = `${selectedMedia?.providerAssetId ?? ""}|${selectedVoicePresetId}|${scriptInput}`;
@@ -724,27 +724,9 @@
       </div>
 
       <div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 space-y-4">
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Selected visual</p>
-            {#if selectedMedia?.providerAssetId === FALLBACK_MEDIA.providerAssetId}
-              <span class="rounded-full border border-amber-500/30 bg-amber-950/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200">Fallback</span>
-            {/if}
-          </div>
-
-          <div class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-            {#if selectedMedia && isVideoMedia(selectedMedia)}
-              <video class="h-44 w-full object-cover" src={getPreviewUrl(selectedMedia)} autoplay muted loop playsinline></video>
-            {:else}
-              <img class="h-44 w-full object-cover" src={getPreviewUrl(selectedMedia)} alt={selectedMedia?.label ?? "Selected visual"} />
-            {/if}
-          </div>
-          <p class="text-sm font-semibold text-white">{selectedMedia?.label ?? "Pick a visual"}</p>
-        </div>
-
-        <div class="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+        <div class="space-y-3 rounded-2xl border border-slate-700 bg-slate-900/90 p-3">
           <div class="flex items-center justify-between gap-3">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Search visual library</p>
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-300">Search visual library</p>
             {#if isSearching}
               <span class="text-xs text-sky-300">Searching...</span>
             {/if}
@@ -755,32 +737,33 @@
               bind:value={mediaSearchQuery}
               on:input={onSearchInput}
               placeholder="raccoon mayor, exploding cake, penguin traffic..."
-              class="flex-1 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-white placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+              class="flex-1 rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-white placeholder-slate-400 focus:border-sky-500 focus:outline-none"
             />
             <button
               type="button"
-              class={`rounded-2xl px-4 py-3 font-bold ${mediaSearchQuery.trim().length >= 2 ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-800 text-slate-600"}`}
+              class={`rounded-2xl px-4 py-3 font-bold ${mediaSearchQuery.trim().length >= 2 ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-700 text-slate-400"}`}
               disabled={mediaSearchQuery.trim().length < 2}
               on:click={runMediaSearch}
             >Search</button>
           </div>
-          <p class="text-xs text-slate-500">Searches need at least 2 characters. You can always use the fallback frame.</p>
+          <p class="text-xs text-slate-400">Searches need at least 2 characters.</p>
         </div>
 
-        <div class="space-y-2">
-          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Quick pick</p>
-          <button
-            type="button"
-            class={`w-full overflow-hidden rounded-2xl border text-left transition-colors ${selectedMedia?.providerAssetId === FALLBACK_MEDIA.providerAssetId ? "border-amber-400 bg-amber-950/30" : "border-slate-800 bg-slate-950/70 active:border-amber-500"}`}
-            on:click={() => selectMedia(FALLBACK_MEDIA)}
-          >
-            <img class="h-24 w-full object-cover" src={FALLBACK_MEDIA.previewUrl} alt={FALLBACK_MEDIA.label} />
-            <div class="p-3">
-              <p class="font-semibold text-white">{FALLBACK_MEDIA.label}</p>
-              <p class="text-xs text-slate-400">Use Gamma's built-in backup frame if nothing else fits.</p>
+        {#if selectedMedia && selectedMedia.providerAssetId !== FALLBACK_MEDIA.providerAssetId}
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Selected visual</p>
             </div>
-          </button>
-        </div>
+            <div class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
+              {#if isVideoMedia(selectedMedia)}
+                <video class="h-44 w-full object-cover" src={getPreviewUrl(selectedMedia)} autoplay muted loop playsinline></video>
+              {:else}
+                <img class="h-44 w-full object-cover" src={getPreviewUrl(selectedMedia)} alt={selectedMedia.label} />
+              {/if}
+            </div>
+            <p class="text-sm font-semibold text-white">{selectedMedia.label}</p>
+          </div>
+        {/if}
 
         <div class="space-y-2">
           <div class="flex items-center justify-between">
@@ -789,8 +772,8 @@
           </div>
 
           {#if mediaSearchQuery.trim().length >= 2 && !isSearching && mediaSearchResults.length === 0}
-            <div class="rounded-2xl border border-dashed border-slate-700 bg-slate-950/60 p-4 text-sm text-slate-400">
-              No clips came back yet. Try another query or keep the fallback frame.
+            <div class="rounded-2xl border border-dashed border-slate-600 bg-slate-900/70 p-4 text-sm text-slate-300">
+              No clips came back yet. Try another query.
             </div>
           {/if}
 
@@ -799,7 +782,7 @@
               {#each mediaSearchResults as media}
                 <button
                   type="button"
-                  class={`overflow-hidden rounded-2xl border text-left transition-colors ${selectedMedia?.providerAssetId === media.providerAssetId ? "border-sky-400 bg-sky-950/25" : "border-slate-800 bg-slate-950/70 active:border-sky-500"}`}
+                  class={`overflow-hidden rounded-2xl border text-left transition-colors ${selectedMedia?.providerAssetId === media.providerAssetId ? "border-sky-400 bg-sky-900/40" : "border-slate-700 bg-slate-900/80 active:border-sky-500"}`}
                   on:click={() => selectMedia(media)}
                 >
                   {#if isVideoMedia(media)}
@@ -809,7 +792,7 @@
                   {/if}
                   <div class="p-3">
                     <p class="text-sm font-semibold text-white">{media.label}</p>
-                    <p class="mt-1 text-[11px] text-slate-500">{media.mimeType}</p>
+                    <p class="mt-1 text-[11px] text-slate-400">{media.mimeType}</p>
                   </div>
                 </button>
               {/each}
@@ -830,22 +813,22 @@
                 type="button"
                 disabled={!voice.available}
                 title={voice.available ? `${voice.label} — ${voice.tone}` : voice.availabilityReason ?? "Unavailable"}
-                class={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${voice.id === selectedVoicePresetId ? "border-fuchsia-400 bg-fuchsia-950/30" : voice.available ? "border-slate-700 bg-slate-950/70 active:border-fuchsia-500" : "border-slate-800 bg-slate-950/30 text-slate-600"}`}
+                class={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${voice.id === selectedVoicePresetId ? "border-fuchsia-400 bg-fuchsia-900/40" : voice.available ? "border-slate-600 bg-slate-900/80 active:border-fuchsia-500" : "border-slate-700 bg-slate-900/40 text-slate-500"}`}
                 on:click={() => chooseVoice(voice)}
               >
                 <div class="flex items-start justify-between gap-3">
                   <div>
-                    <p class={`font-semibold ${voice.available ? "text-white" : "text-slate-500"}`}>{voice.label}</p>
-                    <p class={`text-xs ${voice.available ? "text-slate-400" : "text-slate-600"}`}>{voice.tone}</p>
+                    <p class={`font-semibold ${voice.available ? "text-white" : "text-slate-400"}`}>{voice.label}</p>
+                    <p class={`text-xs ${voice.available ? "text-slate-300" : "text-slate-500"}`}>{voice.tone}</p>
                   </div>
                   {#if !voice.available}
-                    <span class="rounded-full border border-slate-700 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Soon</span>
+                    <span class="rounded-full border border-slate-600 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Soon</span>
                   {:else if voice.id === selectedVoicePresetId}
-                    <span class="rounded-full border border-fuchsia-400/40 bg-fuchsia-950/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-200">Selected</span>
+                    <span class="rounded-full border border-fuchsia-400/40 bg-fuchsia-900/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-200">Selected</span>
                   {/if}
                 </div>
                 {#if !voice.available && voice.availabilityReason}
-                  <p class="mt-2 text-[11px] text-slate-600">{voice.availabilityReason}</p>
+                  <p class="mt-2 text-[11px] text-slate-500">{voice.availabilityReason}</p>
                 {/if}
               </button>
             {/each}
@@ -983,7 +966,7 @@
           {#each votingEntries as entry}
             <button
               type="button"
-              class={`w-full rounded-3xl border text-left transition-colors ${myVote === entry.playerId ? "border-amber-400 bg-amber-950/25" : voteConfirmed ? "border-slate-800 bg-slate-950/40" : "border-slate-800 bg-slate-900/80 active:border-amber-500"}`}
+              class={`w-full rounded-3xl border text-left transition-colors ${myVote === entry.playerId ? "border-amber-400 bg-amber-900/40" : voteConfirmed ? "border-slate-700 bg-slate-900/50" : "border-slate-700 bg-slate-900/90 active:border-amber-500"}`}
               disabled={voteConfirmed}
               on:click={() => castVote(entry.playerId)}
             >

@@ -57,6 +57,7 @@ spec:
   tts:
     enabled: true
     api:
+      image: ghcr.io/gamma/gamma-tts-api:v1.0.0
       replicas: 2
       resources:
         requests:
@@ -66,6 +67,7 @@ spec:
           cpu: "500m"
           memory: "256Mi"
     worker:
+      image: ghcr.io/gamma/gamma-tts-worker:v1.0.0
       replicas: 2 # each worker pod processes one job at a time
       resources:
         requests:
@@ -75,9 +77,10 @@ spec:
           cpu: "4000m"
           memory: "6Gi"
     minio:
+      image: minio/minio:RELEASE.2026-04-01T00-00-00Z
       credentials:
-        accessKey: REPLACE_ME
-        secretKey: REPLACE_ME
+        secretRef:
+          name: gamma-minio-credentials
       storage:
         size: 20Gi
         storageClassName: gp3
