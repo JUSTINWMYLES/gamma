@@ -30,15 +30,15 @@ spec:
 
   # Optional News Broadcast TTS stack. Requires redis.enabled: true.
   # Browsers still fetch audio through the Gamma server proxy.
-  # Create a Secret named gamma-minio-credentials with keys accessKey and secretKey.
+  # Create a Secret named gamma-object-store-credentials with keys accessKey and secretKey.
   # tts:
   #   enabled: true
   #   api:
   #     image: ghcr.io/gamma/gamma-tts-api:latest
   #   worker:
   #     image: ghcr.io/gamma/gamma-tts-worker:latest
-  #   minio:
-  #     image: minio/minio:latest
+  #   objectStore:
+  #     image: chrislusf/seaweedfs:4.21
   #     credentials:
   #       secretRef:
-  #         name: gamma-minio-credentials
+  #         name: gamma-object-store-credentials

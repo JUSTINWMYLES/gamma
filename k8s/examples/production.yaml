@@ -76,11 +76,11 @@ spec:
         limits:
           cpu: "4000m"
           memory: "6Gi"
-    minio:
-      image: minio/minio:RELEASE.2026-04-01T00-00-00Z
+    objectStore:
+      image: chrislusf/seaweedfs:4.21
       credentials:
         secretRef:
-          name: gamma-minio-credentials
+          name: gamma-object-store-credentials
       storage:
         size: 20Gi
         storageClassName: gp3

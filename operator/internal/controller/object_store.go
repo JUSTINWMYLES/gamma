@@ -13,38 +13,38 @@ import (
 	gammav1alpha1 "github.com/JUSTINWMYLES/gamma/operator/api/v1alpha1"
 )
 
-// reconcileMinIOPVC ensures the MinIO PVC exists.
-func (r *GammaInstanceReconciler) reconcileMinIOPVC(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+// reconcileObjectStorePVC ensures the object store PVC exists.
+func (r *GammaInstanceReconciler) reconcileObjectStorePVC(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ttsMinIOPVCName(instance),
+			Name:      ttsObjectStorePVCName(instance),
 			Namespace: instance.Namespace,
 		},
 	}
 
 	return r.createOrUpdate(ctx, instance, pvc, func() error {
-		pvc.Labels = labelsForComponent(instance, "tts-minio")
+		pvc.Labels = labelsForComponent(instance, "tts-object-store")
 		pvc.Spec = corev1.PersistentVolumeClaimSpec{
 			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 			Resources: corev1.VolumeResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(instance.Spec.TTS.MinIO.Storage.StorageSize()),
+					corev1.ResourceStorage: resource.MustParse(instance.Spec.TTS.ObjectStore.Storage.StorageSize()),
 				},
 			},
 		}
-		if instance.Spec.TTS.MinIO.Storage.StorageClassName != "" {
-			sc := instance.Spec.TTS.MinIO.Storage.StorageClassName
+		if instance.Spec.TTS.ObjectStore.Storage.StorageClassName != "" {
+			sc := instance.Spec.TTS.ObjectStore.Storage.StorageClassName
 			pvc.Spec.StorageClassName = &sc
 		}
 		return nil
 	})
 }
 
-// reconcileMinIOService ensures the MinIO Service exists.
-func (r *GammaInstanceReconciler) reconcileMinIOService(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
-	name := ttsMinIOName(instance)
-	apiPort := instance.Spec.TTS.MinIO.Ports.APIPort()
-	consolePort := instance.Spec.TTS.MinIO.Ports.ConsolePort()
+// reconcileObjectStoreService ensures the object store Service exists.
+func (r *GammaInstanceReconciler) reconcileObjectStoreService(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	name := ttsObjectStoreName(instance)
+	apiPort := instance.Spec.TTS.ObjectStore.Ports.APIPort()
+	consolePort := instance.Spec.TTS.ObjectStore.Ports.ConsolePort()
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -54,7 +54,7 @@ func (r *GammaInstanceReconciler) reconcileMinIOService(ctx context.Context, ins
 	}
 
 	return r.createOrUpdate(ctx, instance, svc, func() error {
-		svc.Labels = labelsForComponent(instance, "tts-minio")
+		svc.Labels = labelsForComponent(instance, "tts-object-store")
 		svc.Spec = corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 			Ports: []corev1.ServicePort{
@@ -71,20 +71,20 @@ func (r *GammaInstanceReconciler) reconcileMinIOService(ctx context.Context, ins
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
-			Selector: selectorLabelsForComponent(instance, "tts-minio"),
+			Selector: selectorLabelsForComponent(instance, "tts-object-store"),
 		}
 		return nil
 	})
 }
 
-// reconcileMinIODeployment ensures the MinIO deployment exists.
-func (r *GammaInstanceReconciler) reconcileMinIODeployment(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
-	name := ttsMinIOName(instance)
-	labels := labelsForComponent(instance, "tts-minio")
-	selectorLabels := selectorLabelsForComponent(instance, "tts-minio")
+// reconcileObjectStoreDeployment ensures the SeaweedFS deployment exists.
+func (r *GammaInstanceReconciler) reconcileObjectStoreDeployment(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	name := ttsObjectStoreName(instance)
+	labels := labelsForComponent(instance, "tts-object-store")
+	selectorLabels := selectorLabelsForComponent(instance, "tts-object-store")
 	replicas := int32(1)
-	apiPort := instance.Spec.TTS.MinIO.Ports.APIPort()
-	consolePort := instance.Spec.TTS.MinIO.Ports.ConsolePort()
+	apiPort := instance.Spec.TTS.ObjectStore.Ports.APIPort()
+	consolePort := instance.Spec.TTS.ObjectStore.Ports.ConsolePort()
 
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -103,44 +103,46 @@ func (r *GammaInstanceReconciler) reconcileMinIODeployment(ctx context.Context, 
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "minio",
-							Image: instance.Spec.TTS.MinIO.MinIOImage(),
+							Name:    "seaweedfs",
+							Image:   instance.Spec.TTS.ObjectStore.ObjectStoreImage(),
+							Command: []string{"weed"},
 							Args: []string{
 								"server",
-								"/data",
-								"--console-address",
-								fmt.Sprintf(":%d", consolePort),
+								"-dir=/data",
+								"-s3",
+								fmt.Sprintf("-s3.port=%d", apiPort),
+								fmt.Sprintf("-filer.port=%d", consolePort),
 							},
 							Env: []corev1.EnvVar{
-								instance.Spec.TTS.MinIO.Credentials.AccessKeyEnvVar(),
-								instance.Spec.TTS.MinIO.Credentials.SecretKeyEnvVar(),
+								instance.Spec.TTS.ObjectStore.Credentials.AccessKeyEnvVar(),
+								instance.Spec.TTS.ObjectStore.Credentials.SecretKeyEnvVar(),
 							},
 							Ports: []corev1.ContainerPort{
 								{Name: "api", ContainerPort: apiPort, Protocol: corev1.ProtocolTCP},
 								{Name: "console", ContainerPort: consolePort, Protocol: corev1.ProtocolTCP},
 							},
-							Resources: instance.Spec.TTS.MinIO.Resources,
+							Resources: instance.Spec.TTS.ObjectStore.Resources,
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/data"},
 							},
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/minio/health/ready",
+										Path: "/",
 										Port: intstr.FromInt32(apiPort),
 									},
 								},
-								InitialDelaySeconds: 5,
+								InitialDelaySeconds: 10,
 								PeriodSeconds:       10,
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/minio/health/live",
+										Path: "/",
 										Port: intstr.FromInt32(apiPort),
 									},
 								},
-								InitialDelaySeconds: 15,
+								InitialDelaySeconds: 30,
 								PeriodSeconds:       20,
 							},
 						},
@@ -150,7 +152,7 @@ func (r *GammaInstanceReconciler) reconcileMinIODeployment(ctx context.Context, 
 							Name: "data",
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: ttsMinIOPVCName(instance),
+									ClaimName: ttsObjectStorePVCName(instance),
 								},
 							},
 						},
