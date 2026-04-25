@@ -109,13 +109,19 @@ jobs:
         run: go test ./...
         working-directory: tts/api-go
 
-      - name: Build TTS API
+      - name: Build TTS API binary
         run: go build ./...
         working-directory: tts/api-go
 
-  # ── News Broadcast TTS worker: lightweight syntax validation ───────────────
-  lint-tts-worker:
-    name: Lint – TTS Worker Syntax
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build TTS API Docker image
+        run: docker build -t gamma-tts-api:ci -f tts/api-go/Dockerfile .
+
+  # ── News Broadcast TTS worker: build + syntax validation ───────────────────
+  build-tts-worker:
+    name: Build – TTS Worker Image
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -126,6 +132,12 @@ jobs:
 
       - name: Compile Python worker modules
         run: python -m compileall -q tts/worker
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build TTS worker Docker image
+        run: docker build -t gamma-tts-worker:ci -f tts/worker/Dockerfile .
 
   # ── Helm chart: lint ───────────────────────────────────────────────────────
   lint-helm:

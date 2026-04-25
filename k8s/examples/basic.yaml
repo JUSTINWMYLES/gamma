@@ -30,10 +30,15 @@ spec:
 
   # Optional News Broadcast TTS stack. Requires redis.enabled: true.
   # Browsers still fetch audio through the Gamma server proxy.
-  # Change MinIO credentials before exposing the deployment externally.
+  # Create a Secret named gamma-minio-credentials with keys accessKey and secretKey.
   # tts:
   #   enabled: true
+  #   api:
+  #     image: ghcr.io/gamma/gamma-tts-api:latest
+  #   worker:
+  #     image: ghcr.io/gamma/gamma-tts-worker:latest
   #   minio:
+  #     image: minio/minio:latest
   #     credentials:
-  #       accessKey: REPLACE_ME
-  #       secretKey: REPLACE_ME
+  #       secretRef:
+  #         name: gamma-minio-credentials

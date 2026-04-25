@@ -231,14 +231,10 @@ type TTSMinIOPortsSpec struct {
 
 // TTSMinIOCredentialsSpec defines the MinIO bootstrap credentials.
 type TTSMinIOCredentialsSpec struct {
-	// AccessKey is the MinIO access key / root user.
-	// +kubebuilder:default="gamma"
+	// SecretRef references a Kubernetes Secret that holds MinIO credentials.
+	// The secret must contain keys named "accessKey" and "secretKey".
 	// +optional
-	AccessKey string `json:"accessKey,omitempty"`
-	// SecretKey is the MinIO secret key / root password.
-	// +kubebuilder:default="gammalocal"
-	// +optional
-	SecretKey string `json:"secretKey,omitempty"`
+	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`
 }
 
 // TTSConfigSpec defines shared TTS runtime configuration.
@@ -559,20 +555,36 @@ func (s *TTSMinIOPortsSpec) ConsolePort() int32 {
 	return 9001
 }
 
-// AccessKeyValue returns the MinIO access key.
-func (s *TTSMinIOCredentialsSpec) AccessKeyValue() string {
-	if s.AccessKey != "" {
-		return s.AccessKey
+// AccessKeyValue returns the MinIO access key env-var source for the pod.
+func (s *TTSMinIOCredentialsSpec) AccessKeyEnvVar() corev1.EnvVar {
+	if s.SecretRef != nil {
+		return corev1.EnvVar{
+			Name: "MINIO_ROOT_USER",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: *s.SecretRef,
+					Key:                  "accessKey",
+				},
+			},
+		}
 	}
-	return "gamma"
+	return corev1.EnvVar{Name: "MINIO_ROOT_USER", Value: "gamma"}
 }
 
-// SecretKeyValue returns the MinIO secret key.
-func (s *TTSMinIOCredentialsSpec) SecretKeyValue() string {
-	if s.SecretKey != "" {
-		return s.SecretKey
+// SecretKeyValue returns the MinIO secret key env-var source for the pod.
+func (s *TTSMinIOCredentialsSpec) SecretKeyEnvVar() corev1.EnvVar {
+	if s.SecretRef != nil {
+		return corev1.EnvVar{
+			Name: "MINIO_ROOT_PASSWORD",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: *s.SecretRef,
+					Key:                  "secretKey",
+				},
+			},
+		}
 	}
-	return "gammalocal"
+	return corev1.EnvVar{Name: "MINIO_ROOT_PASSWORD", Value: "gammalocal"}
 }
 
 // BucketNameValue returns the MinIO bucket used for synthesized artifacts.

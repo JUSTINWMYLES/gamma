@@ -367,14 +367,14 @@
 </script>
 
 <div class="flex-1 flex" data-testid="news-broadcast-tv">
-  <div class="w-72 border-r border-slate-800 bg-slate-950/80 px-4 pb-4 pt-6 flex flex-col gap-4 flex-shrink-0">
+    <div class="w-72 border-r border-slate-700 bg-slate-900/90 px-4 pb-4 pt-6 flex flex-col gap-4 flex-shrink-0">
     <div>
-      <p class="text-xs uppercase tracking-widest text-sky-300/80 font-semibold">Broadcast Desk</p>
-      <p class="mt-1 text-sm text-slate-400">{getRoundProgressLabel(state)}</p>
+      <p class="text-xs uppercase tracking-widest text-sky-300 font-semibold">Broadcast Desk</p>
+      <p class="mt-1 text-sm text-slate-300">{getRoundProgressLabel(state)}</p>
     </div>
 
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-2">
-      <p class="text-xs uppercase tracking-widest text-slate-400">Current phase</p>
+    <div class="rounded-2xl border border-slate-700 bg-slate-800/80 p-4 space-y-2">
+      <p class="text-xs uppercase tracking-widest text-slate-300">Current phase</p>
       <p class="text-lg font-black text-white">
         {#if subPhase === "headline_submission"}
           Headline collection
@@ -399,25 +399,25 @@
       {/if}
     </div>
 
-    <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 space-y-3">
-      <div class="flex items-center justify-between text-sm text-slate-300">
+    <div class="rounded-2xl border border-slate-700 bg-slate-800/80 p-4 space-y-3">
+      <div class="flex items-center justify-between text-sm text-slate-200">
         <span>Progress</span>
         <span class="font-black text-white">{submittedCount} / {totalPlayers}</span>
       </div>
-      <div class="h-3 overflow-hidden rounded-full bg-slate-800">
+      <div class="h-3 overflow-hidden rounded-full bg-slate-700">
         <div class="h-full bg-fuchsia-500 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
       </div>
-      <p class="text-xs text-slate-500">Used during collection and creation phases.</p>
+      <p class="text-xs text-slate-400">Used during collection and creation phases.</p>
     </div>
 
     <div class="mt-auto">
-      <p class="mb-2 text-xs uppercase tracking-widest text-slate-400">Leaderboard</p>
+      <p class="mb-2 text-xs uppercase tracking-widest text-slate-300">Leaderboard</p>
       <ul class="space-y-1.5">
         {#each leaderboard as player, index}
-          <li class="flex items-center gap-2 rounded-xl bg-slate-900 px-2 py-2">
-            <span class="w-5 text-xs font-mono text-slate-500">{index + 1}.</span>
+          <li class="flex items-center gap-2 rounded-xl bg-slate-800 px-2 py-2">
+            <span class="w-5 text-xs font-mono text-slate-400">{index + 1}.</span>
             <PlayerIcon {player} size={20} />
-            <span class="flex-1 truncate text-sm text-slate-200">{player.name}</span>
+            <span class="flex-1 truncate text-sm text-slate-100">{player.name}</span>
             <span class="text-sm font-bold text-white">{player.score}</span>
           </li>
         {/each}
