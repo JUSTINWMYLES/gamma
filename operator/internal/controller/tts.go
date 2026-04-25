@@ -84,11 +84,11 @@ func (r *GammaInstanceReconciler) reconcileTTSAPIDeployment(ctx context.Context,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									HTTPGet: &corev1.HTTPGetAction{
-										Path: "/readyz",
+										Path: "/healthz",
 										Port: intstr.FromInt32(port),
 									},
 								},
-								InitialDelaySeconds: 60,
+								InitialDelaySeconds: 5,
 								PeriodSeconds:       10,
 								TimeoutSeconds:      5,
 							},
