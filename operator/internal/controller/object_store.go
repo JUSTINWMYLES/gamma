@@ -24,14 +24,14 @@ func (r *GammaInstanceReconciler) reconcileObjectStorePVC(ctx context.Context, i
 
 	return r.createOrUpdate(ctx, instance, pvc, func() error {
 		pvc.Labels = labelsForComponent(instance, "tts-object-store")
-		pvc.Spec = corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-			Resources: corev1.VolumeResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: resource.MustParse(instance.Spec.TTS.ObjectStore.Storage.StorageSize()),
-				},
-			},
+		// Only mutate fields that are safe to change on an existing bound PVC.
+		if len(pvc.Spec.AccessModes) == 0 {
+			pvc.Spec.AccessModes = []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce}
 		}
+		if pvc.Spec.Resources.Requests == nil {
+			pvc.Spec.Resources.Requests = corev1.ResourceList{}
+		}
+		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse(instance.Spec.TTS.ObjectStore.Storage.StorageSize())
 		if instance.Spec.TTS.ObjectStore.Storage.StorageClassName != "" {
 			sc := instance.Spec.TTS.ObjectStore.Storage.StorageClassName
 			pvc.Spec.StorageClassName = &sc
