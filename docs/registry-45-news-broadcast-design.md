@@ -2,25 +2,25 @@
 
 ## Document Status
 
-- Proposed game title: `News Broadcast`
-- Proposed game ID: `registry-45-news-broadcast`
-- Document purpose: implementation planning document for a future game plugin and supporting services
-- Document location: `docs/registry-45-news-broadcast-design.md`
-- Intended game plugin path: `server/src/games/registry-45-news-broadcast/`
-- Registry status: this is intentionally not the final `docs/registry/` entry
+- **Game title:** News Broadcast
+- **Game ID:** `registry-45-news-broadcast`
+- **Document purpose:** canonical design and implementation reference
+- **Document location:** `docs/registry-45-news-broadcast-design.md`
+- **Game plugin path:** `server/src/games/registry-45-news-broadcast/`
+- **Registry status:** this is the canonical design document; registry entry lives at `docs/registry/registry-45-news-broadcast.md`
 
 ## Summary
 
-`News Broadcast` is a single-round creative party game where each player writes a news headline, receives another player's headline, then turns it into a full fake news segment by choosing a GIF or short media clip, writing a short script, and selecting a pre-defined anchor voice. After the creation phase, each segment is presented on the shared TV in a stylized low poly newsroom. The player's custom icon appears as the anchor's face, the selected media plays on a newsroom screen, the generated voice reads the headline and script, and the room votes on the best segment.
+News Broadcast is a single-round creative party game where each player writes a news headline, receives another player's headline, then turns it into a full fake news segment by choosing a GIF or short media clip, writing a short script, and selecting a pre-defined anchor voice. After the creation phase, each segment is presented on the shared TV in a stylized newsroom layout. The player's custom icon appears as the anchor avatar, the selected media plays on a newsroom screen, the generated voice reads the headline and script, and the room votes on the best segment.
 
 This feature combines four major systems:
 
 - Server-authoritative party game flow within the existing Gamma plugin architecture
 - Reused media search and selection logic based on `registry-26-audio-overlay`
-- A lightweight 3D newsroom viewer scene rendered on the shared display
+- A TV viewer scene rendered on the shared display (2D layout today, optional 3D newsroom later)
 - A queued, CPU-first text-to-speech service built around `OpenMOSS MOSS-TTS-Nano-100M-ONNX`
 
-The most important architectural conclusion in this document is that the TTS system should be asynchronous, job-based, and artifact-backed. The game should not generate speech synchronously during presentation if that can be avoided. Instead, TTS should begin as soon as players finalize their entries, continue in the background during the presentation phase, and store completed audio outside Redis.
+The most important architectural conclusion in this document is that the TTS system is asynchronous, job-based, and artifact-backed. Speech is not generated synchronously during presentation. Instead, TTS begins as soon as players finalize their entries, continues in the background during the presentation phase, and stores completed audio outside Redis.
 
 ## Goals
 
@@ -52,22 +52,20 @@ Relevant existing references:
 - `client/app/src/games/viewer/AudioOverlayTV.svelte`
 - `server/src/schema/PlayerState.ts`
 - `client/app/src/components/PlayerIcon.svelte`
-- `client/app/src/components/MedicalStoryBodyModel.svelte`
-- `docs/k8s-operator-design.md`
-- `docs/k8s-client-runtime-config.md`
+- `docs/adr/007-kubernetes-operator-and-redis.md`
 
 Design implications from the current repo:
 
-- New games should follow the `BaseGame` plugin model under `server/src/games/registry-XX-slug/`
-- Shared replicated room state should remain minimal, with private assignments delivered via `room.send()`
+- New games follow the `BaseGame` plugin model under `server/src/games/registry-XX-slug/`
+- Shared replicated room state remains minimal, with private assignments delivered via `room.send()`
 - `Audio Overlay` already provides a strong pattern for media browsing, allowed-media validation, submission tracking, and redistribution
 - The repo already uses `three` in the client, so a newsroom viewer can be built without adding a new rendering stack
 - Player icon data already exists in `PlayerState` and should be reused directly for the anchor face treatment
-- The Kubernetes operator is already designed around `Deployment` and `StatefulSet` primitives and can be extended with a TTS service pattern later
+- The Kubernetes operator is already designed around `Deployment` and `StatefulSet` primitives and has been extended with TTS `Deployment` support
 
-## Recommended Game Metadata
+## Game Metadata
 
-| Field | Recommendation |
+| Field | Value |
 |---|---|
 | Title | `News Broadcast` |
 | ID | `registry-45-news-broadcast` |
@@ -103,7 +101,6 @@ The tone should aim for:
 
 - Local newsroom absurdity
 - Dry seriousness applied to nonsense
-- Low poly visual charm
 - Clean, easy-to-follow pacing rather than chaotic overload
 
 ## Core Game Loop
@@ -116,7 +113,7 @@ The round has two authored phases and one reveal phase.
 4. The TV presents the finished segments one by one.
 5. The room votes on the best one.
 
-## Recommended Phase Structure
+## Phase Structure
 
 | Phase | Duration | Notes |
 |---|---:|---|
@@ -131,7 +128,7 @@ The round has two authored phases and one reveal phase.
 
 ## Detailed Phase Design
 
-## Instructions Phase
+### Instructions Phase
 
 The instructions should explain only the essential rules:
 
@@ -146,11 +143,11 @@ The instructions should also explain the creative target:
 - Keep the script short and punchy.
 - Think about how the media and voice choice change the joke.
 
-## Headline Submission Phase
+### Headline Submission Phase
 
 Each player submits a single original headline.
 
-Recommended constraints:
+Constraints:
 
 | Rule | Recommendation |
 |---|---|
@@ -160,7 +157,7 @@ Recommended constraints:
 | Preferred format | 5 to 12 words |
 | Edit behavior | Free editing until final submit or timeout |
 
-Recommended phone UI contents:
+Phone UI contents:
 
 - Single multiline text field or single-line field with wrapping
 - Character counter
@@ -172,7 +169,7 @@ Timeout behavior:
 - If the player has draft text, auto-submit the draft.
 - If the field is empty, assign a fallback headline from a small curated server-side pool.
 
-## Redistribution Phase
+### Redistribution Phase
 
 Once all headlines are locked, the server performs a derangement.
 
@@ -183,9 +180,9 @@ Rules:
 - Assignments are private.
 - The original author is not revealed during the creation phase.
 
-This should follow the same core redistribution logic already used in `Audio Overlay`, where no player is assigned their own submitted media.
+This follows the same core redistribution logic already used in `Audio Overlay`, where no player is assigned their own submitted media.
 
-## Broadcast Creation Phase
+### Broadcast Creation Phase
 
 This is the main authoring phase. Each player receives their assigned headline and must complete all required fields.
 
@@ -196,7 +193,7 @@ Required tasks:
 3. Select a voice preset.
 4. Submit the segment.
 
-Recommended input constraints:
+Input constraints:
 
 | Field | Recommendation |
 |---|---|
@@ -221,11 +218,11 @@ Timeout behavior:
 - If they have not selected media, choose a fallback media asset from the available allowed pool.
 - If they have no meaningful script, use a small fallback sentence built from the assigned headline.
 
-## Presentation Phase
+### Presentation Phase
 
 After all entries are submitted or the timer expires, the game enters a short buffering stage and then presents each segment on the TV.
 
-Recommended per-presentation pacing:
+Per-presentation pacing:
 
 | Segment | Duration | Purpose |
 |---|---:|---|
@@ -238,7 +235,7 @@ Target total: keep each segment under 30 seconds.
 
 This requirement must drive the text limit and TTS queue design. The spoken payload must be short enough to keep reveals predictable.
 
-## Voting Phase
+### Voting Phase
 
 After all segments are presented:
 
@@ -247,7 +244,7 @@ After all segments are presented:
 - One vote per player.
 - Ties are allowed.
 
-Recommended scoring:
+Scoring:
 
 | Event | Points |
 |---|---:|
@@ -259,7 +256,7 @@ This score shape is consistent with existing Gamma party-game patterns.
 
 ## Media System Design
 
-## Reuse Strategy From Audio Overlay
+### Reuse Strategy From Audio Overlay
 
 The existing `Audio Overlay` game already provides the most important baseline behaviors needed here:
 
@@ -269,9 +266,9 @@ The existing `Audio Overlay` game already provides the most important baseline b
 - Submission progress updates
 - Redistribution logic patterns
 
-The `News Broadcast` game should reuse that logic and upgrade it for presentation playback.
+The `News Broadcast` game reuses that logic and upgrades it for presentation playback.
 
-## Media Search and Selection Requirements
+### Media Search and Selection Requirements
 
 Phone-side browsing should feel similar to `Audio Overlay`, but with slightly different selection criteria.
 
@@ -282,7 +279,7 @@ Selection goals:
 - Cleaner playback on the viewer screen
 - Flexibility to support both GIF and video-backed assets
 
-## Recommended Normalized Media Object
+### Normalized Media Object
 
 | Field | Purpose |
 |---|---|
@@ -297,7 +294,7 @@ Selection goals:
 | `height` | Optional media layout support |
 | `durationMs` | Optional if provider exposes it |
 
-## Prefer Video Variants Over Raw GIF Playback
+### Prefer Video Variants Over Raw GIF Playback
 
 The viewer presentation should prefer video variants such as MP4 or WebM when the provider exposes them.
 
@@ -308,13 +305,13 @@ Reasons:
 - Video is easier to preload, pause, and synchronize
 - Mapping video to a 3D screen is cleaner than using animated GIFs as textures
 
-Recommended media policy:
+Media policy:
 
 - Browsing can show GIF or WebP style previews.
 - The final presentation should prefer video playback URLs.
 - If no video variant is available, fall back to a DOM-based GIF presentation path.
 
-## Mirroring Media Assets
+### Mirroring Media Assets
 
 Best long-term design:
 
@@ -329,7 +326,7 @@ Benefits:
 
 If mirroring is not allowed, the server must still strictly validate that the selected URL came from an allowed server-issued result set.
 
-## Viewer Playback Strategy
+### Viewer Playback Strategy
 
 Preferred presentation implementation:
 
@@ -342,49 +339,33 @@ Fallback implementation:
 
 This document does not recommend a raw GIF texture pipeline as the main solution.
 
-## 3D Newsroom Design
+## Viewer Design
 
-## Rendering Approach
+### Rendering Approach
 
-The recommended v1 approach is to build the newsroom procedurally in `three`, not to depend on a large authored GLB scene.
+The recommended v1 approach is a polished 2D broadcast layout, not a large authored GLB scene.
 
 Reasons:
 
-- The repo already includes `three`
-- Low poly geometry is a good tonal fit
+- The 2D layout is reliable, fast, and easy to iterate
 - Procedural primitives keep the bundle and asset pipeline small
 - Existing repo history already shows deployment sensitivity around 3D asset loading
-- A procedural scene is easier to tweak in code during the first implementation
+- A 2D layout is easier to tweak in code during the first implementation
 
-## Scene Contents
+A 3D newsroom viewer may be added later once the reveal loop is stable.
 
-The newsroom should contain:
+### Scene Contents
 
-- Floor plane
-- Backdrop wall or curved rear set
-- News desk
-- Chair silhouette or implied seated area
-- Anchor body
-- Screen frame beside the anchor
-- Simple studio lighting accents
-- Lower third text band
+The viewer should contain:
+
+- Media playback region (video or image)
+- Anchor avatar card (player icon)
+- Lower third text band with headline and script
+- Voice preset badge
+- Segment progress indicator
 - Optional `breaking news` bug or station badge
 
-## Anchor Model Strategy
-
-The anchor should be stylized and primitive-driven.
-
-Recommended construction:
-
-- Torso from tapered or scaled box geometry
-- Arms from cylinders or thin rectangular prisms
-- Head from a sphere or rounded box
-- Optional hair, headset, or tie accent from simple meshes
-- Face from a small texture plane attached to the head front
-
-This achieves the intended humor without requiring rigging, lip sync, or realistic anatomy.
-
-## Player Icon as Face
+### Player Icon as Anchor Avatar
 
 The current `PlayerState` already includes:
 
@@ -398,7 +379,7 @@ Those should be reused directly.
 Recommended approach:
 
 - Render the existing player icon into a square texture or offscreen canvas
-- Apply that texture to a circular or rounded plane placed slightly in front of the anchor head
+- Display it prominently in the anchor card region
 - Keep the icon visible at all times during the presentation
 
 Benefits:
@@ -407,7 +388,7 @@ Benefits:
 - The result stays consistent with the rest of Gamma
 - The comedic identity of each segment becomes immediately recognizable
 
-## Camera Composition
+### Camera Composition
 
 The TV framing should be fixed and cinematic.
 
@@ -415,28 +396,14 @@ Recommended layout:
 
 | Element | Screen area recommendation |
 |---|---|
-| Anchor | Left 35 to 45 percent |
-| Newsroom screen | Right 25 to 35 percent |
+| Anchor avatar | Left 25 to 35 percent |
+| Newsroom screen | Right 40 to 50 percent |
 | Lower third | Bottom 15 to 18 percent |
 | Safe area | Preserve top-left space if room code overlay still exists |
 
 The anchor should remain visible during the entire segment, even while the screen media is active.
 
-## Animation Plan
-
-V1 should not attempt lip sync.
-
-Recommended animation set:
-
-- Subtle idle breathing motion
-- Gentle shoulder sway
-- Small head nod while speech is playing
-- Slight camera push-in during the intro
-- Optional lightweight audio-reactive bob based on playback level
-
-This is enough to make the room feel active without creating a high-cost animation system.
-
-## Fallback Viewer Mode
+### Fallback Viewer Mode
 
 The game must still work if WebGL fails or `three` initialization breaks.
 
@@ -448,7 +415,7 @@ The 3D scene is a presentation enhancement, not a hard correctness dependency.
 
 ## Text and Script Design
 
-## Spoken Payload Shape
+### Spoken Payload Shape
 
 The spoken script should be assembled in a simple, deterministic way:
 
@@ -463,7 +430,7 @@ Reasons:
 - Reduces synthesis time
 - Simplifies queue behavior and presentation timing
 
-## Text Cleanup Rules
+### Text Cleanup Rules
 
 Before TTS submission, normalize text server-side:
 
@@ -475,7 +442,7 @@ Before TTS submission, normalize text server-side:
 - Ensure the script ends cleanly
 - Reject or truncate text that exceeds the spoken time budget
 
-## Length Control Strategy
+### Length Control Strategy
 
 This game will only feel smooth if the text-to-speech duration is strongly bounded.
 
@@ -492,9 +459,9 @@ Suggested UX feedback:
 
 ## Server State and Messaging Design
 
-## Public Versus Private Data
+### Public Versus Private Data
 
-The design should follow the existing Gamma pattern where public replicated state is minimal and private assignments are sent via direct messages.
+The design follows the existing Gamma pattern where public replicated state is minimal and private assignments are sent via direct messages.
 
 Public replicated state should include:
 
@@ -511,7 +478,7 @@ Private per-player messages should include:
 - Personal draft confirmation
 - Personal selected voice confirmation if needed
 
-## Recommended Internal Session Objects
+### Internal Session Objects
 
 | Object | Purpose |
 |---|---|
@@ -524,7 +491,7 @@ Private per-player messages should include:
 | `ttsJobs` | Tracking of synthesis job state |
 | `mediaMirrorJobs` | Optional tracking for mirrored selected media |
 
-## Recommended Final Broadcast Submission Shape
+### Final Broadcast Submission Shape
 
 | Field | Purpose |
 |---|---|
@@ -536,7 +503,7 @@ Private per-player messages should include:
 | `submittedAt` | Audit and ordering |
 | `estimatedSpeechMs` | Queue planning and validation |
 
-## Recommended Game Messages
+### Game Messages
 
 | Message | Direction | Visibility | Purpose |
 |---|---|---|---|
@@ -556,9 +523,9 @@ Private per-player messages should include:
 | `vote_count_update` | server to clients | all | Vote progress |
 | `round_result` | server to clients | all | Winner and score breakdown |
 
-## TTS Research Summary
+## TTS Architecture
 
-## Model Choice
+### Model Choice
 
 The strongest fit for this game is `OpenMOSS-Team/MOSS-TTS-Nano-100M-ONNX`.
 
@@ -573,7 +540,7 @@ Research findings that matter for this project:
 
 This makes the ONNX CPU version the correct default backend for Gamma's deployment constraints.
 
-## Recommended TTS Product Strategy
+### TTS Product Strategy
 
 Use the model in preset voice mode only for v1.
 
@@ -592,7 +559,7 @@ Recommended v1 exclusions:
 - Per-room custom voice training or fine-tuning
 - Streaming speech to the client while the sentence is still generating
 
-## Why Preset Voices Are Better Than Custom Cloning Here
+### Why Preset Voices Are Better Than Custom Cloning Here
 
 Although the upstream runtime can use direct prompt audio, preset voices are a better fit for this game's operational and UX requirements.
 
@@ -605,7 +572,7 @@ Preset voices provide:
 - Easier moderation and legal review
 - Easier benchmarking on constrained hardware
 
-## Recommended Voice Library Size
+### Voice Library Size
 
 Start with 6 to 8 curated preset anchor voices.
 
@@ -624,7 +591,7 @@ Suggested player-facing voice set:
 | `anchor_morning` | Morning Show | Lighter delivery |
 | `anchor_deadpan` | Deadpan Desk | Flat comedic contrast |
 
-## Voice Asset Strategy
+### Voice Asset Strategy
 
 Two implementation strategies are acceptable.
 
@@ -645,7 +612,7 @@ Why Strategy B is better long-term:
 - Easier versioning of the voice pack
 - Can avoid runtime prompt encoding on the hot path if codes are precomputed
 
-## Voice Preview Design
+### Voice Preview Design
 
 Voice previews should not use the live TTS queue.
 
@@ -657,7 +624,7 @@ Recommended preview design:
 
 This avoids flooding the TTS system during the creation phase and keeps preview UX responsive.
 
-## Why Full Clip Generation Is Better Than Streaming Here
+### Why Full Clip Generation Is Better Than Streaming Here
 
 The model supports streaming, but the core game reveal should not depend on streaming inference.
 
@@ -671,9 +638,7 @@ Full clip generation is better because it gives:
 
 Streaming may still be useful for future tools or admin demos, but it should not be the primary reveal strategy in v1.
 
-## TTS Service Architecture
-
-## Recommended Service Split
+### Service Split
 
 Use two logical services.
 
@@ -682,14 +647,14 @@ Use two logical services.
 | `tts-api` | Validate requests, check cache, create jobs, return status, expose voice list |
 | `tts-worker` | Load model, synthesize speech, post-process audio, store artifact |
 
-## Small Deployment Mode
+### Small Deployment Mode
 
 For a single-node or constrained install:
 
 - `tts-api` and `tts-worker` may run in the same pod or even the same process
 - Worker concurrency should remain at 1
 
-## Larger Deployment Mode
+### Larger Deployment Mode
 
 For scale:
 
@@ -697,7 +662,7 @@ For scale:
 - Run one or more `tts-worker` replicas separately
 - Scale worker count horizontally rather than increasing per-worker concurrency early
 
-## Deployment Primitive Choice
+### Deployment Primitive Choice
 
 Use Kubernetes `Deployment` for both API and worker.
 
@@ -718,7 +683,7 @@ Reasoning:
 
 `StatefulSet` would only make sense if you deliberately wanted a single appliance-like pod with local persistent model cache semantics. That is not the right default architecture.
 
-## Internal Call Flow
+### Internal Call Flow
 
 Recommended internal flow:
 
@@ -732,9 +697,9 @@ Recommended internal flow:
 
 Clients should never talk directly to the worker.
 
-## Queue System Design
+### Queue System Design
 
-## Redis Role
+#### Redis Role
 
 Redis should be used for:
 
@@ -747,7 +712,7 @@ Redis should be used for:
 
 Redis should not be used to store generated audio blobs.
 
-## Why Plain FIFO Is Not Enough
+#### Why Plain FIFO Is Not Enough
 
 The right scheduling behavior is not global first-in-first-out.
 
@@ -759,7 +724,7 @@ Correct priority principle:
 - Jobs for the current active room should move forward in reveal order
 - One room should not be able to monopolize the entire worker pool
 
-## Recommended Queue Lane Model
+#### Queue Lane Model
 
 Use three scheduling lanes:
 
@@ -769,7 +734,7 @@ Use three scheduling lanes:
 | `next` | A job likely needed soon in the current room |
 | `background` | Useful work that is not immediately reveal-blocking |
 
-## Per-Room Priority Cap
+#### Per-Room Priority Cap
 
 Each room should be allowed only a small number of elevated jobs at once.
 
@@ -783,7 +748,7 @@ Benefits:
 - Still lets the next reveal items get prepared in time
 - Preserves fairness without making scheduling too complex
 
-## Queue Behavior Across The Game Timeline
+#### Queue Behavior Across The Game Timeline
 
 During the 3-minute creation phase:
 
@@ -804,7 +769,7 @@ During live presentation:
 
 This takes advantage of the fact that the reveal phase itself provides free synthesis time for subsequent segments.
 
-## Required Prebuffer Rule
+#### Required Prebuffer Rule
 
 The game should not start the presentation loop immediately when the creation phase ends.
 
@@ -822,7 +787,7 @@ Recommended defaults:
 
 This is one of the most important smoothness controls in the whole design.
 
-## Job Lifecycle
+#### Job Lifecycle
 
 Recommended job states:
 
@@ -837,7 +802,7 @@ Recommended job states:
 | `failed_final` | Retries exhausted |
 | `expired` | Artifact cleaned up |
 
-## Lease and Retry Design
+#### Lease and Retry Design
 
 Recommended worker lease behavior:
 
@@ -855,7 +820,7 @@ Recommended defaults:
 | Max retries | 3 |
 | Retry backoff | Exponential plus jitter |
 
-## Cache Design
+#### Cache Design
 
 Use content-addressed cache semantics.
 
@@ -873,9 +838,9 @@ Cache reuse is especially valuable for:
 - Exact retry cases
 - Repeated debugging and replay flows
 
-## Storage Design
+### Storage Design
 
-## Hard Rule: Do Not Store Audio In Redis
+#### Hard Rule: Do Not Store Audio In Redis
 
 Generated audio should not be stored in Redis.
 
@@ -888,7 +853,7 @@ Reasons:
 
 Redis should hold metadata, not binary speech payloads.
 
-## Recommended Artifact Backends
+#### Recommended Artifact Backends
 
 Use a pluggable artifact storage backend.
 
@@ -900,7 +865,7 @@ For larger deployments:
 
 - S3-compatible object storage such as S3 or MinIO
 
-## Storage Path Shape
+#### Storage Path Shape
 
 Recommended path structure:
 
@@ -916,7 +881,7 @@ Recommended stored metadata:
 - Voice preset ID
 - TTS model version
 
-## Artifact Lifetime
+#### Artifact Lifetime
 
 Generated artifacts should be short-lived.
 
@@ -926,7 +891,7 @@ Recommended default retention:
 
 This is long enough for reconnects, delayed playback, and limited debugging, while keeping storage pressure low.
 
-## Memory Use Policy
+#### Memory Use Policy
 
 Only the minimum needed playback artifacts should stay warm in memory during reveal.
 
@@ -938,9 +903,9 @@ Recommended memory policy:
 
 This directly addresses the requirement to avoid memory-only audio retention.
 
-## Audio Post-Processing
+### Audio Post-Processing
 
-## Generation Format
+#### Generation Format
 
 The upstream model produces native 48 kHz stereo audio.
 
@@ -949,7 +914,7 @@ Recommended internal flow:
 - Generate in the model's native format first
 - Then post-process for delivery
 
-## Delivery Format
+#### Delivery Format
 
 Recommended v1 delivery artifact:
 
@@ -965,7 +930,7 @@ Reasons:
 
 If future optimization is needed, an Opus path can be added later.
 
-## Loudness Normalization
+#### Loudness Normalization
 
 Post-process each clip so different voices feel broadly consistent.
 
@@ -975,7 +940,7 @@ Goals:
 - Avoid clipping
 - Keep segments sounding broadcast-ready even though they are synthetic
 
-## API Contract Recommendation
+### API Contract
 
 The TTS layer should expose job-oriented internal endpoints rather than only a synchronous `text in, audio out` API.
 
@@ -1004,7 +969,7 @@ Recommended gameplay policy:
 - Gamma uses the async path only
 - A synchronous path may exist for admin or debug tooling, but not for live room flow
 
-## Text Normalization Strategy
+### Text Normalization Strategy
 
 The upstream project includes optional text normalization paths that can pull in heavier dependencies.
 
@@ -1018,7 +983,7 @@ This keeps the deployment smaller and easier to operate.
 
 ## Kubernetes Deployment Plan
 
-## Model Asset Delivery
+### Model Asset Delivery
 
 Production pods should not rely on first-request model downloads.
 
@@ -1030,14 +995,14 @@ Recommended pattern:
 
 This reduces cold-start risk during active room play.
 
-## Worker Sizing Guidance
+### Worker Sizing Guidance
 
 Start conservatively and benchmark on the real target hardware.
 
 Suggested starting points:
 
 | Profile | Worker replicas | CPU | Memory | Worker concurrency |
-|---|---:|---:|---:|---:|
+|---|---|---:|---:|---:|
 | Dev or single node | 1 | 2 to 4 vCPU | 4 to 6 GiB | 1 |
 | Small production | 2 | 4 vCPU | 6 to 8 GiB | 1 |
 | Larger production | Horizontal scaling | 4 to 8 vCPU | 8+ GiB | 1 |
@@ -1046,13 +1011,13 @@ Important default:
 
 - Keep concurrency at 1 per worker until real benchmarks prove a higher value is safe and beneficial.
 
-## Thread Tuning Guidance
+### Thread Tuning Guidance
 
 The ONNX worker should be benchmarked with different thread counts such as 1, 2, and 4.
 
 Do not assume that a higher thread count automatically improves room-level throughput. In many cases, one active job per worker with a fixed thread count produces more predictable latency than trying to run many jobs concurrently inside one worker.
 
-## Redis Deployment Guidance
+### Redis Deployment Guidance
 
 For small deployments:
 
@@ -1068,7 +1033,7 @@ Reason:
 
 ## Performance Budgets
 
-## Viewer Performance Targets
+### Viewer Performance Targets
 
 | Target | Recommendation |
 |---|---|
@@ -1077,7 +1042,7 @@ Reason:
 | WebGL fallback | Required |
 | Scene asset footprint | Keep very small |
 
-## TTS Performance Targets
+### TTS Performance Targets
 
 The exact values must be validated on real hardware, but the design should target:
 
@@ -1089,7 +1054,7 @@ The reveal pacing itself provides slack, so the main risk is cold start or an un
 
 ## Failure Modes And Recovery
 
-## TTS Slow Or Not Ready In Time
+### TTS Slow Or Not Ready In Time
 
 If the next segment is not ready:
 
@@ -1102,7 +1067,7 @@ Recommended v1 behavior:
 - Allow a short extra wait if the next item is nearly ready
 - Do not introduce dynamic reordering unless load testing proves it is necessary
 
-## Worker Crash Mid-Job
+### Worker Crash Mid-Job
 
 Recovery path:
 
@@ -1110,7 +1075,7 @@ Recovery path:
 - Job returns to queue
 - Another worker may claim it
 
-## Artifact Storage Failure
+### Artifact Storage Failure
 
 Recovery path:
 
@@ -1118,7 +1083,7 @@ Recovery path:
 - Retry post-processing and storage write
 - Do not broadcast incomplete artifact references
 
-## Provider Media Failure During Reveal
+### Provider Media Failure During Reveal
 
 If media fails to load during reveal:
 
@@ -1126,7 +1091,7 @@ If media fails to load during reveal:
 - Continue the segment if audio is ready
 - Do not stall the room indefinitely on third-party media failure
 
-## Final TTS Failure
+### Final TTS Failure
 
 Recommended tiered fallback:
 
@@ -1178,79 +1143,6 @@ Recommended controls:
 - Internal-only TTS endpoints where possible
 - Artifact URLs should be scoped or short-lived if external object storage is used
 
-## Implementation Plan
-
-## Phase 1: Feasibility Spike
-
-Before the full game build, benchmark the ONNX CPU backend on the actual target hardware.
-
-Required benchmark outputs:
-
-- Cold start time
-- Warm synthesis time for short, medium, and max script lengths
-- Memory RSS after model load
-- CPU utilization during one job
-- Artifact size before and after delivery transcoding
-- Behavior with one worker and two workers
-- Time to prepare the first 2 clips in a simulated 6 to 8 player room
-
-This phase is critical. It reduces the risk of building a reveal flow that feels smooth in theory but not on the real deployment target.
-
-## Phase 2: Core Game Flow Without 3D
-
-Build the full game loop first with a simple 2D viewer.
-
-Scope:
-
-- Headline submission
-- Headline redistribution
-- Media selection
-- Script writing
-- Voice selection
-- Final submission and lock
-- Async TTS integration
-- Reveal loop in a 2D presentation shell
-- Voting and results
-
-This validates the most important gameplay and backend behavior before adding scene polish.
-
-## Phase 3: 3D Newsroom Viewer
-
-Add the newsroom scene only after the reveal loop is already stable.
-
-Scope:
-
-- Procedural low poly newsroom geometry
-- Anchor body
-- Player icon face plate
-- Screen media playback region
-- Lower third graphics
-- Idle animations and camera motion
-- 2D fallback path retained
-
-## Phase 4: Storage And Deployment Hardening
-
-Scope:
-
-- Filesystem artifact backend for small installs
-- Object storage backend for larger deployments
-- Init container model download or preloaded model volume
-- Readiness warmup
-- Metrics endpoint
-- Cleanup worker or scheduled artifact pruning
-
-## Phase 5: Reliability And Load Testing
-
-Scope:
-
-- Multiple simultaneous rooms
-- Worker restarts
-- Redis interruptions
-- Object storage latency
-- Media provider failure during reveal
-- Viewer reconnect during presentation
-- Peak queue lane pressure with mixed room states
-
 ## Acceptance Criteria
 
 An implementation based on this design should satisfy all of the following:
@@ -1290,10 +1182,9 @@ These do not block the design direction, but they should be finalized before imp
 - Should failed media playback still allow a segment to remain eligible for voting if the TTS succeeds?
 - Should reveal order remain fixed even when a later segment is ready first, or should dynamic skipping ever be allowed?
 
-## Recommended Immediate Next Steps
+## Implementation History
 
-1. Benchmark the ONNX CPU runtime on the actual target hardware.
-2. Decide whether the first artifact backend will be filesystem or S3-compatible storage.
-3. Lock the maximum spoken duration budget for the script and headline combined.
-4. Choose the initial curated voice set and create static preview clips.
-5. Implement the game in this order: core loop, async TTS queue, 2D reveal shell, then 3D newsroom viewer.
+- **Phase 1:** Core game flow built without 3D — headline submission, redistribution, media selection, script writing, voice selection, final submission lock, async TTS integration, 2D reveal shell, voting and results.
+- **Phase 2:** TTS service implemented — Go `tts-api` with Gin, Python `tts-worker` with vendored MOSS-TTS-Nano ONNX runtime, MinIO S3-compatible artifact storage, explicit room artifact deletion on teardown, 2-hour backup cleanup loop.
+- **Phase 3:** Operator and deployment wiring — TTS spec/status added to `GammaInstance` CRD, ingress routes `/api/tts` to Gamma server proxy, k8s examples updated, Helm chart validated.
+- **Phase 4 (future):** 3D newsroom viewer — procedural low poly geometry, anchor body, player icon face plate, screen media playback region, lower third graphics, idle animations and camera motion, 2D fallback path retained.

@@ -366,7 +366,7 @@
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
 </script>
 
-<div class="flex-1 flex pt-16 pl-28" data-testid="news-broadcast-tv">
+<div class="flex-1 flex" data-testid="news-broadcast-tv">
   <div class="w-72 border-r border-slate-800 bg-slate-950/80 px-4 pb-4 pt-6 flex flex-col gap-4 flex-shrink-0">
     <div>
       <p class="text-xs uppercase tracking-widest text-sky-300/80 font-semibold">Broadcast Desk</p>
