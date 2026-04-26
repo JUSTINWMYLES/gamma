@@ -66,12 +66,12 @@ describe("constants", () => {
     expect(SCRIPT_VOICE_DURATION_MS).toBe(90_000);
   });
 
-  it("GIF_SELECTION_DURATION_MS is 45_000", () => {
-    expect(GIF_SELECTION_DURATION_MS).toBe(45_000);
+  it("GIF_SELECTION_DURATION_MS is 120_000", () => {
+    expect(GIF_SELECTION_DURATION_MS).toBe(120_000);
   });
 
-  it("LOGO_CREATION_DURATION_MS is 45_000", () => {
-    expect(LOGO_CREATION_DURATION_MS).toBe(45_000);
+  it("LOGO_CREATION_DURATION_MS is 120_000", () => {
+    expect(LOGO_CREATION_DURATION_MS).toBe(120_000);
   });
 
   it("BUFFERING_MAX_WAIT_MS is 60_000", () => {
