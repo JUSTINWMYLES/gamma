@@ -423,7 +423,7 @@
   });
 </script>
 
-<div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto p-4 pb-24 sm:justify-center" data-testid="medical-story">
+<div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto rounded-[28px] border border-slate-800 bg-slate-950/90 p-4 pb-24 sm:justify-center" data-testid="medical-story">
   {#if roundSkipped}
     <!-- ── Round skipped ────────────────────────────────────────── -->
     <div class="flex-1 flex items-center justify-center">

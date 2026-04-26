@@ -1,7 +1,7 @@
 import type { NormalizedMediaEntry } from "./newsBroadcastLogic";
 
 const KLIPY_API_BASE = "https://api.klipy.com/api/v1";
-const KLIPY_PER_PAGE = 30;
+const KLIPY_PER_PAGE = 12;
 const KLIPY_FETCH_TIMEOUT_MS = 5_000;
 
 interface KlipyMediaVariant {

@@ -295,11 +295,11 @@
         <div class="space-y-2">
           <p class="text-sm uppercase tracking-[0.4em] text-amber-300/70">Consensus Tier Board</p>
           <p class="text-5xl font-black text-white">{resultCategory}</p>
-          <p class="text-lg text-gray-400">Revealing one item every 5 seconds, from the basement tiers up to the all-time greats.</p>
+          <p class="text-lg text-gray-300">Revealing one item every 5 seconds, from the basement tiers up to the all-time greats.</p>
         </div>
 
         <div class="min-h-[150px] rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
-          <p class="text-xs uppercase tracking-[0.3em] text-gray-400">Latest Reveal</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-gray-300">Latest Reveal</p>
           {#if currentlyRevealedItem}
             <div class="mt-3 flex items-center gap-4">
               <div class={`flex h-16 w-16 items-center justify-center rounded-2xl text-3xl font-black ${TIER_BG[currentlyRevealedItem.tier]} ${TIER_TEXT[currentlyRevealedItem.tier]}`}>
@@ -333,7 +333,7 @@
                 {#each row.items as item}
                   <div class="max-w-[220px] rounded-2xl border border-white/10 bg-black/30 px-4 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
                     <p class="text-lg font-black text-white leading-tight">{item.item}</p>
-                    <p class="mt-2 text-xs uppercase tracking-[0.2em] text-gray-400">
+                    <p class="mt-2 text-xs uppercase tracking-[0.2em] text-gray-300">
                       {#each REVEAL_TIERS.slice().reverse() as t, index}
                         <span class={t === item.tier ? 'font-black text-white' : 'text-gray-300'}>{t}:{item.voteCounts[t]}</span>{index < REVEAL_TIERS.length - 1 ? ' ' : ''}
                       {/each}
@@ -355,7 +355,7 @@
             {#each sortedPlayers as p}
               <div class="flex min-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
                 <PlayerIcon player={p} size={24} />
-                <p class="flex-1 truncate text-sm text-gray-300">{p.name}</p>
+                <p class="flex-1 truncate text-sm text-gray-200">{p.name}</p>
                 <p class={`text-2xl font-black ${(roundScores[p.id] ?? 0) > 0 ? 'text-amber-300' : 'text-gray-300'}`}>
                   +{roundScores[p.id] ?? 0}
                 </p>

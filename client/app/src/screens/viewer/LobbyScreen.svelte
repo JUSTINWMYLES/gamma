@@ -25,6 +25,7 @@
   $: connectedPlayers = [...state.players.values()].filter((p) => p.isConnected);
   $: micReadyCount = connectedPlayers.filter((p) => p.micPermission === "granted").length;
   $: motionReadyCount = connectedPlayers.filter((p) => p.motionPermission === "granted").length;
+  $: densePlayerList = state.players.size >= 13;
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10">
@@ -70,15 +71,15 @@
         </div>
         <div>
           <h2 class="text-lg font-semibold text-gray-300 mb-3">Players ({state.players.size})</h2>
-          <ul class="space-y-2" data-testid="player-list">
+          <ul class={densePlayerList ? "grid grid-cols-2 gap-2" : "space-y-2"} data-testid="player-list">
             {#each [...state.players.values()] as player (player.id)}
-              <li class="flex items-center gap-3 bg-gray-800 rounded-lg px-4 py-2">
-                <PlayerIcon player={player} size={32} />
-                <span class="flex-1 font-medium">{player.name}</span>
+              <li class={`flex items-center gap-2 bg-gray-800 rounded-lg ${densePlayerList ? "px-3 py-1.5" : "px-4 py-2"}`}>
+                <PlayerIcon player={player} size={densePlayerList ? 26 : 32} />
+                <span class={`flex-1 truncate ${densePlayerList ? "text-sm font-semibold" : "font-medium"}`}>{player.name}</span>
                 {#if player.isReady}
-                  <span class="text-green-400 text-sm font-semibold">READY</span>
+                  <span class={`${densePlayerList ? "text-[11px]" : "text-sm"} text-green-400 font-semibold`}>READY</span>
                 {:else}
-                  <span class="text-gray-500 text-sm">Waiting...</span>
+                  <span class={`${densePlayerList ? "text-[11px]" : "text-sm"} text-gray-500`}>Waiting...</span>
                 {/if}
               </li>
             {/each}

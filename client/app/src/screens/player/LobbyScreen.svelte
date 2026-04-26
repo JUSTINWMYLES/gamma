@@ -7,7 +7,7 @@
   import GameDetailView from "../../components/GameDetailView.svelte";
   import PlayerCustomizer from "../../components/PlayerCustomizer.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
-  import { markMotionPermissionGranted, isMotionPermissionGrantedThisSession } from "../../lib/permissions";
+  import { markMotionPermissionGranted, isMotionPermissionGrantedThisSession, cacheMicStream } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -111,9 +111,9 @@
     try {
       if (navigator.mediaDevices?.getUserMedia) {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Only use the stream long enough to trigger the browser permission
-        // grant. Games should open the microphone later, only while recording.
-        stream.getTracks().forEach((track) => track.stop());
+        // Cache the granted stream so games can reuse it without triggering
+        // additional browser permission prompts mid-session.
+        cacheMicStream(stream);
         result.mic = "granted";
       }
     } catch {

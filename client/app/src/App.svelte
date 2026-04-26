@@ -162,23 +162,30 @@
     if (phase === "game_over") {
       return "discovery_hit";
     }
-    if (
-      state.selectedGame === "registry-43-medical-story" &&
-      phase !== "game_loading"
-    ) {
+    if (state.selectedGame === "registry-43-medical-story") {
       return "entertainer";
     }
     if (state.selectedGame === "registry-26-audio-overlay") {
       if (phase === "instructions" || phase === "countdown") {
         return "two_finger_johnny";
       }
-      return phase === "in_round" ? viewerTrackOverride : null;
+      // During in_round, defer to TV component's musictrackchange dispatch
+      // which controls music based on the current sub-phase
+      if (phase === "in_round") {
+        return viewerTrackOverride ?? "two_finger_johnny";
+      }
+      return null;
     }
     if (state.selectedGame === "registry-45-news-broadcast") {
       if (phase === "instructions" || phase === "countdown") {
         return "celebration";
       }
-      return phase === "in_round" ? viewerTrackOverride : null;
+      // During in_round, defer to TV component's musictrackchange dispatch
+      // which controls music based on the current sub-phase
+      if (phase === "in_round") {
+        return viewerTrackOverride ?? "celebration";
+      }
+      return null;
     }
     // Play game-specific music during in_round (and countdown/instructions for smoother transitions)
     if (phase === "in_round" || phase === "countdown" || phase === "instructions") {
@@ -521,7 +528,7 @@
       title="Leave room"
       on:click={() => (showLeaveConfirm = true)}
     >
-      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 -translate-y-[2px]" viewBox="0 0 20 20" fill="currentColor">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
         <path fill-rule="evenodd" d="M3 3a1 1 0 00-1 1v12a1 1 0 001 1h5a1 1 0 100-2H4V5h4a1 1 0 100-2H3z" clip-rule="evenodd"/>
         <path fill-rule="evenodd" d="M13.293 9.293a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 14H7a1 1 0 110-2h7.586l-1.293-1.293a1 1 0 010-1.414z" clip-rule="evenodd"/>
       </svg>
@@ -529,9 +536,9 @@
   {/if}
 
   {#if role === "viewer" && state && !error && viewerView === "room"}
-    <div class="fixed top-3 left-3 z-50 rounded-lg bg-black/45 border border-white/10 px-3 py-1.5 text-left backdrop-blur-sm">
-      <p class="text-[10px] uppercase tracking-[0.2em] text-gray-400">Room</p>
-      <p class="font-mono text-base font-black tracking-[0.25em] text-white" data-testid="persistent-room-code">{state.roomCode}</p>
+    <div class="fixed top-3 left-3 z-50 rounded-lg bg-black/60 border border-indigo-400/80 px-3 py-1.5 text-left backdrop-blur-sm">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-indigo-300">Room</p>
+      <p class="font-mono text-base font-black tracking-[0.25em] text-indigo-200" data-testid="persistent-room-code">{state.roomCode}</p>
     </div>
   {/if}
 

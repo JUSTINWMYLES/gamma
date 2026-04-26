@@ -69,7 +69,7 @@
     <div class="top-block">
       <div class="portrait-frame">
         <div class="portrait-matte">
-          <PlayerIcon player={portraitPlayer} size={compact ? 108 : emphasis === "showcase" ? 184 : 148} />
+          <PlayerIcon player={portraitPlayer} size={compact ? 88 : emphasis === "showcase" ? 184 : 148} />
         </div>
       </div>
 
@@ -231,7 +231,14 @@
   }
 
   .compact .portrait-matte {
-    min-height: 108px;
+    min-height: 92px;
+    background: transparent;
+  }
+
+  .compact .portrait-frame {
+    padding: 0.42rem;
+    background: rgba(88, 48, 21, 0.03);
+    border-color: rgba(91, 47, 18, 0.42);
   }
 
   .showcase .portrait-matte {
@@ -352,6 +359,9 @@
   .compact .body-copy {
     min-height: 0;
     font-size: 0.82rem;
+    max-height: 5.2em;
+    overflow-y: auto;
+    padding-right: 0.2rem;
   }
 
   .footer-row {

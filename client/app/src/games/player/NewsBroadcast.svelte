@@ -736,7 +736,7 @@
   });
 
   $: headlineWordCount = headlineInput.trim().split(/\s+/).filter(Boolean).length;
-  $: canSubmitHeadline = headlineInput.trim().length >= 12 && headlineWordCount >= 2;
+  $: canSubmitHeadline = !headlineSubmitted && headlineInput.trim().length >= 12 && headlineWordCount >= 2;
   $: selectedVoice = voices.find((voice) => voice.id === selectedVoicePresetId) ?? voices.find((voice) => voice.available) ?? null;
   $: if (voices.length > 0 && !voices.some((voice) => voice.id === selectedVoicePresetId && voice.available)) {
     const fallbackVoice = voices.find((voice) => voice.available);
@@ -748,7 +748,7 @@
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
 </script>
 
-<div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto p-4 pb-24 sm:justify-center" data-testid="news-broadcast-player">
+<div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto rounded-[28px] border border-slate-800 bg-slate-950/90 p-4 pb-24 sm:justify-center" data-testid="news-broadcast-player">
   {#if roundSkipped}
     <div class="flex-1 flex items-center justify-center">
       <div class="w-full max-w-sm rounded-3xl border border-yellow-500/40 bg-yellow-950/30 p-6 text-center space-y-3">
@@ -791,7 +791,7 @@
 
         {#if headlineSubmitted}
           <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 px-4 py-3 text-sm text-emerald-100">
-            Headline submitted. You can still tweak it and submit again before the timer ends.
+            Headline submitted and locked.
           </div>
         {/if}
 
@@ -805,7 +805,7 @@
           disabled={!canSubmitHeadline}
           on:click={submitHeadline}
         >
-          {headlineSubmitted ? "Update Headline" : "Submit Headline"}
+          Submit Headline
         </button>
       </div>
 
@@ -962,7 +962,7 @@
               <span class="text-xs text-sky-300">Searching...</span>
             {/if}
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               bind:value={mediaSearchQuery}
@@ -973,7 +973,7 @@
             />
             <button
               type="button"
-              class={`rounded-2xl px-4 py-3 font-bold ${mediaSearchQuery.trim().length >= 2 ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-700 text-slate-400"}`}
+              class={`rounded-2xl px-4 py-3 font-bold sm:flex-shrink-0 ${mediaSearchQuery.trim().length >= 2 ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-700 text-slate-400"}`}
               disabled={mediaSearchQuery.trim().length < 2 || gifSelected}
               on:click={runMediaSearch}
             >Search</button>
@@ -1022,9 +1022,6 @@
                   {:else}
                     <img class="h-24 w-full object-cover" src={getGalleryUrl(media)} alt={media.label} />
                   {/if}
-                  <div class="p-3">
-                    <p class="text-sm font-semibold text-white">{media.label}</p>
-                  </div>
                 </button>
               {/each}
             </div>
