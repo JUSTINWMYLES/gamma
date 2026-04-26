@@ -5,17 +5,19 @@ export const MAX_PLAYERS = 12;
 
 export const HEADLINE_SUBMISSION_DURATION_MS = 60_000;
 export const ASSIGNMENT_REVEAL_DURATION_MS = 5_000;
-export const BROADCAST_CREATION_DURATION_MS = 180_000;
-export const BUFFERING_MAX_WAIT_MS = 45_000;
+export const SCRIPT_VOICE_DURATION_MS = 90_000;
+export const GIF_SELECTION_DURATION_MS = 45_000;
+export const LOGO_CREATION_DURATION_MS = 45_000;
+export const BUFFERING_MAX_WAIT_MS = 60_000;
 export const PRESENTATION_PREPARE_MS = 2_000;
 export const PRESENTATION_END_HOLD_MS = 4_000;
-export const PRESENTATION_EXTRA_WAIT_MS = 20_000;
+export const PRESENTATION_EXTRA_WAIT_MS = 60_000;
 export const VOTING_DURATION_MS = 30_000;
 export const RESULTS_DISPLAY_MS = 8_000;
 
 export const MIN_HEADLINE_LENGTH = 12;
 export const MAX_HEADLINE_LENGTH = 90;
-export const MAX_SCRIPT_LENGTH = 350;
+export const MAX_SCRIPT_LENGTH = 150;
 export const MAX_SPOKEN_DURATION_MS = 20_000;
 
 export const PARTICIPATION_POINTS = 25;
@@ -78,6 +80,7 @@ export interface BroadcastSubmission {
   voicePresetId: string;
   voiceLabel: string;
   selectedMedia: NormalizedMediaEntry;
+  logoDesign: string;
   estimatedSpeechMs: number;
   submittedAt: number;
   ttsJobId?: string;

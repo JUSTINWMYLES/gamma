@@ -4,7 +4,9 @@ import {
   MAX_PLAYERS,
   HEADLINE_SUBMISSION_DURATION_MS,
   ASSIGNMENT_REVEAL_DURATION_MS,
-  BROADCAST_CREATION_DURATION_MS,
+  SCRIPT_VOICE_DURATION_MS,
+  GIF_SELECTION_DURATION_MS,
+  LOGO_CREATION_DURATION_MS,
   BUFFERING_MAX_WAIT_MS,
   PRESENTATION_PREPARE_MS,
   PRESENTATION_END_HOLD_MS,
@@ -60,12 +62,20 @@ describe("constants", () => {
     expect(ASSIGNMENT_REVEAL_DURATION_MS).toBe(5_000);
   });
 
-  it("BROADCAST_CREATION_DURATION_MS is 180_000", () => {
-    expect(BROADCAST_CREATION_DURATION_MS).toBe(180_000);
+  it("SCRIPT_VOICE_DURATION_MS is 90_000", () => {
+    expect(SCRIPT_VOICE_DURATION_MS).toBe(90_000);
   });
 
-  it("BUFFERING_MAX_WAIT_MS is 45_000", () => {
-    expect(BUFFERING_MAX_WAIT_MS).toBe(45_000);
+  it("GIF_SELECTION_DURATION_MS is 45_000", () => {
+    expect(GIF_SELECTION_DURATION_MS).toBe(45_000);
+  });
+
+  it("LOGO_CREATION_DURATION_MS is 45_000", () => {
+    expect(LOGO_CREATION_DURATION_MS).toBe(45_000);
+  });
+
+  it("BUFFERING_MAX_WAIT_MS is 60_000", () => {
+    expect(BUFFERING_MAX_WAIT_MS).toBe(60_000);
   });
 
   it("PRESENTATION_PREPARE_MS is 2_000", () => {
@@ -76,8 +86,8 @@ describe("constants", () => {
     expect(PRESENTATION_END_HOLD_MS).toBe(4_000);
   });
 
-  it("PRESENTATION_EXTRA_WAIT_MS is 20_000", () => {
-    expect(PRESENTATION_EXTRA_WAIT_MS).toBe(20_000);
+  it("PRESENTATION_EXTRA_WAIT_MS is 60_000", () => {
+    expect(PRESENTATION_EXTRA_WAIT_MS).toBe(60_000);
   });
 
   it("VOTING_DURATION_MS is 30_000", () => {
@@ -96,8 +106,8 @@ describe("constants", () => {
     expect(MAX_HEADLINE_LENGTH).toBe(90);
   });
 
-  it("MAX_SCRIPT_LENGTH is 350", () => {
-    expect(MAX_SCRIPT_LENGTH).toBe(350);
+  it("MAX_SCRIPT_LENGTH is 150", () => {
+    expect(MAX_SCRIPT_LENGTH).toBe(150);
   });
 
   it("MAX_SPOKEN_DURATION_MS is 20_000", () => {

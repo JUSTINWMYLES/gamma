@@ -2,7 +2,6 @@ import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
 import { fetchKlipyMedia } from "./klipyMedia";
 import {
-  BROADCAST_CREATION_DURATION_MS,
   BUFFERING_MAX_WAIT_MS,
   buildFallbackScript,
   computeRoundPoints,
@@ -26,6 +25,9 @@ import {
   PRESENTATION_END_HOLD_MS,
   PRESENTATION_EXTRA_WAIT_MS,
   PRESENTATION_PREPARE_MS,
+  SCRIPT_VOICE_DURATION_MS,
+  GIF_SELECTION_DURATION_MS,
+  LOGO_CREATION_DURATION_MS,
   tallyBroadcastVotes,
   trimTextToSpeechBudget,
   validateSpokenTextWithinBudget,
@@ -49,7 +51,9 @@ import {
 type Stage =
   | "headline_submission"
   | "assignment_reveal"
-  | "broadcast_creation"
+  | "script_voice_submission"
+  | "gif_selection"
+  | "logo_creation"
   | "buffering"
   | "presentation"
   | "voting"
@@ -60,6 +64,7 @@ interface BroadcastDraft {
   script: string;
   voicePresetId: string;
   voiceLabel: string;
+  logoDesign: string;
   updatedAt: number;
 }
 
@@ -75,6 +80,9 @@ interface SessionData {
   broadcastDrafts: Map<string, BroadcastDraft>;
   broadcastSubmissions: Map<string, BroadcastSubmission>;
   allowedMediaUrls: Set<string>;
+  scriptVoiceSubmitted: Set<string>;
+  gifSelectedPlayers: Set<string>;
+  logoSubmittedPlayers: Set<string>;
   submittedPlayers: Set<string>;
   votedPlayers: Set<string>;
   votes: Map<string, string>;
@@ -92,6 +100,7 @@ interface NewsBroadcastInput {
   voicePresetId?: string;
   voiceLabel?: string;
   media?: unknown;
+  logoDesign?: string;
 }
 
 export default class NewsBroadcastGame extends BaseGame {
@@ -141,6 +150,9 @@ export default class NewsBroadcastGame extends BaseGame {
       broadcastDrafts: new Map(),
       broadcastSubmissions: new Map(),
       allowedMediaUrls: new Set([FALLBACK_MEDIA_ENTRY.previewUrl, FALLBACK_MEDIA_ENTRY.fallbackImageUrl].filter(Boolean)),
+      scriptVoiceSubmitted: new Set(),
+      gifSelectedPlayers: new Set(),
+      logoSubmittedPlayers: new Set(),
       submittedPlayers: new Set(),
       votedPlayers: new Set(),
       votes: new Map(),
@@ -171,14 +183,35 @@ export default class NewsBroadcastGame extends BaseGame {
     await this.delay(ASSIGNMENT_REVEAL_DURATION_MS);
     if (this.isCancelled() || !this.session) return;
 
-    this.session.stage = "broadcast_creation";
-    this.broadcast("broadcast_creation_start", {
-      durationMs: BROADCAST_CREATION_DURATION_MS,
+    this.session.stage = "script_voice_submission";
+    this.broadcast("script_voice_submission_start", {
+      durationMs: SCRIPT_VOICE_DURATION_MS,
       serverTimestamp: Date.now(),
       voices: this.session.voices,
       totalPlayers: playerIds.length,
     });
-    await this._waitForResponses(() => haveAllExpectedPlayersResponded(this.session?.submittedPlayers ?? new Set(), playerIds), BROADCAST_CREATION_DURATION_MS);
+    await this._waitForResponses(() => haveAllExpectedPlayersResponded(this.session?.scriptVoiceSubmitted ?? new Set(), playerIds), SCRIPT_VOICE_DURATION_MS);
+    if (this.isCancelled() || !this.session) return;
+
+    await this._finalizeScriptVoiceSubmissions(players);
+    if (this.isCancelled() || !this.session) return;
+
+    this.session.stage = "gif_selection";
+    this.broadcast("gif_selection_start", {
+      durationMs: GIF_SELECTION_DURATION_MS,
+      serverTimestamp: Date.now(),
+      totalPlayers: playerIds.length,
+    });
+    await this._waitForResponses(() => haveAllExpectedPlayersResponded(this.session?.gifSelectedPlayers ?? new Set(), playerIds), GIF_SELECTION_DURATION_MS);
+    if (this.isCancelled() || !this.session) return;
+
+    this.session.stage = "logo_creation";
+    this.broadcast("logo_creation_start", {
+      durationMs: LOGO_CREATION_DURATION_MS,
+      serverTimestamp: Date.now(),
+      totalPlayers: playerIds.length,
+    });
+    await this._waitForResponses(() => haveAllExpectedPlayersResponded(this.session?.logoSubmittedPlayers ?? new Set(), playerIds), LOGO_CREATION_DURATION_MS);
     if (this.isCancelled() || !this.session) return;
 
     await this._finalizeBroadcastSubmissions(players);
@@ -328,8 +361,14 @@ export default class NewsBroadcastGame extends BaseGame {
       case "nb_draft_broadcast":
         this._handleBroadcastDraft(client.sessionId, input);
         return;
-      case "nb_submit_broadcast":
-        void this._handleBroadcastSubmit(client.sessionId, input);
+      case "nb_submit_script_voice":
+        void this._handleScriptVoiceSubmit(client.sessionId, input);
+        return;
+      case "nb_select_gif":
+        this._handleGifSelect(client.sessionId, input);
+        return;
+      case "nb_submit_logo":
+        this._handleLogoSubmit(client.sessionId, input);
         return;
       case "nb_vote":
         this._handleVote(client.sessionId, input.targetId ?? "");
@@ -359,6 +398,9 @@ export default class NewsBroadcastGame extends BaseGame {
       playerId: newId,
       playerName: this.room.state.players.get(newId)?.name ?? submission.playerName,
     }));
+    this._moveSetValue(this.session.scriptVoiceSubmitted, oldId, newId);
+    this._moveSetValue(this.session.gifSelectedPlayers, oldId, newId);
+    this._moveSetValue(this.session.logoSubmittedPlayers, oldId, newId);
     this._moveSetValue(this.session.submittedPlayers, oldId, newId);
     this._moveSetValue(this.session.votedPlayers, oldId, newId);
 
@@ -448,7 +490,7 @@ export default class NewsBroadcastGame extends BaseGame {
   }
 
   private async _handleMediaSearch(sessionId: string, query: string): Promise<void> {
-    if (!this.session || this.session.stage !== "broadcast_creation") return;
+    if (!this.session || this.session.stage !== "gif_selection") return;
     const sanitized = query.trim().slice(0, 80);
     if (sanitized.length < 2) return;
     const results = await fetchKlipyMedia(sanitized);
@@ -462,42 +504,280 @@ export default class NewsBroadcastGame extends BaseGame {
   }
 
   private _handleBroadcastDraft(sessionId: string, input: NewsBroadcastInput): void {
-    if (!this.session || this.session.stage !== "broadcast_creation") return;
+    if (!this.session) return;
+    const allowedStages = ["script_voice_submission", "gif_selection", "logo_creation"];
+    if (!allowedStages.includes(this.session.stage)) return;
     const existing = this.session.broadcastDrafts.get(sessionId);
     const media = normalizeMediaEntry(input.media) ?? existing?.media ?? null;
     const script = normalizeScript(input.script ?? existing?.script ?? "") ?? existing?.script ?? "";
     const resolvedVoice = this._resolveVoiceOption(input.voicePresetId ?? existing?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID);
+    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : existing?.logoDesign ?? "";
     this.session.broadcastDrafts.set(sessionId, {
       media,
       script,
       voicePresetId: resolvedVoice.id,
       voiceLabel: resolvedVoice.label,
+      logoDesign,
       updatedAt: Date.now(),
     });
   }
 
-  private async _handleBroadcastSubmit(sessionId: string, input: NewsBroadcastInput): Promise<void> {
-    if (!this.session || this.session.stage !== "broadcast_creation") return;
-    if (this.session.submittedPlayers.has(sessionId)) {
-      this.send(sessionId, "broadcast_submission_confirmed", { accepted: false, reason: "Your segment is already locked." });
+  private async _handleScriptVoiceSubmit(sessionId: string, input: NewsBroadcastInput): Promise<void> {
+    if (!this.session || this.session.stage !== "script_voice_submission") return;
+    if (this.session.scriptVoiceSubmitted.has(sessionId)) {
+      this.send(sessionId, "script_voice_confirmed", { accepted: false, reason: "Already submitted." });
       return;
     }
 
-    const draft = this._buildSubmissionFromInput(sessionId, input, false);
-    if (!draft) {
-      this.send(sessionId, "broadcast_submission_confirmed", { accepted: false, reason: "Add media, a short script, and a usable voice before submitting." });
+    const draft = this.session.broadcastDrafts.get(sessionId);
+    const script = normalizeScript(input.script ?? draft?.script ?? "");
+    const resolvedVoice = this._resolveVoiceOption(input.voicePresetId ?? draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID);
+    if (!script || !resolvedVoice.available) {
+      this.send(sessionId, "script_voice_confirmed", { accepted: false, reason: "Add a short script and pick a voice before submitting." });
       return;
     }
-    await this._acceptSubmission(sessionId, draft, true);
+
+    // Update draft
+    this.session.broadcastDrafts.set(sessionId, {
+      media: draft?.media ?? null,
+      script,
+      voicePresetId: resolvedVoice.id,
+      voiceLabel: resolvedVoice.label,
+      logoDesign: draft?.logoDesign ?? "",
+      updatedAt: Date.now(),
+    });
+
+    this.session.scriptVoiceSubmitted.add(sessionId);
+
+    // Create partial submission and TTS job immediately
+    const assignedHeadline = this.session.assignedHeadlines.get(sessionId) ?? "Breaking update incoming.";
+    const player = this.room.state.players.get(sessionId);
+    if (!player) return;
+
+    const spokenText = normalizeSpokenText(script);
+    const submission: BroadcastSubmission = {
+      playerId: sessionId,
+      playerName: player.name,
+      assignedHeadline,
+      script,
+      spokenText,
+      voicePresetId: resolvedVoice.id,
+      voiceLabel: resolvedVoice.label,
+      selectedMedia: draft?.media ?? FALLBACK_MEDIA_ENTRY,
+      logoDesign: draft?.logoDesign ?? "",
+      estimatedSpeechMs: estimateSpeechMs(spokenText),
+      submittedAt: Date.now(),
+      ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
+    };
+
+    this.session.broadcastSubmissions.set(sessionId, submission);
+
+    if (isTTSEnabled()) {
+      const job = await createTTSJob({
+        roomId: this.room.roomId,
+        roundId: this.session.roundId,
+        playerId: submission.playerId,
+        locale: "en",
+        voicePresetId: submission.voicePresetId,
+        text: normalizeSpokenText(submission.spokenText),
+        priority: "background",
+        estimatedSpeechMs: submission.estimatedSpeechMs,
+      });
+      if (job) {
+        submission.ttsJobId = job.id;
+        submission.ttsStatus = job.status;
+        submission.audioDurationMs = job.durationMs;
+        submission.audioMimeType = job.mimeType;
+      } else {
+        submission.ttsStatus = "failed_final";
+      }
+    }
+
+    this.send(sessionId, "script_voice_confirmed", {
+      accepted: true,
+      headline: assignedHeadline,
+      ttsJobId: submission.ttsJobId ?? null,
+      ttsStatus: submission.ttsStatus,
+      estimatedSpeechMs: submission.estimatedSpeechMs,
+    });
+
+    this.broadcast("script_voice_update", {
+      submitted: this.session.scriptVoiceSubmitted.size,
+      total: this._activePlayers().length,
+    });
+  }
+
+  private _handleGifSelect(sessionId: string, input: NewsBroadcastInput): void {
+    if (!this.session || this.session.stage !== "gif_selection") return;
+    if (this.session.gifSelectedPlayers.has(sessionId)) {
+      this.send(sessionId, "gif_select_confirmed", { accepted: false, reason: "Already selected." });
+      return;
+    }
+
+    const draft = this.session.broadcastDrafts.get(sessionId);
+    const media = normalizeMediaEntry(input.media) ?? draft?.media ?? null;
+    if (!media || !isAllowedMediaSelection(media, this.session.allowedMediaUrls)) {
+      this.send(sessionId, "gif_select_confirmed", { accepted: false, reason: "Select valid media before submitting." });
+      return;
+    }
+
+    // Update draft and existing submission
+    this.session.broadcastDrafts.set(sessionId, {
+      media,
+      script: draft?.script ?? "",
+      voicePresetId: draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID,
+      voiceLabel: draft?.voiceLabel ?? "",
+      logoDesign: draft?.logoDesign ?? "",
+      updatedAt: Date.now(),
+    });
+
+    const submission = this.session.broadcastSubmissions.get(sessionId);
+    if (submission) {
+      submission.selectedMedia = media;
+    }
+
+    this.session.gifSelectedPlayers.add(sessionId);
+    this.send(sessionId, "gif_select_confirmed", { accepted: true });
+    this.broadcast("gif_select_update", {
+      selected: this.session.gifSelectedPlayers.size,
+      total: this._activePlayers().length,
+    });
+  }
+
+  private _handleLogoSubmit(sessionId: string, input: NewsBroadcastInput): void {
+    if (!this.session || this.session.stage !== "logo_creation") return;
+    if (this.session.logoSubmittedPlayers.has(sessionId)) {
+      this.send(sessionId, "logo_submit_confirmed", { accepted: false, reason: "Already submitted." });
+      return;
+    }
+
+    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : "";
+    const draft = this.session.broadcastDrafts.get(sessionId);
+    this.session.broadcastDrafts.set(sessionId, {
+      media: draft?.media ?? null,
+      script: draft?.script ?? "",
+      voicePresetId: draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID,
+      voiceLabel: draft?.voiceLabel ?? "",
+      logoDesign,
+      updatedAt: Date.now(),
+    });
+
+    const submission = this.session.broadcastSubmissions.get(sessionId);
+    if (submission) {
+      submission.logoDesign = logoDesign;
+    }
+
+    this.session.logoSubmittedPlayers.add(sessionId);
+    this.session.submittedPlayers.add(sessionId);
+    this.send(sessionId, "logo_submit_confirmed", { accepted: true });
+    this.broadcast("logo_submit_update", {
+      submitted: this.session.logoSubmittedPlayers.size,
+      total: this._activePlayers().length,
+    });
+  }
+
+  private async _finalizeScriptVoiceSubmissions(players: ReturnType<NewsBroadcastGame["_activePlayers"]>): Promise<void> {
+    if (!this.session) return;
+    for (const player of players) {
+      if (this.session.scriptVoiceSubmitted.has(player.id)) continue;
+      const draft = this.session.broadcastDrafts.get(player.id);
+      const script = normalizeScript(draft?.script ?? "") ?? buildFallbackScript(this.session.assignedHeadlines.get(player.id) ?? "Breaking update incoming.");
+      const resolvedVoice = this._resolveVoiceOption(draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID);
+
+      this.session.broadcastDrafts.set(player.id, {
+        media: draft?.media ?? null,
+        script,
+        voicePresetId: resolvedVoice.id,
+        voiceLabel: resolvedVoice.label,
+        logoDesign: draft?.logoDesign ?? "",
+        updatedAt: Date.now(),
+      });
+
+      this.session.scriptVoiceSubmitted.add(player.id);
+
+      // Create partial submission with fallback script
+      const assignedHeadline = this.session.assignedHeadlines.get(player.id) ?? "Breaking update incoming.";
+      const spokenText = normalizeSpokenText(script);
+      const submission: BroadcastSubmission = {
+        playerId: player.id,
+        playerName: player.name,
+        assignedHeadline,
+        script,
+        spokenText,
+        voicePresetId: resolvedVoice.id,
+        voiceLabel: resolvedVoice.label,
+        selectedMedia: draft?.media ?? FALLBACK_MEDIA_ENTRY,
+        logoDesign: draft?.logoDesign ?? "",
+        estimatedSpeechMs: estimateSpeechMs(spokenText),
+        submittedAt: Date.now(),
+        ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
+      };
+
+      this.session.broadcastSubmissions.set(player.id, submission);
+
+      if (isTTSEnabled()) {
+        const job = await createTTSJob({
+          roomId: this.room.roomId,
+          roundId: this.session.roundId,
+          playerId: submission.playerId,
+          locale: "en",
+          voicePresetId: submission.voicePresetId,
+          text: normalizeSpokenText(submission.spokenText),
+          priority: "background",
+          estimatedSpeechMs: submission.estimatedSpeechMs,
+        });
+        if (job) {
+          submission.ttsJobId = job.id;
+          submission.ttsStatus = job.status;
+          submission.audioDurationMs = job.durationMs;
+          submission.audioMimeType = job.mimeType;
+        } else {
+          submission.ttsStatus = "failed_final";
+        }
+      }
+    }
   }
 
   private async _finalizeBroadcastSubmissions(players: ReturnType<NewsBroadcastGame["_activePlayers"]>): Promise<void> {
     if (!this.session) return;
     for (const player of players) {
-      if (this.session.submittedPlayers.has(player.id)) continue;
-      const submission = this._buildSubmissionFromInput(player.id, {}, true);
-      if (!submission) continue;
-      await this._acceptSubmission(player.id, submission, false);
+      // Ensure GIF fallback
+      if (!this.session.gifSelectedPlayers.has(player.id)) {
+        const draft = this.session.broadcastDrafts.get(player.id);
+        const media = draft?.media ?? FALLBACK_MEDIA_ENTRY;
+        this.session.broadcastDrafts.set(player.id, {
+          media,
+          script: draft?.script ?? "",
+          voicePresetId: draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID,
+          voiceLabel: draft?.voiceLabel ?? "",
+          logoDesign: draft?.logoDesign ?? "",
+          updatedAt: Date.now(),
+        });
+        const submission = this.session.broadcastSubmissions.get(player.id);
+        if (submission) {
+          submission.selectedMedia = media;
+        }
+        this.session.gifSelectedPlayers.add(player.id);
+      }
+
+      // Ensure logo fallback
+      if (!this.session.logoSubmittedPlayers.has(player.id)) {
+        const draft = this.session.broadcastDrafts.get(player.id);
+        this.session.broadcastDrafts.set(player.id, {
+          media: draft?.media ?? null,
+          script: draft?.script ?? "",
+          voicePresetId: draft?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID,
+          voiceLabel: draft?.voiceLabel ?? "",
+          logoDesign: draft?.logoDesign ?? "",
+          updatedAt: Date.now(),
+        });
+        const submission = this.session.broadcastSubmissions.get(player.id);
+        if (submission) {
+          submission.logoDesign = draft?.logoDesign ?? "";
+        }
+        this.session.logoSubmittedPlayers.add(player.id);
+        this.session.submittedPlayers.add(player.id);
+      }
     }
   }
 
@@ -527,6 +807,8 @@ export default class NewsBroadcastGame extends BaseGame {
       spokenText = trimTextToSpeechBudget(spokenText);
     }
 
+    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : draft?.logoDesign ?? "";
+
     return {
       playerId: sessionId,
       playerName: player.name,
@@ -536,6 +818,7 @@ export default class NewsBroadcastGame extends BaseGame {
       voicePresetId: resolvedVoice.id,
       voiceLabel: resolvedVoice.label,
       selectedMedia: media,
+      logoDesign,
       estimatedSpeechMs: estimateSpeechMs(spokenText),
       submittedAt: Date.now(),
       ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
@@ -683,9 +966,15 @@ export default class NewsBroadcastGame extends BaseGame {
       voices: this.session.voices,
       assignedHeadline: this.session.assignedHeadlines.get(sessionId) ?? null,
       headlineSubmitted: this.session.headlineSubmissions.has(sessionId),
+      scriptVoiceSubmitted: this.session.scriptVoiceSubmitted.has(sessionId),
+      gifSelected: this.session.gifSelectedPlayers.has(sessionId),
+      logoSubmitted: this.session.logoSubmittedPlayers.has(sessionId),
       broadcastSubmitted: this.session.submittedPlayers.has(sessionId),
       submission,
       submittedCount: this.session.submittedPlayers.size,
+      scriptVoiceCount: this.session.scriptVoiceSubmitted.size,
+      gifSelectedCount: this.session.gifSelectedPlayers.size,
+      logoSubmittedCount: this.session.logoSubmittedPlayers.size,
       totalPlayers: this._activePlayers().length,
       currentPresentationIndex: this.session.currentPresentationIndex,
       presentationOrder: this.session.presentationOrder,

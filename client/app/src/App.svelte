@@ -105,7 +105,9 @@
     | "entertainer"
     | "ouroboros"
     | "two_finger_johnny"
-    | "pinball_spring_160";
+    | "pinball_spring_160"
+    | "hyperfun"
+    | "celebration";
 
   const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string; loop?: boolean }> = {
     cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
@@ -121,6 +123,8 @@
     ouroboros:      { file: "/ouroboros.mp3",        volume: 0.36, attribution: '"Ouroboros" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     two_finger_johnny: { file: "/two_finger_johnny.mp3", volume: 0.35, attribution: '"Two Finger Johnny" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
     pinball_spring_160: { file: "/pinball_spring_160.mp3", volume: 0.35, attribution: '"Pinball Spring 160" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    hyperfun:       { file: "/hyperfun.mp3",       volume: 0.35, attribution: '"Hyperfun" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
+    celebration:    { file: "/celebration.mp3",    volume: 0.35, attribution: '"Celebration" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
   };
 
   let musicAudio: HTMLAudioElement | null = null;
@@ -139,7 +143,8 @@
     "registry-03-tap-speed":             "pinball_spring_160",
     "registry-19-shave-the-yak":        "fart",
     "registry-25-lowball-marketplace":   "zazie",
-    "registry-28-wanted-ad":             "entertainer",
+    "registry-28-wanted-ad":             "hyperfun",
+    "registry-45-news-broadcast":        "celebration",
     "registry-04-escape-maze":           "pixelland",
     "registry-17-fire-match-blow-shake": "vivacity",
     "registry-14-dont-get-caught":       "le_grand_chase",
@@ -166,6 +171,12 @@
     if (state.selectedGame === "registry-26-audio-overlay") {
       if (phase === "instructions" || phase === "countdown") {
         return "two_finger_johnny";
+      }
+      return phase === "in_round" ? viewerTrackOverride : null;
+    }
+    if (state.selectedGame === "registry-45-news-broadcast") {
+      if (phase === "instructions" || phase === "countdown") {
+        return "celebration";
       }
       return phase === "in_round" ? viewerTrackOverride : null;
     }
