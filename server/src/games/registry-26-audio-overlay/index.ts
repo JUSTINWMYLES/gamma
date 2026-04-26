@@ -850,7 +850,7 @@ export default class AudioOverlayGame extends BaseGame {
           this.session.recordingResolve = null;
         }
         resolve();
-      }, timeoutMs + 2000); // +2s grace for network
+      }, timeoutMs + 6000); // +6s grace for encoding/network jitter on slower phones
     });
   }
 

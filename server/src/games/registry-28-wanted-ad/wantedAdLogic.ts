@@ -3,7 +3,7 @@ export const MAX_PLAYERS = 12;
 
 export const CHARACTER_CREATION_DURATION_SECS = 120;
 export const POSTER_SUBMISSION_DURATION_SECS = 120;
-export const POSTER_REVEAL_MS = 10_000;
+export const POSTER_REVEAL_MS = 15_000;
 export const VOTING_DURATION_SECS = 20;
 export const RESULTS_DISPLAY_MS = 15_000;
 

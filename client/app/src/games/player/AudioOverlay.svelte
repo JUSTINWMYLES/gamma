@@ -18,7 +18,7 @@
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
-  import { getCachedMicStream } from "../../lib/permissions";
+  import { getCachedMicStream, cacheMicStream } from "../../lib/permissions";
 
   export let room: Room;
   export let state: RoomState;
@@ -187,7 +187,11 @@
     try {
       // Prefer the cached stream from the lobby consent flow to avoid
       // triggering a second browser permission prompt mid-game.
-      mediaStream = getCachedMicStream() ?? await navigator.mediaDevices.getUserMedia({ audio: true });
+      const cached = getCachedMicStream();
+      mediaStream = cached ?? await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!cached && mediaStream) {
+        cacheMicStream(mediaStream);
+      }
       micAllowed = true;
       micError = "";
       return true;
@@ -216,6 +220,12 @@
 
   function stopMediaStream() {
     if (!mediaStream) return;
+    // Keep the cached consent stream alive so the browser does not prompt again.
+    if (getCachedMicStream() === mediaStream) {
+      mediaStream = null;
+      micAllowed = false;
+      return;
+    }
     mediaStream.getTracks().forEach((track) => track.stop());
     mediaStream = null;
     micAllowed = false;
@@ -276,12 +286,13 @@
       const blob = new Blob(audioChunks, { type: mimeType });
       revokeAudioPreview();
       audioPreviewUrl = URL.createObjectURL(blob);
-      audioBase64 = await blobToBase64(blob);
-      stopMediaStream();
-
-      if (recordingTimeLeft <= 0 && !recordingSubmitted) {
+      const encoded = await blobToBase64(blob);
+      audioBase64 = encoded;
+      // Auto-submit as soon as encoding finishes so late-turn races don't drop takes.
+      if (!recordingSubmitted && encoded) {
         submitRecording();
       }
+      stopMediaStream();
     };
 
     mediaRecorder.start(100);

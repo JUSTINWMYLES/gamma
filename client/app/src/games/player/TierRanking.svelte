@@ -245,7 +245,7 @@
   };
 </script>
 
-<div class="flex-1 flex flex-col gap-4 p-4 overflow-y-auto" data-testid="tier-ranking">
+<div class="flex-1 flex flex-col gap-4 overflow-y-auto rounded-[28px] border border-slate-800 bg-[#0c0d14]/90 p-4" data-testid="tier-ranking">
   {#if roundSkipped}
     <div class="text-center space-y-3 mt-8">
       <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>
@@ -415,7 +415,7 @@
     <!-- ── Results ────────────────────────────────────────────── -->
     <div class="space-y-3">
       <div class="text-center space-y-1">
-        <p class="text-xs text-gray-500 uppercase tracking-widest">Results</p>
+        <p class="text-xs text-gray-300 uppercase tracking-widest">Results</p>
         <p class="font-bold text-gray-200">{resultCategory}</p>
       </div>
 
@@ -435,7 +435,7 @@
                 {tier}
               </span>
             </div>
-            <div class="flex gap-1 text-xs text-gray-500">
+            <div class="flex gap-1 text-xs text-gray-300">
               {#each TIERS as t}
                 <span class="{t === tier ? 'text-white font-bold' : ''}">{t}:{voteCounts[t]}</span>
               {/each}
@@ -450,7 +450,7 @@
       </div>
 
       <div class="text-center mt-4">
-        <p class="text-sm text-gray-500">Your score this round:</p>
+        <p class="text-sm text-gray-300">Your score this round:</p>
         <p class="text-4xl font-black {myRoundScore > 0 ? 'text-yellow-400' : 'text-gray-400'}">
           +{myRoundScore}
         </p>

@@ -315,7 +315,7 @@
   $: myPosterResult = me ? resultPosters.find((poster) => poster.authorId === me.id) ?? null : null;
 </script>
 
-<div class="flex-1 flex flex-col gap-4 p-4 overflow-y-auto" data-testid="wanted-ad-player">
+<div class="flex-1 flex flex-col gap-4 p-4 overflow-y-auto rounded-[28px] border border-amber-900/40 bg-[#160b06]/85" data-testid="wanted-ad-player">
   {#if roundSkipped}
     <div class="text-center space-y-3 mt-8">
       <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>
@@ -504,11 +504,11 @@
         {/if}
       </div>
 
-      <div class="grid gap-4">
+      <div class="grid gap-4 justify-items-center">
         {#each votingPosters as poster}
           <button
             class:selected={selectedVoteAuthorId === poster.authorId}
-            class="rounded-[28px] border border-white/10 bg-transparent p-0 text-left transition-transform hover:-translate-y-1 disabled:opacity-70"
+            class="w-full max-w-[340px] rounded-[28px] border border-white/10 bg-transparent p-0 text-left transition-transform hover:-translate-y-1 disabled:opacity-70"
             on:click={() => selectVote(poster.authorId)}
             disabled={voteSubmitted}
           >

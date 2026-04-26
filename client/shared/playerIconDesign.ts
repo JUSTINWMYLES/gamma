@@ -39,8 +39,10 @@ export const DEFAULT_BRUSH_COLOR = "#ffffff";
 export const DEFAULT_TEXT_COLOR = "#ffffff";
 export const DEFAULT_STICKER_SIZE = 24;
 export const DEFAULT_TEXT_SIZE = 24;
-export const MAX_ICON_STICKERS = 12;
+export const MAX_ICON_STICKERS = 20;
 export const ICON_VIEWBOX_SIZE = 100;
+export const MAX_ICON_STROKES = 256;
+export const MAX_POINTS_PER_STROKE = 2048;
 
 // Saved brush sizes were tuned against the editor preview's 100x100 SVG.
 // Keep the same scale everywhere so previously drawn icons still match what
@@ -134,11 +136,11 @@ function sanitizeIconDesign(input: Partial<IconDesign> | null | undefined): Icon
                 x: clamp(point?.x ?? 50, 0, 100),
                 y: clamp(point?.y ?? 50, 0, 100),
               }))
-              .slice(0, 512)
+              .slice(0, MAX_POINTS_PER_STROKE)
           : [],
       }))
       .filter((stroke) => stroke.points.length > 0)
-      .slice(0, 64);
+      .slice(0, MAX_ICON_STROKES);
   }
 
   if (Array.isArray(input?.stickers)) {

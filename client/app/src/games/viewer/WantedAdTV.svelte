@@ -26,6 +26,8 @@
   let votingPosters: PosterData[] = [];
   let votesIn = 0;
   let totalVoters = 0;
+  let votingFeaturedIndex = 0;
+  let votingRotateTimer: ReturnType<typeof setInterval> | null = null;
 
   let resultPosters: PosterData[] = [];
   let winnerAuthorIds: string[] = [];
@@ -49,6 +51,14 @@
       clearInterval(timerInterval);
       timerInterval = null;
     }
+  }
+
+  function clearVotingRotation() {
+    if (votingRotateTimer) {
+      clearInterval(votingRotateTimer);
+      votingRotateTimer = null;
+    }
+    votingFeaturedIndex = 0;
   }
 
   function onCharacterCreationStart(data: { totalPlayers: number; durationMs: number; serverTimestamp: number }) {
@@ -81,6 +91,7 @@
 
   function onRevealStart(data: { totalPosters: number }) {
     clearTimer();
+    clearVotingRotation();
     subPhase = "reveal";
     revealPoster = null;
     revealIndex = 0;
@@ -96,11 +107,19 @@
   }
 
   function onVotingStart(data: { posters: PosterData[]; durationMs: number; serverTimestamp: number; totalVoters: number }) {
+    clearVotingRotation();
     subPhase = "voting";
     votingPosters = data.posters;
     votesIn = 0;
     totalVoters = data.totalVoters;
     startTimerFromEnd(data.serverTimestamp + data.durationMs);
+
+    if (votingPosters.length > 1) {
+      const stepMs = Math.max(2500, Math.min(6000, Math.floor(data.durationMs / votingPosters.length)));
+      votingRotateTimer = setInterval(() => {
+        votingFeaturedIndex = (votingFeaturedIndex + 1) % votingPosters.length;
+      }, stepMs);
+    }
   }
 
   function onVoteUpdate(data: { votesIn: number; totalVoters: number }) {
@@ -110,6 +129,7 @@
 
   function onRoundResult(data: { posters: PosterData[]; winnerAuthorIds: string[]; scores: Record<string, number>; totalVotes: number }) {
     clearTimer();
+    clearVotingRotation();
     subPhase = "result";
     resultPosters = data.posters;
     winnerAuthorIds = data.winnerAuthorIds;
@@ -119,6 +139,7 @@
 
   function onRoundSkipped(data: { reason: string }) {
     clearTimer();
+    clearVotingRotation();
     roundSkipped = true;
     skipReason = data.reason;
   }
@@ -138,11 +159,13 @@
 
   onDestroy(() => {
     clearTimer();
+    clearVotingRotation();
   });
 
   $: timerDisplay = String(Math.max(0, Math.ceil(timeLeft))).padStart(2, "0");
   $: playerCards = [...state.players.values()];
   $: leaderboard = [...state.players.values()].sort((a, b) => (roundScores[b.id] ?? b.score) - (roundScores[a.id] ?? a.score));
+  $: featuredVotingPoster = votingPosters.length > 0 ? votingPosters[Math.min(votingFeaturedIndex, votingPosters.length - 1)] : null;
 </script>
 
 <div class="wanted-tv-shell" data-testid="wanted-ad-tv">
@@ -169,7 +192,7 @@
           <p class="text-xl text-red-50/80">Everyone is drawing a fresh frontier character. Once the sheriff has enough new faces, the posters get reassigned so nobody writes their own outlaw.</p>
         </div>
         <div class="text-right shrink-0">
-          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-yellow-300">{timerDisplay}</p>
           <p class="text-sm uppercase tracking-[0.3em] text-red-200/60">seconds left</p>
         </div>
       </div>
@@ -217,7 +240,7 @@
           <p class="text-xl text-amber-50/80">Players received someone else's new outlaw. They keep the portrait and description, then write the condition, bounty text, and reason the town wants them caught.</p>
         </div>
         <div class="text-right shrink-0">
-          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-yellow-300">{timerDisplay}</p>
           <p class="text-sm uppercase tracking-[0.3em] text-amber-200/60">seconds left</p>
         </div>
       </div>
@@ -262,7 +285,7 @@
         <p class="text-lg uppercase tracking-[0.4em] text-amber-200/70">Poster Reveal</p>
         <h2 class="text-6xl font-black text-amber-100 tracking-[0.15em]">Wanted Wall</h2>
         <p class="text-amber-50/80 text-xl">Each finished poster gets the full spotlight before the town votes.</p>
-        <p class:animate-pulse={timeLeft < 4} class="min-w-[3ch] text-left text-8xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
+        <p class:animate-pulse={timeLeft < 4} class="min-w-[3ch] text-left text-8xl font-black font-mono tabular-nums text-yellow-300">{timerDisplay}</p>
         <p class="text-xl text-amber-200/70">Poster {revealIndex} of {revealTotal}</p>
       </div>
 
@@ -288,7 +311,7 @@
           <p class="text-xl text-fuchsia-50/80">Players vote on the funniest, most convincing wanted ad.</p>
         </div>
         <div class="text-right shrink-0">
-          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-white">{timerDisplay}</p>
+          <p class:animate-pulse={timeLeft < 10} class="min-w-[3ch] text-right text-7xl font-black font-mono tabular-nums text-yellow-300">{timerDisplay}</p>
           <p class="text-sm uppercase tracking-[0.3em] text-fuchsia-200/60">seconds left</p>
         </div>
       </div>
@@ -298,15 +321,33 @@
         <span class="text-2xl font-black">{votesIn} / {totalVoters}</span>
       </div>
 
-      <div class="poster-grid">
-        {#each votingPosters as poster}
-          <WantedPosterCard
-            poster={poster}
-            compact
-            showAuthor
-            authorName={state.players.get(poster.authorId)?.name ?? "Unknown Deputy"}
-          />
-        {/each}
+      <div class="grid gap-6 xl:grid-cols-[1fr_0.9fr] items-start">
+        <div class="featured-poster-stage min-h-[28rem]">
+          {#if featuredVotingPoster}
+            <WantedPosterCard
+              poster={featuredVotingPoster}
+              showAuthor
+              authorName={state.players.get(featuredVotingPoster.authorId)?.name ?? "Unknown Deputy"}
+              featuredLabel={`Ballot ${votingFeaturedIndex + 1}/${votingPosters.length}`}
+              emphasis="showcase"
+            />
+          {/if}
+        </div>
+
+        <div class="rounded-[28px] border border-white/10 bg-black/25 p-5 space-y-3">
+          <p class="text-sm uppercase tracking-[0.3em] text-fuchsia-200/70">Voting queue</p>
+          <div class="space-y-2 max-h-[26rem] overflow-y-auto pr-1">
+            {#each votingPosters as poster, index}
+              <div class={`flex items-center gap-3 rounded-xl border px-3 py-2 ${index === votingFeaturedIndex ? "border-fuchsia-400/50 bg-fuchsia-900/25" : "border-white/10 bg-black/25"}`}>
+                <span class="text-xs font-black text-fuchsia-200/80 w-8">#{index + 1}</span>
+                <span class="flex-1 truncate text-white font-semibold">{state.players.get(poster.authorId)?.name ?? "Unknown Deputy"}</span>
+                {#if index === votingFeaturedIndex}
+                  <span class="text-[10px] uppercase tracking-[0.2em] text-fuchsia-200">On screen</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </div>
       </div>
     </div>
 

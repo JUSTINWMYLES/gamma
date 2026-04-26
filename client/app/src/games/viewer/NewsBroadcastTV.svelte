@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, createEventDispatcher } from "svelte";
   import type { Room } from "colyseus.js";
-  import type { RoomState } from "../../../../shared/types";
+  import type { PlayerState, RoomState } from "../../../../shared/types";
   import { getRoundProgressLabel } from "../../../../shared/types";
   import { getServerHttpBaseUrl } from "../../../../shared/colyseusClient";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
@@ -84,9 +84,34 @@
     voicePresetId: string;
     voiceLabel: string;
     selectedMedia: MediaEntry;
+    logoDesign?: string;
     estimatedSpeechMs: number;
     voteCount: number;
     isWinner: boolean;
+  }
+
+  function buildLogoPlayer(logoDesign: string, name: string): PlayerState {
+    return {
+      id: `news-logo-${name}`,
+      name,
+      score: 0,
+      isReady: false,
+      isConnected: true,
+      isEliminated: false,
+      bracketSeed: 0,
+      currentMatchOpponentId: "",
+      iconEmoji: "",
+      iconText: "",
+      iconBgColor: "",
+      iconDesign: logoDesign,
+      micPermission: "unknown",
+      motionPermission: "unknown",
+      x: 0,
+      y: 0,
+      isDetected: false,
+      detectionMeter: 0,
+      timesCaught: 0,
+    };
   }
 
   const FALLBACK_MEDIA: MediaEntry = {
@@ -411,7 +436,8 @@
       subPhase === "assignment_reveal" ||
       subPhase === "script_voice_submission" ||
       subPhase === "gif_selection" ||
-      subPhase === "logo_creation"
+      subPhase === "logo_creation" ||
+      subPhase === "buffering"
     )
       ? "celebration"
       : null;
@@ -668,7 +694,7 @@
                 <div class="flex items-center gap-4">
                   {#if currentPresentation.entry.logoDesign}
                     <div class="shrink-0">
-                      <PlayerIcon player={{ iconDesign: currentPresentation.entry.logoDesign }} size={56} />
+                      <PlayerIcon player={buildLogoPlayer(currentPresentation.entry.logoDesign, `${currentPresentation.entry.playerName} logo`)} size={56} />
                     </div>
                   {/if}
                   <div>
@@ -783,7 +809,12 @@
                   <div class="flex items-start justify-between gap-3">
                     <div>
                       <p class="text-xs uppercase tracking-[0.25em] text-slate-500">#{index + 1}</p>
-                      <h3 class="text-2xl font-black text-white">{entry.playerName}</h3>
+                      <div class="mt-1 flex items-center gap-3">
+                        {#if entry.logoDesign}
+                          <PlayerIcon player={buildLogoPlayer(entry.logoDesign, `${entry.playerName} logo`)} size={34} />
+                        {/if}
+                        <h3 class="text-2xl font-black text-white">{entry.playerName}</h3>
+                      </div>
                     </div>
                     <div class="text-right">
                       <p class="text-lg font-black text-white">{entry.voteCount} 🗳️</p>

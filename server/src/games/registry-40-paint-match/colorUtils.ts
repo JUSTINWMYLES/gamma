@@ -143,7 +143,7 @@ export function mixToRGB(mix: PaintMix): RGB {
  * Index order: [R0Y0B0, R1Y0B0, R0Y1B0, R1Y1B0, R0Y0B1, R1Y0B1, R0Y1B1, R1Y1B1]
  */
 const RYB_CUBE_R = [255, 255, 255, 255, 0, 128, 0, 0];
-const RYB_CUBE_G = [255, 0, 255, 128, 0, 0, 128, 0];
+const RYB_CUBE_G = [255, 0, 255, 128, 0, 0, 200, 0];
 const RYB_CUBE_B = [255, 0, 0, 0, 255, 128, 0, 0];
 
 /** Trilinear interpolation inside a unit cube. */
