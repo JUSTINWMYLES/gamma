@@ -21,6 +21,8 @@ import cors from "cors";
 import { createServer } from "http";
 import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
+import { RedisPresence } from "@colyseus/redis-presence";
+import { RedisDriver } from "@colyseus/redis-driver";
 import { GammaRoom } from "./rooms/GammaRoom";
 import { fetchTTSArtifact, isTTSEnabled } from "./games/registry-45-news-broadcast/ttsApiClient";
 
@@ -81,12 +83,25 @@ async function main() {
   const httpServer = createServer(app);
 
   // ── Colyseus WebSocket layer ────────────────────────────────────────────────
-  const gameServer = new Server({
+  const stateBackend = process.env.STATE_BACKEND ?? "memory";
+  const redisURL = process.env.REDIS_URL;
+
+  const serverOpts: ConstructorParameters<typeof Server>[0] = {
     transport: new WebSocketTransport({
       server: httpServer,
       maxPayload: 4 * 1024 * 1024, // 4 MB – accommodates large game state payloads
     }),
-  });
+  };
+
+  if (stateBackend === "redis" && redisURL) {
+    console.log(`[gamma] using Redis backend: ${redisURL}`);
+    serverOpts.presence = new RedisPresence(redisURL);
+    serverOpts.driver = new RedisDriver(redisURL);
+  } else {
+    console.log("[gamma] using in-memory backend (no Redis)");
+  }
+
+  const gameServer = new Server(serverOpts);
 
   /** Register all Colyseus rooms. Game plugins are loaded inside GammaRoom. */
   gameServer.define("gamma_room", GammaRoom);
