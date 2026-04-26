@@ -2,6 +2,13 @@
   import { onDestroy, onMount } from "svelte";
   import type { Room } from "colyseus.js";
   import type { PlayerState, RoomState } from "../../../../shared/types";
+  import IconDesignEditor from "../../components/IconDesignEditor.svelte";
+  import {
+    createEmptyIconDesign,
+    parseIconDesign,
+    serializeIconDesign,
+    type IconDesign,
+  } from "../../../../shared/playerIconDesign";
 
   export let room: Room;
   export let state: RoomState;
@@ -11,7 +18,9 @@
     | "waiting"
     | "headline_submission"
     | "assignment_reveal"
-    | "broadcast_creation"
+    | "script_voice_submission"
+    | "gif_selection"
+    | "logo_creation"
     | "buffering"
     | "presentation"
     | "voting"
@@ -48,6 +57,7 @@
     voicePresetId: string;
     voiceLabel: string;
     selectedMedia: MediaEntry;
+    logoDesign: string;
     estimatedSpeechMs: number;
     submittedAt?: number;
     ttsJobId?: string;
@@ -99,9 +109,15 @@
     voices: VoiceOption[];
     assignedHeadline: string | null;
     headlineSubmitted: boolean;
+    scriptVoiceSubmitted: boolean;
+    gifSelected: boolean;
+    logoSubmitted: boolean;
     broadcastSubmitted: boolean;
     submission: BroadcastSubmission | null;
     submittedCount: number;
+    scriptVoiceCount: number;
+    gifSelectedCount: number;
+    logoSubmittedCount: number;
     totalPlayers: number;
     currentPresentationIndex: number;
     presentationOrder: string[];
@@ -109,7 +125,7 @@
 
   const DEFAULT_VOICE_PRESET_ID = "anchor_classic_a";
   const MAX_HEADLINE_LENGTH = 90;
-  const MAX_SCRIPT_LENGTH = 350;
+  const MAX_SCRIPT_LENGTH = 150;
 
   const FALLBACK_MEDIA: MediaEntry = {
     provider: "gamma_builtin",
@@ -148,6 +164,18 @@
   let mediaSearchResults: MediaEntry[] = [];
   let isSearching = false;
   let lastDraftSignature = "";
+
+  let scriptVoiceSubmitted = false;
+  let scriptVoiceError = "";
+  let scriptVoiceTTSStatus = "";
+  let scriptVoiceEstimatedSpeechMs = 0;
+
+  let gifSelected = false;
+  let gifError = "";
+
+  let logoSubmitted = false;
+  let logoError = "";
+  let logoDesign: IconDesign = createEmptyIconDesign();
 
   let creationSubmitted = false;
   let creationLocked = false;
@@ -236,6 +264,15 @@
     mediaSearchResults = [];
     isSearching = false;
     lastDraftSignature = "";
+    scriptVoiceSubmitted = false;
+    scriptVoiceError = "";
+    scriptVoiceTTSStatus = "";
+    scriptVoiceEstimatedSpeechMs = 0;
+    gifSelected = false;
+    gifError = "";
+    logoSubmitted = false;
+    logoError = "";
+    logoDesign = createEmptyIconDesign();
     creationSubmitted = false;
     creationLocked = false;
     creationError = "";
@@ -271,7 +308,10 @@
   }
 
   function getGalleryUrl(media: MediaEntry): string {
-    return media.previewUrl || media.fallbackImageUrl || media.playbackUrl || FALLBACK_MEDIA.previewUrl;
+    if (isVideoMedia(media)) {
+      return media.playbackUrl || media.previewUrl || media.fallbackImageUrl || FALLBACK_MEDIA.previewUrl;
+    }
+    return media.fallbackImageUrl || media.previewUrl || media.playbackUrl || FALLBACK_MEDIA.previewUrl;
   }
 
   function selectMedia(media: MediaEntry) {
@@ -343,14 +383,32 @@
     }, 250);
   }
 
-  function submitBroadcast() {
-    if (!canSubmitBroadcast || creationSubmitted || creationLocked) return;
-    creationError = "";
+  function submitScriptVoice() {
+    if (!canSubmitScriptVoice || scriptVoiceSubmitted) return;
+    scriptVoiceError = "";
     room.send("game_input", {
-      action: "nb_submit_broadcast",
+      action: "nb_submit_script_voice",
       script: scriptInput,
       voicePresetId: selectedVoicePresetId,
-      media: selectedMedia ?? FALLBACK_MEDIA,
+    });
+  }
+
+  function selectGif(media: MediaEntry) {
+    if (gifSelected) return;
+    selectedMedia = media;
+    gifError = "";
+    room.send("game_input", {
+      action: "nb_select_gif",
+      media,
+    });
+  }
+
+  function submitLogo() {
+    if (logoSubmitted) return;
+    logoError = "";
+    room.send("game_input", {
+      action: "nb_submit_logo",
+      logoDesign: serializeIconDesign(logoDesign),
     });
   }
 
@@ -370,8 +428,9 @@
     scriptInput = submission.script;
     selectedVoicePresetId = submission.voicePresetId;
     selectedMedia = submission.selectedMedia ?? FALLBACK_MEDIA;
-    creationTTSStatus = submission.ttsStatus ?? creationTTSStatus;
-    creationEstimatedSpeechMs = submission.estimatedSpeechMs ?? creationEstimatedSpeechMs;
+    logoDesign = parseIconDesign(submission.logoDesign) ?? logoDesign;
+    scriptVoiceTTSStatus = submission.ttsStatus ?? scriptVoiceTTSStatus;
+    scriptVoiceEstimatedSpeechMs = submission.estimatedSpeechMs ?? scriptVoiceEstimatedSpeechMs;
   }
 
   function onHeadlineSubmissionStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
@@ -407,30 +466,104 @@
     startStageTimer(data.serverTimestamp, data.durationMs);
   }
 
-  function onBroadcastCreationStart(data: {
+  function onScriptVoiceSubmissionStart(data: {
     durationMs: number;
     serverTimestamp: number;
     voices: VoiceOption[];
     totalPlayers: number;
   }) {
-    subPhase = "broadcast_creation";
+    subPhase = "script_voice_submission";
     voices = data.voices ?? [];
     totalPlayers = data.totalPlayers;
     submittedCount = 0;
     scriptInput = "";
-    selectedMedia = FALLBACK_MEDIA;
+    scriptVoiceSubmitted = false;
+    scriptVoiceError = "";
+    scriptVoiceTTSStatus = "";
+    scriptVoiceEstimatedSpeechMs = 0;
+    const firstAvailableVoice = voices.find((voice) => voice.available);
+    selectedVoicePresetId = firstAvailableVoice?.id ?? DEFAULT_VOICE_PRESET_ID;
+    startStageTimer(data.serverTimestamp, data.durationMs);
+  }
+
+  function onScriptVoiceConfirmed(data: {
+    accepted: boolean;
+    reason?: string;
+    headline?: string;
+    ttsJobId?: string | null;
+    ttsStatus?: string;
+    estimatedSpeechMs?: number;
+  }) {
+    if (!data.accepted) {
+      scriptVoiceError = data.reason ?? "Could not submit script.";
+      return;
+    }
+    scriptVoiceSubmitted = true;
+    scriptVoiceError = "";
+    assignedHeadline = data.headline ?? assignedHeadline;
+    scriptVoiceTTSStatus = data.ttsStatus ?? scriptVoiceTTSStatus;
+    scriptVoiceEstimatedSpeechMs = data.estimatedSpeechMs ?? scriptVoiceEstimatedSpeechMs;
+  }
+
+  function onScriptVoiceUpdate(data: { submitted: number; total: number }) {
+    submittedCount = data.submitted;
+    totalPlayers = data.total;
+  }
+
+  function onGifSelectionStart(data: {
+    durationMs: number;
+    serverTimestamp: number;
+    totalPlayers: number;
+  }) {
+    subPhase = "gif_selection";
+    totalPlayers = data.totalPlayers;
+    gifSelected = false;
+    gifError = "";
     mediaSearchQuery = "";
     mediaSearchResults = [];
     isSearching = false;
-    creationSubmitted = false;
-    creationLocked = false;
-    creationError = "";
-    creationTTSStatus = "";
-    creationEstimatedSpeechMs = 0;
-    const firstAvailableVoice = voices.find((voice) => voice.available);
-    selectedVoicePresetId = firstAvailableVoice?.id ?? DEFAULT_VOICE_PRESET_ID;
-    lastDraftSignature = "";
     startStageTimer(data.serverTimestamp, data.durationMs);
+  }
+
+  function onGifSelectConfirmed(data: { accepted: boolean; reason?: string }) {
+    if (!data.accepted) {
+      gifError = data.reason ?? "Could not select GIF.";
+      return;
+    }
+    gifSelected = true;
+    gifError = "";
+  }
+
+  function onGifSelectUpdate(data: { selected: number; total: number }) {
+    submittedCount = data.selected;
+    totalPlayers = data.total;
+  }
+
+  function onLogoCreationStart(data: {
+    durationMs: number;
+    serverTimestamp: number;
+    totalPlayers: number;
+  }) {
+    subPhase = "logo_creation";
+    totalPlayers = data.totalPlayers;
+    logoSubmitted = false;
+    logoError = "";
+    logoDesign = createEmptyIconDesign();
+    startStageTimer(data.serverTimestamp, data.durationMs);
+  }
+
+  function onLogoSubmitConfirmed(data: { accepted: boolean; reason?: string }) {
+    if (!data.accepted) {
+      logoError = data.reason ?? "Could not submit logo.";
+      return;
+    }
+    logoSubmitted = true;
+    logoError = "";
+  }
+
+  function onLogoSubmitUpdate(data: { submitted: number; total: number }) {
+    submittedCount = data.submitted;
+    totalPlayers = data.total;
   }
 
   function onMediaSearchResults(data: { query: string; media: MediaEntry[] }) {
@@ -555,6 +688,9 @@
     voices = data.voices ?? voices;
     assignedHeadline = data.assignedHeadline ?? assignedHeadline;
     headlineSubmitted = Boolean(data.headlineSubmitted);
+    scriptVoiceSubmitted = Boolean(data.scriptVoiceSubmitted);
+    gifSelected = Boolean(data.gifSelected);
+    logoSubmitted = Boolean(data.logoSubmitted);
     creationSubmitted = Boolean(data.broadcastSubmitted);
     creationLocked = Boolean(data.broadcastSubmitted);
     submittedCount = data.submittedCount ?? submittedCount;
@@ -571,10 +707,16 @@
     room.onMessage("headline_submission_rejected", onHeadlineSubmissionRejected);
     room.onMessage("headline_assigned", onHeadlineAssigned);
     room.onMessage("headline_assignment_reveal", onHeadlineAssignmentReveal);
-    room.onMessage("broadcast_creation_start", onBroadcastCreationStart);
+    room.onMessage("script_voice_submission_start", onScriptVoiceSubmissionStart);
+    room.onMessage("script_voice_confirmed", onScriptVoiceConfirmed);
+    room.onMessage("script_voice_update", onScriptVoiceUpdate);
+    room.onMessage("gif_selection_start", onGifSelectionStart);
+    room.onMessage("gif_select_confirmed", onGifSelectConfirmed);
+    room.onMessage("gif_select_update", onGifSelectUpdate);
+    room.onMessage("logo_creation_start", onLogoCreationStart);
+    room.onMessage("logo_submit_confirmed", onLogoSubmitConfirmed);
+    room.onMessage("logo_submit_update", onLogoSubmitUpdate);
     room.onMessage("media_search_results", onMediaSearchResults);
-    room.onMessage("broadcast_submission_update", onBroadcastSubmissionUpdate);
-    room.onMessage("broadcast_submission_confirmed", onBroadcastSubmissionConfirmed);
     room.onMessage("broadcast_buffering_start", onBroadcastBufferingStart);
     room.onMessage("presentation_prepare", onPresentationPrepare);
     room.onMessage("presentation_start", onPresentationStart);
@@ -601,14 +743,9 @@
     if (fallbackVoice) selectedVoicePresetId = fallbackVoice.id;
   }
   $: scriptCharsLeft = Math.max(0, MAX_SCRIPT_LENGTH - scriptInput.length);
-  $: canSubmitBroadcast = Boolean(assignedHeadline) && Boolean(scriptInput.trim()) && Boolean(selectedVoice?.available);
+  $: canSubmitScriptVoice = Boolean(assignedHeadline) && Boolean(scriptInput.trim()) && Boolean(selectedVoice?.available);
   $: myResult = results?.entries.find((entry) => entry.playerId === me?.id) ?? null;
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
-  $: draftSignature = `${selectedMedia?.providerAssetId ?? ""}|${selectedVoicePresetId}|${scriptInput}`;
-  $: if (subPhase === "broadcast_creation" && !creationSubmitted && !creationLocked && draftSignature !== lastDraftSignature) {
-    lastDraftSignature = draftSignature;
-    queueDraftSync();
-  }
 </script>
 
 <div class="flex-1 flex w-full flex-col items-center justify-start gap-4 overflow-y-auto p-4 pb-24 sm:justify-center" data-testid="news-broadcast-player">
@@ -700,11 +837,11 @@
       </div>
     </div>
 
-  {:else if subPhase === "broadcast_creation"}
+  {:else if subPhase === "script_voice_submission"}
     <div class="w-full max-w-md space-y-4">
       <div class="text-center space-y-2">
-        <p class="text-xs uppercase tracking-[0.35em] text-fuchsia-300/80">Produce Your Segment</p>
-        <h2 class="text-2xl font-black text-white">Assemble the visual + anchor script</h2>
+        <p class="text-xs uppercase tracking-[0.35em] text-fuchsia-300/80">Write Your Script</p>
+        <h2 class="text-2xl font-black text-white">Script + Voice</h2>
         <p class="text-sm text-slate-400">{Math.ceil(timeLeft)}s remaining</p>
       </div>
 
@@ -715,11 +852,105 @@
 
       <div class="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
         <div class="flex items-center justify-between text-sm text-slate-300">
-          <span>Segments locked in</span>
+          <span>Scripts submitted</span>
           <span class="font-black text-white">{submittedCount} / {totalPlayers}</span>
         </div>
         <div class="h-3 overflow-hidden rounded-full bg-slate-800">
           <div class="h-full bg-fuchsia-500 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 space-y-4">
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Anchor script</p>
+            <span class={`text-xs ${scriptCharsLeft < 30 ? "text-amber-300" : "text-slate-500"}`}>{scriptInput.length}/{MAX_SCRIPT_LENGTH}</span>
+          </div>
+          <textarea
+            rows="4"
+            maxlength={MAX_SCRIPT_LENGTH}
+            bind:value={scriptInput}
+            disabled={scriptVoiceSubmitted}
+            class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none disabled:opacity-50"
+            placeholder="Good evening. Witnesses say the raccoon accepted the award before anyone realized it was not an employee..."
+          ></textarea>
+          <p class="text-xs text-slate-500">Write the line the anchor should read. Max {MAX_SCRIPT_LENGTH} characters.</p>
+        </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Anchor voice</p>
+            {#if selectedVoice}
+              <span class="text-xs text-slate-500">{selectedVoice.label}</span>
+            {/if}
+          </div>
+          <div class="space-y-2">
+            {#each voices as voice}
+              <button
+                type="button"
+                disabled={!voice.available || scriptVoiceSubmitted}
+                title={voice.available ? `${voice.label} — ${voice.tone}` : voice.availabilityReason ?? "Unavailable"}
+                class={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${voice.id === selectedVoicePresetId ? "border-fuchsia-400 bg-fuchsia-900/40" : voice.available ? "border-slate-600 bg-slate-900/80 active:border-fuchsia-500" : "border-slate-700 bg-slate-900/40 text-slate-500"} disabled:opacity-50`}
+                on:click={() => chooseVoice(voice)}
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class={`font-semibold ${voice.available ? "text-white" : "text-slate-400"}`}>{voice.label}</p>
+                    <p class={`text-xs ${voice.available ? "text-slate-300" : "text-slate-500"}`}>{voice.tone}</p>
+                  </div>
+                  {#if !voice.available}
+                    <span class="rounded-full border border-slate-600 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Soon</span>
+                  {:else if voice.id === selectedVoicePresetId}
+                    <span class="rounded-full border border-fuchsia-400/40 bg-fuchsia-900/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-200">Selected</span>
+                  {/if}
+                </div>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        {#if scriptVoiceSubmitted}
+          <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-4 space-y-1 text-sm text-emerald-100">
+            <p class="font-bold">Script submitted.</p>
+            {#if scriptVoiceTTSStatus}
+              <p class="text-emerald-200/80">TTS status: {scriptVoiceTTSStatus}</p>
+            {/if}
+            {#if scriptVoiceEstimatedSpeechMs > 0}
+              <p class="text-emerald-200/80">Estimated read time: {Math.max(1, Math.round(scriptVoiceEstimatedSpeechMs / 1000))}s</p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if scriptVoiceError}
+          <p class="text-sm text-red-400">{scriptVoiceError}</p>
+        {/if}
+
+        <button
+          type="button"
+          class={`w-full rounded-2xl py-3 font-bold transition-all ${canSubmitScriptVoice && !scriptVoiceSubmitted ? "bg-fuchsia-600 text-white active:scale-[0.98] active:bg-fuchsia-500" : "bg-slate-800 text-slate-600"}`}
+          disabled={!canSubmitScriptVoice || scriptVoiceSubmitted}
+          on:click={submitScriptVoice}
+        >
+          {scriptVoiceSubmitted ? "Script Locked" : "Submit Script + Voice"}
+        </button>
+      </div>
+    </div>
+
+  {:else if subPhase === "gif_selection"}
+    <div class="w-full max-w-md space-y-4">
+      <div class="text-center space-y-2">
+        <p class="text-xs uppercase tracking-[0.35em] text-sky-300/80">Select Visual</p>
+        <h2 class="text-2xl font-black text-white">Pick a GIF</h2>
+        <p class="text-sm text-slate-400">{Math.ceil(timeLeft)}s remaining</p>
+      </div>
+
+      <div class="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
+        <div class="flex items-center justify-between text-sm text-slate-300">
+          <span>Visuals selected</span>
+          <span class="font-black text-white">{submittedCount} / {totalPlayers}</span>
+        </div>
+        <div class="h-3 overflow-hidden rounded-full bg-slate-800">
+          <div class="h-full bg-sky-500 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
         </div>
       </div>
 
@@ -736,17 +967,17 @@
               type="text"
               bind:value={mediaSearchQuery}
               on:input={onSearchInput}
+              disabled={gifSelected}
               placeholder="raccoon mayor, exploding cake, penguin traffic..."
-              class="flex-1 rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-white placeholder-slate-400 focus:border-sky-500 focus:outline-none"
+              class="flex-1 rounded-2xl border border-slate-600 bg-slate-800 px-4 py-3 text-white placeholder-slate-400 focus:border-sky-500 focus:outline-none disabled:opacity-50"
             />
             <button
               type="button"
               class={`rounded-2xl px-4 py-3 font-bold ${mediaSearchQuery.trim().length >= 2 ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-700 text-slate-400"}`}
-              disabled={mediaSearchQuery.trim().length < 2}
+              disabled={mediaSearchQuery.trim().length < 2 || gifSelected}
               on:click={runMediaSearch}
             >Search</button>
           </div>
-          <p class="text-xs text-slate-400">Searches need at least 2 characters.</p>
         </div>
 
         {#if selectedMedia && selectedMedia.providerAssetId !== FALLBACK_MEDIA.providerAssetId}
@@ -782,8 +1013,9 @@
               {#each mediaSearchResults as media}
                 <button
                   type="button"
-                  class={`overflow-hidden rounded-2xl border text-left transition-colors ${selectedMedia?.providerAssetId === media.providerAssetId ? "border-sky-400 bg-sky-900/40" : "border-slate-700 bg-slate-900/80 active:border-sky-500"}`}
-                  on:click={() => selectMedia(media)}
+                  disabled={gifSelected}
+                  class={`overflow-hidden rounded-2xl border text-left transition-colors ${selectedMedia?.providerAssetId === media.providerAssetId ? "border-sky-400 bg-sky-900/40" : "border-slate-700 bg-slate-900/80 active:border-sky-500"} disabled:opacity-50`}
+                  on:click={() => selectGif(media)}
                 >
                   {#if isVideoMedia(media)}
                     <video class="h-24 w-full object-cover" src={getGalleryUrl(media)} autoplay muted loop playsinline></video>
@@ -792,7 +1024,6 @@
                   {/if}
                   <div class="p-3">
                     <p class="text-sm font-semibold text-white">{media.label}</p>
-                    <p class="mt-1 text-[11px] text-slate-400">{media.mimeType}</p>
                   </div>
                 </button>
               {/each}
@@ -800,79 +1031,65 @@
           {/if}
         </div>
 
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Anchor voice</p>
-            {#if selectedVoice}
-              <span class="text-xs text-slate-500">{selectedVoice.label}</span>
-            {/if}
-          </div>
-          <div class="space-y-2">
-            {#each voices as voice}
-              <button
-                type="button"
-                disabled={!voice.available}
-                title={voice.available ? `${voice.label} — ${voice.tone}` : voice.availabilityReason ?? "Unavailable"}
-                class={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${voice.id === selectedVoicePresetId ? "border-fuchsia-400 bg-fuchsia-900/40" : voice.available ? "border-slate-600 bg-slate-900/80 active:border-fuchsia-500" : "border-slate-700 bg-slate-900/40 text-slate-500"}`}
-                on:click={() => chooseVoice(voice)}
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <div>
-                    <p class={`font-semibold ${voice.available ? "text-white" : "text-slate-400"}`}>{voice.label}</p>
-                    <p class={`text-xs ${voice.available ? "text-slate-300" : "text-slate-500"}`}>{voice.tone}</p>
-                  </div>
-                  {#if !voice.available}
-                    <span class="rounded-full border border-slate-600 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Soon</span>
-                  {:else if voice.id === selectedVoicePresetId}
-                    <span class="rounded-full border border-fuchsia-400/40 bg-fuchsia-900/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-fuchsia-200">Selected</span>
-                  {/if}
-                </div>
-                {#if !voice.available && voice.availabilityReason}
-                  <p class="mt-2 text-[11px] text-slate-500">{voice.availabilityReason}</p>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Anchor script</p>
-            <span class={`text-xs ${scriptCharsLeft < 40 ? "text-amber-300" : "text-slate-500"}`}>{scriptInput.length}/{MAX_SCRIPT_LENGTH}</span>
-          </div>
-          <textarea
-            rows="5"
-            maxlength={MAX_SCRIPT_LENGTH}
-            bind:value={scriptInput}
-            class="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-white placeholder-slate-500 focus:border-fuchsia-500 focus:outline-none"
-            placeholder="Good evening. Witnesses say the raccoon accepted the award before anyone realized it was not an employee..."
-          ></textarea>
-          <p class="text-xs text-slate-500">Write the line the anchor should read over the clip.</p>
-        </div>
-
-        {#if creationSubmitted}
-          <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-4 space-y-1 text-sm text-emerald-100">
-            <p class="font-bold">Segment submitted{creationLocked ? " and locked." : "."}</p>
-            {#if creationTTSStatus}
-              <p class="text-emerald-200/80">TTS status: {creationTTSStatus}</p>
-            {/if}
-            {#if creationEstimatedSpeechMs > 0}
-              <p class="text-emerald-200/80">Estimated read time: {Math.max(1, Math.round(creationEstimatedSpeechMs / 1000))}s</p>
-            {/if}
+        {#if gifSelected}
+          <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-4 text-sm text-emerald-100">
+            <p class="font-bold">Visual selected.</p>
           </div>
         {/if}
 
-        {#if creationError}
-          <p class="text-sm text-red-400">{creationError}</p>
+        {#if gifError}
+          <p class="text-sm text-red-400">{gifError}</p>
+        {/if}
+      </div>
+    </div>
+
+  {:else if subPhase === "logo_creation"}
+    <div class="w-full max-w-md space-y-4">
+      <div class="text-center space-y-2">
+        <p class="text-xs uppercase tracking-[0.35em] text-violet-300/80">Brand Your Broadcast</p>
+        <h2 class="text-2xl font-black text-white">News Company Logo</h2>
+        <p class="text-sm text-slate-400">{Math.ceil(timeLeft)}s remaining</p>
+      </div>
+
+      <div class="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">
+        <div class="flex items-center justify-between text-sm text-slate-300">
+          <span>Logos submitted</span>
+          <span class="font-black text-white">{submittedCount} / {totalPlayers}</span>
+        </div>
+        <div class="h-3 overflow-hidden rounded-full bg-slate-800">
+          <div class="h-full bg-violet-500 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-800 bg-slate-900/80 p-4 space-y-4">
+        <div class="space-y-2">
+          <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Design your logo</p>
+          <div class="rounded-2xl border border-slate-700 bg-slate-900/90 p-4">
+            <IconDesignEditor
+              bind:design={logoDesign}
+              previewSize={120}
+              disabled={logoSubmitted}
+            />
+          </div>
+        </div>
+
+        {#if logoSubmitted}
+          <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-4 text-sm text-emerald-100">
+            <p class="font-bold">Logo submitted.</p>
+          </div>
+        {/if}
+
+        {#if logoError}
+          <p class="text-sm text-red-400">{logoError}</p>
         {/if}
 
         <button
           type="button"
-          class={`w-full rounded-2xl py-3 font-bold transition-all ${canSubmitBroadcast && !creationSubmitted ? "bg-fuchsia-600 text-white active:scale-[0.98] active:bg-fuchsia-500" : "bg-slate-800 text-slate-600"}`}
-          disabled={!canSubmitBroadcast || creationSubmitted}
-          on:click={submitBroadcast}
+          class={`w-full rounded-2xl py-3 font-bold transition-all ${!logoSubmitted ? "bg-violet-600 text-white active:scale-[0.98] active:bg-violet-500" : "bg-slate-800 text-slate-600"}`}
+          disabled={logoSubmitted}
+          on:click={submitLogo}
         >
-          {creationSubmitted ? "Segment Locked" : "Submit Segment"}
+          {logoSubmitted ? "Logo Locked" : "Submit Logo"}
         </button>
       </div>
     </div>

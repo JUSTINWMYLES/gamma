@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, createEventDispatcher } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
   import { getRoundProgressLabel } from "../../../../shared/types";
   import { getServerHttpBaseUrl } from "../../../../shared/colyseusClient";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
+
+  const dispatch = createEventDispatcher<{
+    musictrackchange: { trackId: "celebration" | null };
+  }>();
 
   export let room: Room;
   export let state: RoomState;
@@ -13,7 +17,9 @@
     | "waiting"
     | "headline_submission"
     | "assignment_reveal"
-    | "broadcast_creation"
+    | "script_voice_submission"
+    | "gif_selection"
+    | "logo_creation"
     | "buffering"
     | "presentation"
     | "voting"
@@ -56,6 +62,7 @@
     voicePresetId: string;
     voiceLabel: string;
     selectedMedia: MediaEntry;
+    logoDesign: string;
     estimatedSpeechMs: number;
     artifactJobId: string | null;
     artifactReady: boolean;
@@ -240,15 +247,41 @@
     startTimer(data.serverTimestamp, data.durationMs);
   }
 
-  function onBroadcastCreationStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
+  function onScriptVoiceSubmissionStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
     stopPresentationAudio();
-    subPhase = "broadcast_creation";
+    subPhase = "script_voice_submission";
     submittedCount = 0;
     totalPlayers = data.totalPlayers;
     startTimer(data.serverTimestamp, data.durationMs);
   }
 
-  function onBroadcastSubmissionUpdate(data: { submitted: number; total: number }) {
+  function onScriptVoiceUpdate(data: { submitted: number; total: number }) {
+    submittedCount = data.submitted;
+    totalPlayers = data.total;
+  }
+
+  function onGifSelectionStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
+    stopPresentationAudio();
+    subPhase = "gif_selection";
+    submittedCount = 0;
+    totalPlayers = data.totalPlayers;
+    startTimer(data.serverTimestamp, data.durationMs);
+  }
+
+  function onGifSelectUpdate(data: { selected: number; total: number }) {
+    submittedCount = data.selected;
+    totalPlayers = data.total;
+  }
+
+  function onLogoCreationStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
+    stopPresentationAudio();
+    subPhase = "logo_creation";
+    submittedCount = 0;
+    totalPlayers = data.totalPlayers;
+    startTimer(data.serverTimestamp, data.durationMs);
+  }
+
+  function onLogoSubmitUpdate(data: { submitted: number; total: number }) {
     submittedCount = data.submitted;
     totalPlayers = data.total;
   }
@@ -338,8 +371,12 @@
       room.onMessage("headline_submission_start", onHeadlineSubmissionStart),
       room.onMessage("headline_submission_update", onHeadlineSubmissionUpdate),
       room.onMessage("headline_assignment_reveal", onHeadlineAssignmentReveal),
-      room.onMessage("broadcast_creation_start", onBroadcastCreationStart),
-      room.onMessage("broadcast_submission_update", onBroadcastSubmissionUpdate),
+      room.onMessage("script_voice_submission_start", onScriptVoiceSubmissionStart),
+      room.onMessage("script_voice_update", onScriptVoiceUpdate),
+      room.onMessage("gif_selection_start", onGifSelectionStart),
+      room.onMessage("gif_select_update", onGifSelectUpdate),
+      room.onMessage("logo_creation_start", onLogoCreationStart),
+      room.onMessage("logo_submit_update", onLogoSubmitUpdate),
       room.onMessage("broadcast_buffering_start", onBroadcastBufferingStart),
       room.onMessage("presentation_prepare", onPresentationPrepare),
       room.onMessage("presentation_start", onPresentationStart),
@@ -364,6 +401,25 @@
 
   $: leaderboard = [...state.players.values()].sort((a, b) => b.score - a.score);
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
+
+  let activeMusicTrack: "celebration" | null = null;
+
+  $: {
+    const nextMusicTrack = !roundSkipped && (
+      subPhase === "waiting" ||
+      subPhase === "headline_submission" ||
+      subPhase === "assignment_reveal" ||
+      subPhase === "script_voice_submission" ||
+      subPhase === "gif_selection" ||
+      subPhase === "logo_creation"
+    )
+      ? "celebration"
+      : null;
+    if (nextMusicTrack !== activeMusicTrack) {
+      activeMusicTrack = nextMusicTrack;
+      dispatch("musictrackchange", { trackId: nextMusicTrack });
+    }
+  }
 </script>
 
 <div class="flex-1 flex" data-testid="news-broadcast-tv">
@@ -380,8 +436,12 @@
           Headline collection
         {:else if subPhase === "assignment_reveal"}
           Story assignment
-        {:else if subPhase === "broadcast_creation"}
-          Segment creation
+        {:else if subPhase === "script_voice_submission"}
+          Script + Voice
+        {:else if subPhase === "gif_selection"}
+          GIF Selection
+        {:else if subPhase === "logo_creation"}
+          Logo Creation
         {:else if subPhase === "buffering"}
           Control room buffering
         {:else if subPhase === "presentation"}
@@ -484,13 +544,13 @@
         <p class="text-lg text-violet-100/80">Next: pick a visual, choose a voice, and write the anchor script.</p>
       </div>
 
-    {:else if subPhase === "broadcast_creation"}
+    {:else if subPhase === "script_voice_submission"}
       <div class="w-full max-w-6xl space-y-8">
         <div class="flex items-start justify-between gap-8">
           <div class="space-y-3 max-w-4xl">
-            <p class="text-lg uppercase tracking-[0.45em] text-fuchsia-300/70">Segment Creation</p>
-            <h2 class="text-6xl font-black text-white">Build the fake broadcast package</h2>
-            <p class="text-2xl text-slate-300">Players are choosing media, picking an anchor voice, and writing the on-air script for their assigned headline.</p>
+            <p class="text-lg uppercase tracking-[0.45em] text-fuchsia-300/70">Script + Voice</p>
+            <h2 class="text-6xl font-black text-white">Write the script and pick a voice</h2>
+            <p class="text-2xl text-slate-300">Players are writing their anchor script and choosing a voice preset. TTS processing starts as soon as they submit.</p>
           </div>
           <div class="text-right shrink-0">
             <p class:animate-pulse={timeLeft < 15} class="min-w-[3ch] text-7xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
@@ -498,36 +558,63 @@
           </div>
         </div>
 
-        <div class="grid gap-8 lg:grid-cols-[1.1fr_0.9fr] items-start">
-          <div class="rounded-[32px] border border-fuchsia-500/20 bg-fuchsia-950/15 p-8 space-y-5">
-            <div class="flex items-center justify-between text-fuchsia-100/85">
-              <span class="text-sm uppercase tracking-[0.3em]">Segments locked in</span>
-              <span class="text-3xl font-black">{submittedCount} / {totalPlayers}</span>
-            </div>
-            <div class="h-4 overflow-hidden rounded-full bg-black/30">
-              <div class="h-full bg-fuchsia-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
-            </div>
-            <div class="grid grid-cols-2 xl:grid-cols-3 gap-4 pt-2">
-              {#each [...state.players.values()] as player}
-                <div class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center gap-3">
-                  <PlayerIcon {player} size={42} />
-                  <div>
-                    <p class="font-black text-white">{player.name}</p>
-                    <p class="text-xs uppercase tracking-[0.2em] text-fuchsia-100/55">Producing segment</p>
-                  </div>
-                </div>
-              {/each}
-            </div>
+        <div class="rounded-[32px] border border-fuchsia-500/20 bg-fuchsia-950/15 p-8 space-y-5">
+          <div class="flex items-center justify-between text-fuchsia-100/85">
+            <span class="text-sm uppercase tracking-[0.3em]">Scripts submitted</span>
+            <span class="text-3xl font-black">{submittedCount} / {totalPlayers}</span>
           </div>
+          <div class="h-4 overflow-hidden rounded-full bg-black/30">
+            <div class="h-full bg-fuchsia-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
+          </div>
+        </div>
+      </div>
 
-          <div class="rounded-[32px] border border-fuchsia-500/20 bg-black/25 p-8 space-y-4">
-            <p class="text-sm uppercase tracking-[0.3em] text-fuchsia-200/70">What players are doing</p>
-            <div class="space-y-3 text-lg text-fuchsia-50/80">
-              <p>Search for a chaotic clip.</p>
-              <p>Pick the anchor voice.</p>
-              <p>Write the line the newsroom will read on air.</p>
-            </div>
-            <p class="text-base text-fuchsia-50/65">If nobody finds the right visual, Gamma falls back to a built-in technical difficulties frame so the round can keep moving.</p>
+    {:else if subPhase === "gif_selection"}
+      <div class="w-full max-w-6xl space-y-8">
+        <div class="flex items-start justify-between gap-8">
+          <div class="space-y-3 max-w-4xl">
+            <p class="text-lg uppercase tracking-[0.45em] text-sky-300/70">Select Visual</p>
+            <h2 class="text-6xl font-black text-white">Pick a GIF</h2>
+            <p class="text-2xl text-slate-300">Players are searching for and selecting the perfect visual for their broadcast segment.</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class:animate-pulse={timeLeft < 15} class="min-w-[3ch] text-7xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
+            <p class="text-sm uppercase tracking-[0.3em] text-sky-200/60">seconds left</p>
+          </div>
+        </div>
+
+        <div class="rounded-[32px] border border-sky-500/20 bg-sky-950/15 p-8 space-y-5">
+          <div class="flex items-center justify-between text-sky-100/85">
+            <span class="text-sm uppercase tracking-[0.3em]">Visuals selected</span>
+            <span class="text-3xl font-black">{submittedCount} / {totalPlayers}</span>
+          </div>
+          <div class="h-4 overflow-hidden rounded-full bg-black/30">
+            <div class="h-full bg-sky-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
+          </div>
+        </div>
+      </div>
+
+    {:else if subPhase === "logo_creation"}
+      <div class="w-full max-w-6xl space-y-8">
+        <div class="flex items-start justify-between gap-8">
+          <div class="space-y-3 max-w-4xl">
+            <p class="text-lg uppercase tracking-[0.45em] text-violet-300/70">Brand Your Broadcast</p>
+            <h2 class="text-6xl font-black text-white">Design a news company logo</h2>
+            <p class="text-2xl text-slate-300">Players are creating custom logos for their news broadcast segments.</p>
+          </div>
+          <div class="text-right shrink-0">
+            <p class:animate-pulse={timeLeft < 15} class="min-w-[3ch] text-7xl font-black font-mono text-white">{Math.ceil(timeLeft)}</p>
+            <p class="text-sm uppercase tracking-[0.3em] text-violet-200/60">seconds left</p>
+          </div>
+        </div>
+
+        <div class="rounded-[32px] border border-violet-500/20 bg-violet-950/15 p-8 space-y-5">
+          <div class="flex items-center justify-between text-violet-100/85">
+            <span class="text-sm uppercase tracking-[0.3em]">Logos submitted</span>
+            <span class="text-3xl font-black">{submittedCount} / {totalPlayers}</span>
+          </div>
+          <div class="h-4 overflow-hidden rounded-full bg-black/30">
+            <div class="h-full bg-violet-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
           </div>
         </div>
       </div>
@@ -578,8 +665,17 @@
                   <span class="uppercase tracking-[0.3em]">Now on air</span>
                   <span>{currentPresentation.index + 1} / {currentPresentation.total}</span>
                 </div>
-                <h2 class="text-4xl font-black text-white">{currentPresentation.entry.playerName}</h2>
-                <p class="text-2xl font-semibold text-indigo-100">{currentPresentation.entry.assignedHeadline}</p>
+                <div class="flex items-center gap-4">
+                  {#if currentPresentation.entry.logoDesign}
+                    <div class="shrink-0">
+                      <PlayerIcon player={{ iconDesign: currentPresentation.entry.logoDesign }} size={56} />
+                    </div>
+                  {/if}
+                  <div>
+                    <h2 class="text-4xl font-black text-white">{currentPresentation.entry.playerName}</h2>
+                    <p class="text-2xl font-semibold text-indigo-100">{currentPresentation.entry.assignedHeadline}</p>
+                  </div>
+                </div>
                 <div class="flex flex-wrap gap-2 pt-1">
                   <span class="rounded-full border border-indigo-400/30 bg-indigo-950/30 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-indigo-100">{currentPresentation.entry.voiceLabel}</span>
                   {#if currentPresentation.entry.captionsOnly}
