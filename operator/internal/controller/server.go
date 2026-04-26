@@ -139,6 +139,15 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 		)
 	}
 
+	// Colyseus seat reservations are stored in local memory per-pod.
+	// When scaling to multiple replicas, clients must reach the same pod
+	// for both matchmaking HTTP and WebSocket upgrade. A longer timeout
+	// provides a safety margin for network latency and sticky-session
+	// propagation.
+	env = append(env,
+		corev1.EnvVar{Name: "COLYSEUS_SEAT_RESERVATION_TIME", Value: "60"},
+	)
+
 	// Inject OTEL environment variables when observability is explicitly configured.
 	obs := instance.Spec.Observability
 	if obs.Enabled != nil {

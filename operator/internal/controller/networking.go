@@ -30,10 +30,13 @@ func (r *GammaInstanceReconciler) reconcileIngress(ctx context.Context, instance
 		ingress.Labels = labelsForComponent(instance, "ingress")
 
 		// Build annotations — start with WebSocket defaults for nginx.
+		// Cookie affinity is used for sticky sessions. Do NOT add
+		// upstream-hash-by here — consistent hashing redistributes clients
+		// when pods scale, breaking Colyseus seat reservations which are
+		// stored in local memory per-pod.
 		annotations := map[string]string{
 			"nginx.ingress.kubernetes.io/proxy-read-timeout":     "3600",
 			"nginx.ingress.kubernetes.io/proxy-send-timeout":     "3600",
-			"nginx.ingress.kubernetes.io/upstream-hash-by":       "$remote_addr",
 			"nginx.ingress.kubernetes.io/affinity":               "cookie",
 			"nginx.ingress.kubernetes.io/affinity-mode":          "persistent",
 			"nginx.ingress.kubernetes.io/session-cookie-name":    "gamma-sticky",
