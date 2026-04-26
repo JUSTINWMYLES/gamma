@@ -32,7 +32,7 @@ describe("wanted ad constants", () => {
   it("matches the requested two-minute creation windows", () => {
     expect(CHARACTER_CREATION_DURATION_SECS).toBe(120);
     expect(POSTER_SUBMISSION_DURATION_SECS).toBe(120);
-    expect(POSTER_REVEAL_MS).toBe(10_000);
+    expect(POSTER_REVEAL_MS).toBe(15_000);
     expect(VOTING_DURATION_SECS).toBe(20);
     expect(RESULTS_DISPLAY_MS).toBe(15_000);
   });
