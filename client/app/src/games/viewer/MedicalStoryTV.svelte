@@ -16,7 +16,7 @@
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
-  import type { RoomState } from "../../../../shared/types";
+  import type { PlayerState, RoomState } from "../../../../shared/types";
   import { getRoundProgressLabel } from "../../../../shared/types";
   import MedicalStoryBodyModel from "../../components/MedicalStoryBodyModel.svelte";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
@@ -98,6 +98,7 @@
   let phaseResults: PhaseResult[] = [];
   let phaseWinner: PhaseResult | null = null;
   let phasePoints: Record<string, number> = {};
+  let projectedRoundPoints: Record<string, number> = {};
 
   // ── Round recap ──────────────────────────────────────────────────────
   let phaseWinners: Record<string, PhaseResult | null> = {};
@@ -188,6 +189,8 @@
   function onRolePhase(data: { playerList: { id: string; name: string }[]; durationMs: number; serverTimestamp: number }) {
     subPhase = "role_voting";
     playerList = data.playerList;
+    projectedRoundPoints = {};
+    roundScores = {};
     roleVoteDurationMs = data.durationMs;
     roleVoteEndTime = data.serverTimestamp + data.durationMs;
 
@@ -302,6 +305,7 @@
     phaseResults = data.results;
     phaseWinner = data.phaseWinner;
     phasePoints = data.points;
+    projectedRoundPoints = mergeProjectedScores(projectedRoundPoints, data.points);
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? phaseHistory;
 
@@ -322,6 +326,7 @@
     subPhase = "round_recap";
     phaseWinners = data.phaseWinners;
     roundScores = data.scores;
+    projectedRoundPoints = { ...data.scores };
     recapRoles = data.roles;
     phaseHistory = data.history ?? phaseHistory;
     recapTimeline = data.recapTimeline ?? [];
@@ -374,6 +379,17 @@
     return emojis[role] ?? "👤";
   }
 
+  function mergeProjectedScores(
+    current: Record<string, number>,
+    next: Record<string, number>,
+  ): Record<string, number> {
+    const merged = { ...current };
+    for (const [playerId, points] of Object.entries(next)) {
+      merged[playerId] = (merged[playerId] ?? 0) + points;
+    }
+    return merged;
+  }
+
   function getPhaseVoteBoost(phase: GamePhase): string {
     if (phase === "complaint") return "Patient votes count double this phase.";
     if (phase === "diagnosis") return "Nurse votes count double this phase.";
@@ -385,7 +401,13 @@
     return phase === "complaint";
   }
 
-  $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
+  $: leaderboardPlayers = [...state.players.values()]
+    .map((player) => ({
+      ...player,
+      score: player.score + (projectedRoundPoints[player.id] ?? 0),
+    }))
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)) as PlayerState[];
+  $: topRoundLeaders = leaderboardPlayers.slice(0, 3);
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -672,7 +694,7 @@
 
     {:else if subPhase === "round_recap"}
       <!-- ── Round recap ────────────────────────────────────────── -->
-      <div class="text-center space-y-6 w-full max-w-3xl">
+      <div class="text-center space-y-6 w-full max-w-5xl">
         <h2 class="text-4xl font-black text-fuchsia-400">Round Recap</h2>
 
         <!-- Phase winners summary -->
@@ -700,6 +722,29 @@
             </div>
           {/each}
         </div>
+
+        {#if topRoundLeaders.length > 0}
+          <div class="space-y-3">
+            <p class="text-xs uppercase tracking-widest text-fuchsia-200/80">Top 3 after this round</p>
+            <div class="grid gap-4 md:grid-cols-3">
+              {#each topRoundLeaders as player, i}
+                <div class="rounded-3xl border border-fuchsia-500/30 bg-fuchsia-950/20 p-5 text-left">
+                  <div class="flex items-center gap-3">
+                    <span class="text-2xl">{["🥇", "🥈", "🥉"][i] ?? `#${i + 1}`}</span>
+                    <PlayerIcon player={player} size={28} />
+                    <div class="min-w-0">
+                      <p class="truncate text-lg font-black text-white">{player.name}</p>
+                      <p class="text-xs uppercase tracking-widest text-fuchsia-200/70">Total {player.score} pts</p>
+                    </div>
+                  </div>
+                  <p class="mt-3 text-sm text-fuchsia-100/80">
+                    +{roundScores[player.id] ?? 0} this round
+                  </p>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
     {/if}
   </div>
@@ -714,7 +759,7 @@
     <div>
         <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Leaderboard</p>
         <ul class="space-y-1">
-          {#each sortedPlayers as p, i}
+          {#each topRoundLeaders as p, i}
             <li class="flex items-center gap-2 rounded px-2 py-1.5 bg-gray-900">
               <span class="w-5 text-xs text-gray-500 font-mono">{i + 1}.</span>
               <PlayerIcon player={p} size={20} />

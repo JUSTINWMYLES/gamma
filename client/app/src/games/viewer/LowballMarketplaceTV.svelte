@@ -208,6 +208,75 @@
     return IMAGE_EMOJI[hint] ?? "🏷️";
   }
 
+  const SELLER_NAMES = [
+    "Definitely_Legit_Seller_42", "BasementDealsOnly", "NoLowballsPls", "PorchPickupKing",
+    "CertifiedMaybe", "GarageFindsDaily", "TotallyNotStolen", "FastCashCarl",
+  ];
+
+  const CONDITIONS = [
+    "Basically new*", "Good-ish", "Seen some things", "Pre-loved", "Works when it wants to",
+    "Mystery condition", "Probably haunted", "One owner (a raccoon)",
+  ];
+
+  const LOCATIONS = [
+    "Parking lot behind Wendy's", "My cousin's garage", "Undisclosed location",
+    "Corner of Elm & Regret", "Behind the old Kmart", "Curb pickup only",
+    "Somewhere in the tri-state area", "GPS coordinates upon request",
+  ];
+
+  const SHIPPING_OPTIONS = [
+    "Your problem", "Will yeet from porch", "Local pickup, bring a truck",
+    "I'll think about shipping", "Carrier pigeon available", "Free if you hurry",
+    "Shipping = $500 (it's heavy)", "Drone delivery (untested)",
+  ];
+
+  function hashCode(value: string): number {
+    let hash = 0;
+    for (let i = 0; i < value.length; i++) {
+      hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+    }
+    return hash;
+  }
+
+  function fakeSellerName(hint: string): string {
+    return SELLER_NAMES[Math.abs(hashCode(hint)) % SELLER_NAMES.length];
+  }
+
+  function fakeCondition(hint: string): string {
+    return CONDITIONS[Math.abs(hashCode(hint + "c")) % CONDITIONS.length];
+  }
+
+  function fakeLocation(hint: string): string {
+    return LOCATIONS[Math.abs(hashCode(hint + "l")) % LOCATIONS.length];
+  }
+
+  function fakeShipping(hint: string): string {
+    return SHIPPING_OPTIONS[Math.abs(hashCode(hint + "s")) % SHIPPING_OPTIONS.length];
+  }
+
+  function fakeViews(hint: string): number {
+    return 3 + (Math.abs(hashCode(hint + "v")) % 247);
+  }
+
+  function fakeSaves(hint: string): number {
+    return Math.abs(hashCode(hint + "f")) % 18;
+  }
+
+  function fakeTimeAgo(hint: string): string {
+    const mins = 1 + (Math.abs(hashCode(hint + "t")) % 180);
+    if (mins < 60) return `${mins} min ago`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
+  }
+
+  function fakeRating(hint: string): string {
+    const stars = 1 + (Math.abs(hashCode(hint + "r")) % 5);
+    return "★".repeat(stars) + "☆".repeat(5 - stars);
+  }
+
+  function fakeReviewCount(hint: string): number {
+    return Math.abs(hashCode(hint + "rc")) % 12;
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────
 
   function clearAllTimers() {
@@ -872,17 +941,50 @@
 
       {#if fmRevealItem && fmRevealStep >= 1}
         <!-- Step 1: Full listing card slides in -->
-        <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl overflow-hidden animate-slide-up max-w-2xl mx-auto">
-          <!-- Item hero -->
-          <div class="flex gap-6 p-6 items-center">
-            <div class="w-28 h-28 bg-gray-700 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-600">
-              <span class="text-6xl">{emojiFor(fmRevealItem.imageHint)}</span>
-            </div>
-            <div class="flex-1 space-y-1">
+        <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl overflow-hidden animate-slide-up max-w-3xl mx-auto">
+          <div class="h-48 bg-gray-700 border-b border-gray-600 flex items-center justify-center relative">
+            <span class="text-8xl">{emojiFor(fmRevealItem.imageHint)}</span>
+            <span class="absolute top-3 right-3 rounded-full bg-black/60 px-3 py-1 text-xs text-gray-300">
+              {fakeViews(fmRevealItem.imageHint)} views
+            </span>
+            <span class="absolute top-3 left-3 rounded-full bg-emerald-700/80 px-3 py-1 text-xs text-emerald-200">
+              {fakeTimeAgo(fmRevealItem.imageHint)}
+            </span>
+          </div>
+
+          <div class="p-6 space-y-4">
+            <div>
               <p class="text-xs text-emerald-400 uppercase tracking-widest">{fmRevealItem.category}</p>
-              <p class="text-2xl font-black text-white">{fmRevealItem.name}</p>
-              <p class="text-sm text-gray-400">{fmRevealItem.description}</p>
-              <p class="text-xl font-black text-emerald-400 mt-1">{formatPrice(fmRevealItem.askingPrice)}</p>
+              <p class="text-3xl font-black text-white">{fmRevealItem.name}</p>
+              <p class="mt-1 text-3xl font-black text-emerald-400">{formatPrice(fmRevealItem.askingPrice)}</p>
+              <p class="text-xs text-gray-500">or best offer • {fakeSaves(fmRevealItem.imageHint)} saves</p>
+            </div>
+
+            <p class="text-base text-gray-300">{fmRevealItem.description}</p>
+
+            <div class="grid grid-cols-2 gap-3 text-sm">
+              <div class="rounded-xl bg-gray-700/60 p-3">
+                <p class="text-xs uppercase tracking-wider text-gray-500">Condition</p>
+                <p class="mt-1 font-semibold text-yellow-400">{fakeCondition(fmRevealItem.imageHint)}</p>
+              </div>
+              <div class="rounded-xl bg-gray-700/60 p-3">
+                <p class="text-xs uppercase tracking-wider text-gray-500">Shipping</p>
+                <p class="mt-1 font-semibold text-gray-200">{fakeShipping(fmRevealItem.imageHint)}</p>
+              </div>
+              <div class="col-span-2 rounded-xl bg-gray-700/60 p-3">
+                <p class="text-xs uppercase tracking-wider text-gray-500">Location</p>
+                <p class="mt-1 font-semibold text-gray-200">{fakeLocation(fmRevealItem.imageHint)}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 border-t border-gray-700 pt-4">
+              <div class="flex h-10 w-10 items-center justify-center rounded-full bg-gray-600">
+                <span class="text-lg">🤷</span>
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-semibold text-gray-200">{fakeSellerName(fmRevealItem.imageHint)}</p>
+                <p class="text-xs text-gray-500">{fakeRating(fmRevealItem.imageHint)} ({fakeReviewCount(fmRevealItem.imageHint)} reviews)</p>
+              </div>
             </div>
           </div>
         </div>

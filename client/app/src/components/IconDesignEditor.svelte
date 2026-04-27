@@ -51,6 +51,7 @@ export let disabled = false;
   let pointerActive = false;
   let activePointerId: number | null = null;
   let designHistory: IconDesign[] = [];
+  const MIN_STROKE_POINT_DISTANCE = 0.75;
 
   $: previewPlayer = {
     id: "preview-player",
@@ -86,6 +87,8 @@ export let disabled = false;
 
   function startStroke(event: PointerEvent) {
     if (disabled || !canvasEl) return;
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
     pointerActive = true;
     activePointerId = event.pointerId;
     canvasEl.setPointerCapture(event.pointerId);
@@ -101,7 +104,14 @@ export let disabled = false;
 
   function moveStroke(event: PointerEvent) {
     if (disabled || !pointerActive || activePointerId !== event.pointerId || !drawingStroke) return;
-    drawingStroke.points = [...drawingStroke.points, eventToPercent(event)];
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    const nextPoint = eventToPercent(event);
+    const previousPoint = drawingStroke.points[drawingStroke.points.length - 1];
+    if (previousPoint && pointDistance(previousPoint, nextPoint) < MIN_STROKE_POINT_DISTANCE) {
+      return;
+    }
+    drawingStroke.points = [...drawingStroke.points, nextPoint];
     design = {
       ...design,
       strokes: [...design.strokes.slice(0, -1), { ...drawingStroke }],
@@ -110,9 +120,13 @@ export let disabled = false;
 
   function endStroke(event: PointerEvent) {
     if (activePointerId !== event.pointerId) return;
+    event.preventDefault();
     pointerActive = false;
     activePointerId = null;
     drawingStroke = null;
+    if (canvasEl?.hasPointerCapture(event.pointerId)) {
+      canvasEl.releasePointerCapture(event.pointerId);
+    }
   }
 
   function eventToPercent(event: PointerEvent) {
@@ -140,6 +154,10 @@ export let disabled = false;
     design = { ...previous, text: null };
     designHistory = designHistory.slice(0, -1);
   }
+
+  function pointDistance(a: { x: number; y: number }, b: { x: number; y: number }) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
 </script>
 
 <div class="space-y-4">
@@ -153,24 +171,35 @@ export let disabled = false;
       <div class="flex justify-center">
       <div
         bind:this={canvasEl}
-        class="relative w-40 h-40 sm:w-56 sm:h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none"
-        style="background:{design.bgColor};background-color:{design.bgColor};"
-        on:pointerdown={startStroke}
-        on:pointermove={moveStroke}
-        on:pointerup={endStroke}
-        on:pointercancel={endStroke}
-        on:pointerleave={endStroke}
+        class="relative w-40 h-40 sm:w-56 sm:h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none select-none"
+        style="background:{design.bgColor};background-color:{design.bgColor};user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;"
+        on:pointerdown|preventDefault={startStroke}
+        on:pointermove|preventDefault={moveStroke}
+        on:pointerup|preventDefault={endStroke}
+        on:pointercancel|preventDefault={endStroke}
+        on:pointerleave|preventDefault={endStroke}
+        on:dragstart|preventDefault
+        on:contextmenu|preventDefault
       >
         <svg class="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
           {#each design.strokes as stroke}
-            <polyline
-              fill="none"
-              stroke={stroke.color}
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width={getIconStrokeRenderWidth(stroke.size)}
-              points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
-            />
+            {#if stroke.points.length === 1}
+              <circle
+                cx={stroke.points[0].x}
+                cy={stroke.points[0].y}
+                r={getIconStrokeRenderWidth(stroke.size) / 2}
+                fill={stroke.color}
+              />
+            {:else}
+              <polyline
+                fill="none"
+                stroke={stroke.color}
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width={getIconStrokeRenderWidth(stroke.size)}
+                points={stroke.points.map((point) => `${point.x},${point.y}`).join(" ")}
+              />
+            {/if}
           {/each}
         </svg>
 

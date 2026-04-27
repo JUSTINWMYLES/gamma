@@ -74,7 +74,7 @@ const BASE_DETECTION_INCREMENT = 2;
 const DETECTION_PROXIMITY_MULTIPLIER = 2;
 const DETECTION_DECREMENT = 2;
 
-const BASE_GUARD_SPEED = 2.64;      // tiles/s
+const BASE_GUARD_SPEED = 2.64 * 1.2;      // tiles/s
 const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
@@ -117,8 +117,8 @@ interface InputMessage {
 
 interface GuardRuntime {
   id: string;
-  /** +1 or -1 — patrol direction multiplier. */
-  patrolDir: number;
+  /** Guard-specific patrol loop so guards cover different sectors. */
+  patrolPath: Array<{ x: number; y: number }>;
   /** BFS-computed path (list of tile centres). Empty = no active path. */
   bfsPath: Array<{ x: number; y: number }>;
   /** Tick count since last BFS recompute — prevents recomputing every tick. */
@@ -143,6 +143,22 @@ function lerpAngle(current: number, target: number, t: number): number {
   while (diff > Math.PI)  diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
   return current + diff * t;
+}
+
+function buildGuardPatrolPath(
+  patrolPath: Array<{ x: number; y: number }>,
+  guardIndex: number,
+  guardCount: number,
+): Array<{ x: number; y: number }> {
+  if (patrolPath.length === 0) return [];
+
+  const routeLength = Math.min(
+    patrolPath.length,
+    Math.max(6, Math.ceil(patrolPath.length / Math.max(1, guardCount)) + 1),
+  );
+  const startIdx = Math.floor((guardIndex * patrolPath.length) / Math.max(1, guardCount)) % patrolPath.length;
+  const route = Array.from({ length: routeLength }, (_, offset) => patrolPath[(startIdx + offset) % patrolPath.length]);
+  return guardIndex % 2 === 0 ? route : [...route].reverse();
 }
 
 // ── Game class ────────────────────────────────────────────────────────────────
@@ -450,19 +466,19 @@ export default class DontGetCaughtGame extends BaseGame {
       g.id = key;
 
       const spawn = guardSpawnPositions[i % guardSpawnPositions.length] ?? getGuardStart();
-      const startIdx = Math.floor((i * patrolPath.length) / count) % patrolPath.length;
+      const guardPatrolPath = buildGuardPatrolPath(patrolPath, i, count);
 
       g.x = spawn.x + 0.5;
       g.y = spawn.y + 0.5;
       g.facingAngle = (i / count) * Math.PI * 2;
-      g.patrolIndex = startIdx;
+      g.patrolIndex = 0;
       g.guardMode = "patrol";
       g.targetPlayerId = "";
 
       this.room.state.guards.set(key, g);
       this.guardRuntimes.push({
         id: key,
-        patrolDir: 1,
+        patrolPath: guardPatrolPath,
         bfsPath: [],
         bfsAge: 0,
         prevX: g.x,
@@ -485,12 +501,13 @@ export default class DontGetCaughtGame extends BaseGame {
 
   private _moveAllGuards(): void {
     const dt = TICK_RATE_MS / 1000;
-    const patrolPath = getPatrolPath();
 
     for (let i = 0; i < this.guardRuntimes.length; i++) {
       const rt = this.guardRuntimes[i];
       const guard = this.room.state.guards.get(rt.id);
       if (!guard) continue;
+      const patrolPath = rt.patrolPath.length > 0 ? rt.patrolPath : getPatrolPath();
+      if (patrolPath.length === 0) continue;
 
       rt.bfsAge++;
 
@@ -579,8 +596,7 @@ export default class DontGetCaughtGame extends BaseGame {
       }
 
       if (moveResult.arrived) {
-        guard.patrolIndex =
-          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+        guard.patrolIndex = (guard.patrolIndex + 1) % patrolPath.length;
         rt.bfsPath = [];
         rt.stuckTicks = 0;
       } else if (moveResult.blocked || isStuck) {
@@ -591,8 +607,7 @@ export default class DontGetCaughtGame extends BaseGame {
             rt.bfsPath = newPath;
           } else {
             // No path found — skip to next waypoint
-            guard.patrolIndex =
-              (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+            guard.patrolIndex = (guard.patrolIndex + 1) % patrolPath.length;
             rt.bfsPath = [];
             rt.stuckTicks = 0;
           }

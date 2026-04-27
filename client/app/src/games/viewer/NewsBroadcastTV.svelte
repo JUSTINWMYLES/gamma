@@ -141,6 +141,11 @@
   let submittedCount = 0;
   let totalPlayers = 0;
   let bufferingTargetReadyCount = 0;
+  let gifAssignments: Array<{
+    playerId: string;
+    playerName: string;
+    assignedHeadline: string;
+  }> = [];
 
   let prepareState: PresentationPreparePayload | null = null;
   let currentPresentation:
@@ -234,6 +239,7 @@
     votesIn = 0;
     totalVoters = 0;
     results = null;
+    gifAssignments = [];
   }
 
   function isVideoMedia(media: MediaEntry | null | undefined): boolean {
@@ -285,11 +291,17 @@
     totalPlayers = data.total;
   }
 
-  function onGifSelectionStart(data: { durationMs: number; serverTimestamp: number; totalPlayers: number }) {
+  function onGifSelectionStart(data: {
+    durationMs: number;
+    serverTimestamp: number;
+    totalPlayers: number;
+    assignments?: typeof gifAssignments;
+  }) {
     stopPresentationAudio();
     subPhase = "gif_selection";
     submittedCount = 0;
     totalPlayers = data.totalPlayers;
+    gifAssignments = data.assignments ?? [];
     startTimer(data.serverTimestamp, data.durationMs);
   }
 
@@ -617,6 +629,29 @@
             <div class="h-full bg-sky-400 transition-all duration-500" style="width:{totalPlayers > 0 ? (submittedCount / totalPlayers) * 100 : 0}%"></div>
           </div>
         </div>
+
+        {#if gifAssignments.length > 0}
+          <div class="rounded-[32px] border border-slate-800 bg-slate-950/70 p-8 space-y-5">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm uppercase tracking-[0.3em] text-sky-200/70">Assigned headlines</p>
+                <p class="text-lg text-slate-300">Keep the headline visible while players hunt for the right GIF.</p>
+              </div>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              {#each gifAssignments as assignment}
+                <div class="rounded-3xl border border-white/10 bg-slate-900/80 p-5 space-y-3">
+                  <div class="flex items-center gap-3">
+                    <PlayerIcon player={state.players.get(assignment.playerId)} size={40} />
+                    <p class="text-xl font-black text-white">{assignment.playerName}</p>
+                  </div>
+                  <p class="text-xl font-semibold leading-snug text-sky-100">{assignment.assignedHeadline}</p>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
       </div>
 
     {:else if subPhase === "logo_creation"}

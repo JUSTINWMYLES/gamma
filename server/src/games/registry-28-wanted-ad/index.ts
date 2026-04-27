@@ -1,5 +1,6 @@
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { MAX_DESIGN_PAYLOAD_CHARS } from "../../utils/designPayload";
 import {
   CHARACTER_CREATION_DURATION_SECS,
   computeRoundPoints,
@@ -370,7 +371,9 @@ export default class WantedAdGame extends BaseGame {
 
     const name = normalizeCharacterName(input.characterName ?? "");
     const description = normalizeCharacterDescription(input.characterDescription ?? "");
-    const portraitDesign = typeof input.portraitDesign === "string" ? input.portraitDesign.slice(0, 20_000) : "";
+    const portraitDesign = typeof input.portraitDesign === "string"
+      ? input.portraitDesign.slice(0, MAX_DESIGN_PAYLOAD_CHARS)
+      : "";
 
     if (!name || !portraitDesign) {
       this.send(client.sessionId, "wa_character_ack", {

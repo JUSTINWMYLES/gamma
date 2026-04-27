@@ -191,6 +191,9 @@ export default class EscapeMazeGame extends BaseGame {
   /** Round timer interval. */
   private timerInterval: ReturnType<typeof setInterval> | null = null;
 
+  /** Active round timeout so earlier rounds cannot end a later round. */
+  private roundTimeout: ReturnType<typeof setTimeout> | null = null;
+
   /** Resolve to end the round early (all escaped). */
   private roundResolve: (() => void) | null = null;
 
@@ -373,6 +376,7 @@ export default class EscapeMazeGame extends BaseGame {
   protected override async runRound(round: number): Promise<void> {
     this.finishCount = 0;
     this.roundStartMs = Date.now();
+    this._clearRoundTimeout();
 
     // Generate a new maze for this round
     const roundSeed = this.mazeSeed + round * 7919;
@@ -435,6 +439,7 @@ export default class EscapeMazeGame extends BaseGame {
   override teardown(): void {
     super.teardown();
     this._clearIntervals();
+    this._clearRoundTimeout();
     for (const t of this._extraTimers) clearTimeout(t);
     this._extraTimers = [];
     this.playerPositions.clear();
@@ -737,10 +742,9 @@ export default class EscapeMazeGame extends BaseGame {
     // Wait for round to end (all escaped or time runs out)
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
-      const timeout = setTimeout(() => {
+      this.roundTimeout = setTimeout(() => {
         this._endRound();
       }, ROUND_DURATION_SECS * 1000);
-      this._extraTimers.push(timeout);
     });
   }
 
@@ -915,10 +919,9 @@ export default class EscapeMazeGame extends BaseGame {
     // Wait for round to end
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
-      const timeout = setTimeout(() => {
+      this.roundTimeout = setTimeout(() => {
         this._endRound();
       }, ROUND_DURATION_SECS * 1000);
-      this._extraTimers.push(timeout);
     });
   }
 
@@ -1082,6 +1085,7 @@ export default class EscapeMazeGame extends BaseGame {
 
   private _endRound(): void {
     this._clearIntervals();
+    this._clearRoundTimeout();
     if (this.roundResolve) {
       this.roundResolve();
       this.roundResolve = null;
@@ -1136,5 +1140,11 @@ export default class EscapeMazeGame extends BaseGame {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
     }
+  }
+
+  private _clearRoundTimeout(): void {
+    if (!this.roundTimeout) return;
+    clearTimeout(this.roundTimeout);
+    this.roundTimeout = null;
   }
 }

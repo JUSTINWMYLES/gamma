@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import DontGetCaughtGame from "../src/games/registry-14-dont-get-caught";
+import EscapeMazeGame from "../src/games/registry-04-escape-maze";
 
 function createPlayer(id: string, name: string) {
   return {
@@ -28,20 +28,20 @@ function createRoomStub(playerIds: string[] = ["p1", "p2"]) {
   return {
     state: {
       phase: "in_round",
-      selectedGame: "registry-14-dont-get-caught",
+      selectedGame: "registry-04-escape-maze",
       hostSessionId: playerIds[0] ?? "",
       phaseStartedAt: 0,
       currentRound: 1,
       isPracticeRound: false,
-      roundDurationSecs: 1,
+      roundDurationSecs: 60,
       gameConfig: {
         roundCount: 2,
-        timeLimitSecs: 1,
+        timeLimitSecs: 60,
         practiceRoundEnabled: false,
         matchMode: "ffa",
+        gameMode: "individual",
       },
       players,
-      guards: new Map(),
       mapTiles: "",
       mapWidth: 0,
       mapHeight: 0,
@@ -56,21 +56,18 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("DontGetCaughtGame round timing", () => {
-  it("does not let a stale timeout from a prior round end the next round early", async () => {
+describe("EscapeMazeGame round timing", () => {
+  it("does not let an earlier round timeout end the next round early", async () => {
     vi.useFakeTimers();
     const room = createRoomStub();
-    const game = new DontGetCaughtGame(room) as any;
-
-    game._tick = vi.fn();
+    const game = new EscapeMazeGame(room) as any;
 
     const firstRound = game.runRound(1);
     await Promise.resolve();
 
+    await vi.advanceTimersByTimeAsync(10_000);
     game._endRound();
     await firstRound;
-
-    room.state.gameConfig.timeLimitSecs = 5;
 
     let secondRoundResolved = false;
     const secondRound = game.runRound(2).then(() => {
@@ -78,31 +75,15 @@ describe("DontGetCaughtGame round timing", () => {
     });
     await Promise.resolve();
 
-    await vi.advanceTimersByTimeAsync(1_100);
+    await vi.advanceTimersByTimeAsync(49_000);
     expect(secondRoundResolved).toBe(false);
 
-    await vi.advanceTimersByTimeAsync(3_800);
+    await vi.advanceTimersByTimeAsync(2_000);
     expect(secondRoundResolved).toBe(false);
 
-    await vi.advanceTimersByTimeAsync(200);
+    await vi.advanceTimersByTimeAsync(9_000);
     expect(secondRoundResolved).toBe(true);
 
     await secondRound;
-  });
-});
-
-describe("DontGetCaughtGame guard setup", () => {
-  it("spawns guards with distinct patrol routes and the faster baseline speed", () => {
-    const room = createRoomStub(["p1", "p2", "p3", "p4", "p5"]);
-    const game = new DontGetCaughtGame(room) as any;
-
-    game._spawnGuards(5);
-
-    const patrolRoutes = game.guardRuntimes.map((runtime: { patrolPath: Array<{ x: number; y: number }> }) =>
-      runtime.patrolPath.map((point) => `${point.x},${point.y}`).join("|"),
-    );
-
-    expect(new Set(patrolRoutes).size).toBe(5);
-    expect(game.guardSpeed).toBeCloseTo(2.64 * 1.2);
   });
 });

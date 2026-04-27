@@ -1,5 +1,6 @@
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { MAX_DESIGN_PAYLOAD_CHARS } from "../../utils/designPayload";
 import { fetchKlipyMedia } from "./klipyMedia";
 import {
   BUFFERING_MAX_WAIT_MS,
@@ -201,6 +202,11 @@ export default class NewsBroadcastGame extends BaseGame {
       durationMs: GIF_SELECTION_DURATION_MS,
       serverTimestamp: Date.now(),
       totalPlayers: playerIds.length,
+      assignments: players.map((player) => ({
+        playerId: player.id,
+        playerName: player.name,
+        assignedHeadline: this.session?.assignedHeadlines.get(player.id) ?? "Breaking update incoming.",
+      })),
     });
     await this._waitForResponses(() => haveAllExpectedPlayersResponded(this.session?.gifSelectedPlayers ?? new Set(), playerIds), GIF_SELECTION_DURATION_MS);
     if (this.isCancelled() || !this.session) return;
@@ -511,7 +517,9 @@ export default class NewsBroadcastGame extends BaseGame {
     const media = normalizeMediaEntry(input.media) ?? existing?.media ?? null;
     const script = normalizeScript(input.script ?? existing?.script ?? "") ?? existing?.script ?? "";
     const resolvedVoice = this._resolveVoiceOption(input.voicePresetId ?? existing?.voicePresetId ?? DEFAULT_VOICE_PRESET_ID);
-    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : existing?.logoDesign ?? "";
+    const logoDesign = typeof input.logoDesign === "string"
+      ? input.logoDesign.slice(0, MAX_DESIGN_PAYLOAD_CHARS)
+      : existing?.logoDesign ?? "";
     this.session.broadcastDrafts.set(sessionId, {
       media,
       script,
@@ -651,7 +659,9 @@ export default class NewsBroadcastGame extends BaseGame {
       return;
     }
 
-    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : "";
+    const logoDesign = typeof input.logoDesign === "string"
+      ? input.logoDesign.slice(0, MAX_DESIGN_PAYLOAD_CHARS)
+      : "";
     const draft = this.session.broadcastDrafts.get(sessionId);
     this.session.broadcastDrafts.set(sessionId, {
       media: draft?.media ?? null,
@@ -807,7 +817,9 @@ export default class NewsBroadcastGame extends BaseGame {
       spokenText = trimTextToSpeechBudget(spokenText);
     }
 
-    const logoDesign = typeof input.logoDesign === "string" ? input.logoDesign.slice(0, 20_000) : draft?.logoDesign ?? "";
+    const logoDesign = typeof input.logoDesign === "string"
+      ? input.logoDesign.slice(0, MAX_DESIGN_PAYLOAD_CHARS)
+      : draft?.logoDesign ?? "";
 
     return {
       playerId: sessionId,

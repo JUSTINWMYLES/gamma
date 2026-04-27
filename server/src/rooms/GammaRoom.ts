@@ -26,6 +26,7 @@ import { GameConfig } from "../schema/GameConfig";
 import { BaseGame } from "../games/BaseGame";
 import { loadGame } from "../games/gameLoader";
 import { generateRoomCode } from "../utils/rng";
+import { MAX_DESIGN_PAYLOAD_CHARS } from "../utils/designPayload";
 import { meter, tracer } from "../telemetry";
 import { SpanStatusCode, type Span } from "@opentelemetry/api";
 import { ArraySchema } from "@colyseus/schema";
@@ -330,7 +331,7 @@ export class GammaRoom extends Room<RoomState> {
           p.iconBgColor = data.iconBgColor;
         }
         if (typeof data.iconDesign === "string") {
-          p.iconDesign = data.iconDesign.slice(0, 20_000);
+          p.iconDesign = data.iconDesign.slice(0, MAX_DESIGN_PAYLOAD_CHARS);
         }
       },
     );

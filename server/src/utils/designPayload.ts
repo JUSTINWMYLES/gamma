@@ -1,0 +1,1 @@
+export const MAX_DESIGN_PAYLOAD_CHARS = 120_000;
