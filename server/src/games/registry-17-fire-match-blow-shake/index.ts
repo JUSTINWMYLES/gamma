@@ -350,11 +350,10 @@ export default class FireMatchBlowShakeGame extends BaseGame {
       const player = players.find((p) => p.id === pr.playerId);
       if (!player) continue;
 
-      // Points: completion bonus + rank bonus + effort bonus
+      // Points: completion bonus + rank bonus
       const completionBonus = pr.finished ? 100 : pr.stagesCompleted * 20;
       const rankBonus = Math.max(0, (sorted.length - rank) * 15);
-      const effortBonus = Math.min(30, Math.round(pr.totalContribution / 5));
-      player.score += completionBonus + rankBonus + effortBonus;
+      player.score += completionBonus + rankBonus;
     }
   }
 

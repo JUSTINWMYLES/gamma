@@ -32,6 +32,7 @@ export interface GeneratedMap {
   width: number;
   height: number;
   spawnPositions: Vec2[];
+  guardSpawnPositions: Vec2[];
   patrolPath: Vec2[];
   guardStart: Vec2;
 }
@@ -63,17 +64,23 @@ const FIXED_SPAWN_POSITIONS: Vec2[] = [
   { x: 20, y: 2 },
   { x: 28, y: 2 },
   { x: 33, y: 3 },
-  { x: 2, y: 9 },
-  { x: 14, y: 9 },
-  { x: 22, y: 9 },
   { x: 33, y: 10 },
-  { x: 2, y: 15 },
-  { x: 13, y: 15 },
-  { x: 22, y: 15 },
   { x: 33, y: 15 },
+  { x: 2, y: 15 },
+  { x: 2, y: 9 },
+  { x: 2, y: 21 },
   { x: 10, y: 21 },
   { x: 20, y: 21 },
   { x: 28, y: 21 },
+];
+
+const FIXED_GUARD_SPAWN_POSITIONS: Vec2[] = [
+  { x: 18, y: 15 },
+  { x: 15, y: 15 },
+  { x: 20, y: 15 },
+  { x: 15, y: 9 },
+  { x: 21, y: 9 },
+  { x: 18, y: 8 },
 ];
 
 const FIXED_PATROL_PATH: Vec2[] = [
@@ -156,6 +163,12 @@ export function generateMap(_seed: number): GeneratedMap {
     }
   }
 
+  for (const spawn of FIXED_GUARD_SPAWN_POSITIONS) {
+    if (!isTileWalkableIn(tiles, spawn.x, spawn.y)) {
+      throw new Error(`Invalid fixed guard spawn position at (${spawn.x}, ${spawn.y})`);
+    }
+  }
+
   if (!isTileWalkableIn(tiles, FIXED_GUARD_START.x, FIXED_GUARD_START.y)) {
     throw new Error(`Invalid fixed guard start at (${FIXED_GUARD_START.x}, ${FIXED_GUARD_START.y})`);
   }
@@ -165,6 +178,7 @@ export function generateMap(_seed: number): GeneratedMap {
     width: MAP_WIDTH,
     height: MAP_HEIGHT,
     spawnPositions: FIXED_SPAWN_POSITIONS.map((pos) => ({ ...pos })),
+    guardSpawnPositions: FIXED_GUARD_SPAWN_POSITIONS.map((pos) => ({ ...pos })),
     patrolPath: FIXED_PATROL_PATH.map((pos) => ({ ...pos })),
     guardStart: { ...FIXED_GUARD_START },
   };
@@ -190,6 +204,7 @@ export const GAME_MAP: TileMap = {
 
 export function getPatrolPath(): Vec2[]    { return _currentMap.patrolPath; }
 export function getSpawnPositions(): Vec2[] { return _currentMap.spawnPositions; }
+export function getGuardSpawnPositions(): Vec2[] { return _currentMap.guardSpawnPositions; }
 export function getGuardStart(): Vec2       { return { ..._currentMap.guardStart }; }
 export function getCurrentTiles(): number[] { return _currentMap.tiles; }
 

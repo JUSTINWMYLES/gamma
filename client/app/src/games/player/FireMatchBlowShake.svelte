@@ -65,6 +65,12 @@
     room.send("game_input", { action: "fire_strike" });
   }
 
+  function handleTapButtonKeydown(event: KeyboardEvent, action: () => void) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    action();
+  }
+
   // ── Blow (microphone) state ───────────────────────────────────────────────
   let micActive = false;
   let micMsg = "";
@@ -361,7 +367,8 @@
         <button
           class="w-full py-5 rounded-xl bg-amber-600 text-white font-black text-xl active:scale-95 active:bg-amber-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:click={sendStrike}
+          on:pointerdown|preventDefault={sendStrike}
+          on:keydown={(event) => handleTapButtonKeydown(event, sendStrike)}
         >
           STRIKE! ({strikeTaps})
         </button>
@@ -394,7 +401,8 @@
         <button
           class="w-full py-5 rounded-xl bg-red-600 text-white font-black text-xl active:scale-95 active:bg-red-500 transition-all select-none"
           style="touch-action:manipulation"
-          on:click={sendExtinguish}
+          on:pointerdown|preventDefault={sendExtinguish}
+          on:keydown={(event) => handleTapButtonKeydown(event, sendExtinguish)}
         >
           TAP TO EXTINGUISH! ({extinguishTaps})
         </button>

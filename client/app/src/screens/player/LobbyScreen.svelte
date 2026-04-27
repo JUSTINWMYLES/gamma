@@ -198,10 +198,13 @@
   $: selectedGameMeta = setupDone
     ? GAME_REGISTRY.find((g) => g.id === state.selectedGame)
     : null;
+  $: selectedGameUnavailable = selectedGameMeta
+    ? getGameUnavailableReason(selectedGameMeta, state)
+    : null;
   $: allPlayersReady = [...state.players.values()].every(
     (p) => !p.isConnected || p.isReady || p.id === state.hostSessionId,
   );
-  $: canStart = !!state.selectedGame && state.players.size >= 1 && allPlayersReady;
+  $: canStart = !!state.selectedGame && !selectedGameUnavailable && state.players.size >= 1 && allPlayersReady;
   $: hasQueue = (state.gameQueue?.length ?? 0) > 0;
   $: availableGames = GAME_REGISTRY.filter((g) => !getGameUnavailableReason(g, state));
   $: isLowballFunnyMessages =
@@ -607,7 +610,7 @@
         disabled={!canStart}
         on:click={start}
         data-testid="start-btn"
-      >{canStart ? 'Start Game' : !state.selectedGame ? 'Pick a game' : !allPlayersReady ? 'Waiting for players...' : 'Start Game'}</button>
+      >{canStart ? 'Start Game' : !state.selectedGame ? 'Pick a game' : selectedGameUnavailable ? selectedGameUnavailable : !allPlayersReady ? 'Waiting for players...' : 'Start Game'}</button>
     {:else}
       <button
         class="w-full max-w-xs py-4 rounded-xl text-lg font-bold transition-all active:scale-95

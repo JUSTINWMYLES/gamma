@@ -12,6 +12,7 @@ import {
   refreshLegacyExports,
   generateMap,
   findPath,
+  getGuardSpawnPositions,
 } from "../src/utils/tilemap";
 import { hasLineOfSight } from "../src/utils/los";
 
@@ -137,6 +138,34 @@ describe("fixed map generation", () => {
     for (const sp of m.spawnPositions) {
       const tile = m.tiles[sp.y * MAP_WIDTH + sp.x];
       expect(tile).toBe(0);
+    }
+  });
+
+  it("keeps player spawns farther from center than guard spawns", () => {
+    const centerX = MAP_WIDTH / 2;
+    const centerY = MAP_HEIGHT / 2;
+    const guardSpawns = getGuardSpawnPositions();
+
+    const farthestGuardDist = Math.max(
+      ...guardSpawns.map((sp) => Math.hypot(sp.x + 0.5 - centerX, sp.y + 0.5 - centerY)),
+    );
+    const nearestPlayerDist = Math.min(
+      ...SPAWN_POSITIONS.map((sp) => Math.hypot(sp.x + 0.5 - centerX, sp.y + 0.5 - centerY)),
+    );
+
+    expect(nearestPlayerDist).toBeGreaterThan(farthestGuardDist);
+  });
+
+  it("keeps every guard spawn near the map center", () => {
+    const centerX = MAP_WIDTH / 2;
+    const centerY = MAP_HEIGHT / 2;
+
+    for (const spawn of getGuardSpawnPositions()) {
+      const distanceFromCenter = Math.hypot(
+        spawn.x + 0.5 - centerX,
+        spawn.y + 0.5 - centerY,
+      );
+      expect(distanceFromCenter).toBeLessThanOrEqual(4.5);
     }
   });
 

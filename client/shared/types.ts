@@ -297,7 +297,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     requiresSameRoom: false,
     requiresSecondaryDisplay: false,
     minPlayers: 1,
-    maxPlayers: 8,
+    maxPlayers: 12,
     tags: ["stealth", "strategy"],
     estimatedMinutes: 12,
   },
@@ -480,6 +480,9 @@ export function getGameUnavailableReason(
   game: GameMeta,
   state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay" | "viewScreenConnected" | "players">,
 ): string | null {
+  if (game.id === "registry-20-odd-one-out") {
+    return "Under maintenance";
+  }
   if (game.requiresSameRoom && state.locationMode === "remote") {
     return "Requires same-room play";
   }

@@ -47,6 +47,7 @@ import {
   GAME_MAP,
   getPatrolPath,
   getSpawnPositions,
+  getGuardSpawnPositions,
   getGuardStart,
   resetMap,
   refreshLegacyExports,
@@ -73,7 +74,7 @@ const BASE_DETECTION_INCREMENT = 2;
 const DETECTION_PROXIMITY_MULTIPLIER = 2;
 const DETECTION_DECREMENT = 2;
 
-const BASE_GUARD_SPEED = 2.2;       // tiles/s
+const BASE_GUARD_SPEED = 2.64;      // tiles/s
 const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
@@ -90,7 +91,7 @@ const DIRECT_LOS_MULTIPLIER = 4; // 4x faster detection when dead center
 const GUARD_HALF = 0.45;
 
 /** Max guards regardless of round number. */
-const MAX_GUARDS = 5;
+const MAX_GUARDS = 6;
 
 /** Angle lerp rate (radians/tick) — controls how quickly guard turns. Higher = snappier. */
 const ANGLE_LERP_RATE = 0.12;
@@ -161,6 +162,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
   private guardSpeed: number = BASE_GUARD_SPEED;
   private tickInterval: ReturnType<typeof setInterval> | null = null;
+  private roundTimeout: ReturnType<typeof setTimeout> | null = null;
   private caughtThisRound = new Map<string, number>();
   private roundResolve: (() => void) | null = null;
   private currentRound = 0;
@@ -343,6 +345,11 @@ export default class DontGetCaughtGame extends BaseGame {
     this.currentRound = round;
     this.caughtThisRound.clear();
 
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+      this.roundTimeout = null;
+    }
+
     // Refresh the fixed map exports each round so all clients receive the same layout
     const seed = Date.now() + round * 1_000_003;
     resetMap(seed);
@@ -380,7 +387,7 @@ export default class DontGetCaughtGame extends BaseGame {
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
       this.tickInterval = setInterval(() => this._tick(), TICK_RATE_MS);
-      setTimeout(() => this._endRound(), roundDurationMs);
+      this.roundTimeout = setTimeout(() => this._endRound(), roundDurationMs);
     });
   }
 
@@ -420,6 +427,10 @@ export default class DontGetCaughtGame extends BaseGame {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
     }
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+      this.roundTimeout = null;
+    }
     this.room.state.guards.clear();
   }
 
@@ -430,18 +441,19 @@ export default class DontGetCaughtGame extends BaseGame {
     this.guardRuntimes = [];
 
     const patrolPath = getPatrolPath();
-    if (patrolPath.length === 0) return;
+    const guardSpawnPositions = getGuardSpawnPositions();
+    if (patrolPath.length === 0 || guardSpawnPositions.length === 0) return;
 
     for (let i = 0; i < count; i++) {
       const g = new GuardState();
       const key = String(i);
       g.id = key;
 
+      const spawn = guardSpawnPositions[i % guardSpawnPositions.length] ?? getGuardStart();
       const startIdx = Math.floor((i * patrolPath.length) / count) % patrolPath.length;
-      const startWp = patrolPath[startIdx] ?? patrolPath[0];
 
-      g.x = (startWp?.x ?? getGuardStart().x) + 0.5;
-      g.y = (startWp?.y ?? getGuardStart().y) + 0.5;
+      g.x = spawn.x + 0.5;
+      g.y = spawn.y + 0.5;
       g.facingAngle = (i / count) * Math.PI * 2;
       g.patrolIndex = startIdx;
       g.guardMode = "patrol";
@@ -1014,6 +1026,11 @@ export default class DontGetCaughtGame extends BaseGame {
 
     clearInterval(this.tickInterval);
     this.tickInterval = null;
+
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+      this.roundTimeout = null;
+    }
 
     if (this.roundResolve) {
       this.roundResolve();
