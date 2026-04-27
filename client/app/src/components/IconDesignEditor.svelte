@@ -155,6 +155,7 @@ export let disabled = false;
     designHistory = designHistory.slice(0, -1);
   }
 
+  /** Returns Euclidean distance between two normalized icon points. */
   function pointDistance(a: { x: number; y: number }, b: { x: number; y: number }) {
     return Math.hypot(a.x - b.x, a.y - b.y);
   }

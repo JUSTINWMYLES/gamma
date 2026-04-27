@@ -145,6 +145,11 @@ function lerpAngle(current: number, target: number, t: number): number {
   return current + diff * t;
 }
 
+/**
+ * Builds a guard-specific patrol segment from the shared patrol loop.
+ * Each guard gets a shifted slice so patrols stay separated instead of
+ * marching around the exact same full route together.
+ */
 function buildGuardPatrolPath(
   patrolPath: Array<{ x: number; y: number }>,
   guardIndex: number,

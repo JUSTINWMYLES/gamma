@@ -230,6 +230,8 @@
     "Shipping = $500 (it's heavy)", "Drone delivery (untested)",
   ];
 
+  // Deterministically derives fake seller/shipping metadata from an item's hint
+  // so the same listing always presents with the same TV details.
   function hashCode(value: string): number {
     let hash = 0;
     for (let i = 0; i < value.length; i++) {
