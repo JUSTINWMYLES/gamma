@@ -18,7 +18,7 @@
 
   $: allTied = sortedPlayers.length > 1 && sortedPlayers.every((p) => p.score === sortedPlayers[0].score);
   $: topFive = sortedPlayers.slice(0, 5);
-  $: hiddenCount = Math.max(0, sortedPlayers.length - topFive.length);
+  $: hiddenCount = Math.max(0, sortedPlayers.length - 5);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="scoreboard-screen">

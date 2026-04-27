@@ -12,7 +12,7 @@
   // Top-3 podium data (bar chart)
   $: top3 = sortedPlayers.slice(0, 3);
   $: topFive = sortedPlayers.slice(0, 5);
-  $: hiddenCount = Math.max(0, sortedPlayers.length - topFive.length);
+  $: hiddenCount = Math.max(0, sortedPlayers.length - 5);
   $: maxScore = top3[0]?.score ?? 1;
 
   function rankNumber(index: number, players: PlayerState[]): number {

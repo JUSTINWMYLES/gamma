@@ -117,7 +117,7 @@ interface InputMessage {
 
 interface GuardRuntime {
   id: string;
-  /** Guard-specific patrol loop so guards cover different sectors. */
+  /** Guard-specific patrol segment from the global route. */
   patrolPath: Array<{ x: number; y: number }>;
   /** BFS-computed path (list of tile centres). Empty = no active path. */
   bfsPath: Array<{ x: number; y: number }>;

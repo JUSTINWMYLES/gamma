@@ -36,6 +36,7 @@
     | "phase_result"
     | "round_recap";
   type GamePhase = "complaint" | "diagnosis" | "procedure" | "catchphrase";
+  type LeaderboardEntry = PlayerState;
   type VotingSubmission = {
     playerId: string;
     text: string;
@@ -99,6 +100,7 @@
   let phaseWinner: PhaseResult | null = null;
   let phasePoints: Record<string, number> = {};
   let projectedRoundPoints: Record<string, number> = {};
+  let leaderboardPlayers: LeaderboardEntry[] = [];
 
   // ── Round recap ──────────────────────────────────────────────────────
   let phaseWinners: Record<string, PhaseResult | null> = {};
@@ -406,7 +408,7 @@
       ...player,
       score: player.score + (projectedRoundPoints[player.id] ?? 0),
     }))
-    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)) as PlayerState[];
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   $: topRoundLeaders = leaderboardPlayers.slice(0, 3);
 
   // ── Lifecycle ────────────────────────────────────────────────────────
