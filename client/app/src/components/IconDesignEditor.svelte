@@ -171,6 +171,7 @@ export let disabled = false;
       <div class="flex justify-center">
       <div
         bind:this={canvasEl}
+        role="presentation"
         class="relative w-40 h-40 sm:w-56 sm:h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none select-none"
         style="background:{design.bgColor};background-color:{design.bgColor};user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;"
         on:pointerdown|preventDefault={startStroke}
