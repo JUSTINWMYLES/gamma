@@ -436,8 +436,7 @@
       subPhase === "assignment_reveal" ||
       subPhase === "script_voice_submission" ||
       subPhase === "gif_selection" ||
-      subPhase === "logo_creation" ||
-      subPhase === "buffering"
+      subPhase === "logo_creation"
     )
       ? "celebration"
       : null;

@@ -178,7 +178,7 @@
         const tile = mazeTiles[row * mazeWidth + col] ?? TILE_WALL;
         let fillColor = "#1a1a2e"; // wall
 
-        if (tile === TILE_PATH) fillColor = "#16213e";
+        if (tile === TILE_PATH) fillColor = "#24345f";
         else if (tile === TILE_START) fillColor = "#1a3a1a";
         else if (tile === TILE_EXIT) fillColor = "#3a1a1a";
         else fillColor = "#0f0f1a";
@@ -188,7 +188,7 @@
 
         // Grid lines
         if (tile !== TILE_WALL) {
-          ctx.strokeStyle = "rgba(255,255,255,0.03)";
+          ctx.strokeStyle = "rgba(255,255,255,0.06)";
           ctx.strokeRect(col * tileSize, row * tileSize, tileSize, tileSize);
         }
       }

@@ -344,20 +344,191 @@
      <text x="158" y="87" text-anchor="middle" fill="{accent}" font-size="5" opacity="0.3">evil laughs</text>
   </svg>
 
-{:else if gameId === "registry-44-western-standoff"}
-  <!-- Western Standoff: two duelists and a revolver silhouette -->
+{:else if gameId === "registry-40-paint-match"}
+  <!-- Paint Match: target color on TV with paint buckets blending toward it -->
   <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
-    <circle cx="46" cy="34" r="7" fill="{accent}" opacity="0.22"/>
-    <rect x="40" y="42" width="12" height="22" rx="4" fill="{accent}" opacity="0.18"/>
-    <line x1="52" y1="50" x2="74" y2="44" stroke="{accent}" stroke-width="2.2" stroke-linecap="round" opacity="0.35"/>
-    <circle cx="154" cy="34" r="7" fill="{accent}" opacity="0.22"/>
-    <rect x="148" y="42" width="12" height="22" rx="4" fill="{accent}" opacity="0.18"/>
-    <line x1="148" y1="50" x2="126" y2="44" stroke="{accent}" stroke-width="2.2" stroke-linecap="round" opacity="0.35"/>
-    <path d="M90 56 h18 a6 6 0 0 0 6 -6 v-5 a6 6 0 0 0 -6 -6 h-8 l-4 -6 h-8 v23" fill="rgba(255,255,255,0.03)" stroke="{accent}" stroke-width="1.5" opacity="0.45"/>
-    <circle cx="104" cy="47" r="4.5" fill="none" stroke="{accent}" stroke-width="1.1" opacity="0.35" class="standoff-cylinder"/>
-    <path d="M30 82 C52 70, 68 69, 86 78" stroke="{accent}" stroke-width="1.2" opacity="0.18" stroke-dasharray="3 3"/>
-    <path d="M170 82 C148 70, 132 69, 114 78" stroke="{accent}" stroke-width="1.2" opacity="0.18" stroke-dasharray="3 3"/>
-    <text x="100" y="93" text-anchor="middle" fill="{accent}" font-size="8" font-weight="bold" opacity="0.45">DRAW</text>
+    <rect x="16" y="14" width="74" height="50" rx="6" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="1.1" opacity="0.35"/>
+    <rect x="22" y="20" width="62" height="38" rx="4" fill="url(#paintTarget)" class="paint-target"/>
+    <text x="53" y="72" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.4">TARGET</text>
+
+    <circle cx="124" cy="32" r="9" fill="#ef4444" opacity="0.7" class="paint-drop-red"/>
+    <circle cx="145" cy="28" r="9" fill="#facc15" opacity="0.75" class="paint-drop-yellow"/>
+    <circle cx="164" cy="34" r="9" fill="#3b82f6" opacity="0.75" class="paint-drop-blue"/>
+    <circle cx="132" cy="54" r="8" fill="#f8fafc" opacity="0.7" class="paint-drop-white"/>
+    <circle cx="154" cy="56" r="8" fill="#111827" opacity="0.8" class="paint-drop-black"/>
+
+    <path d="M118 26 C126 42, 140 46, 150 44 C162 41, 168 51, 162 62 C156 73, 133 77, 117 69 C104 63, 105 44, 118 26Z"
+      fill="rgba(255,255,255,0.08)" stroke="{accent}" stroke-width="1" opacity="0.35" class="paint-palette"/>
+    <circle cx="136" cy="52" r="16" fill="url(#paintMix)" class="paint-mix-orb"/>
+    <circle cx="136" cy="52" r="22" fill="none" stroke="{accent}" stroke-width="0.8" opacity="0.18" class="paint-match-ring"/>
+    <path d="M90 39 C99 36, 104 36, 112 41" stroke="{accent}" stroke-width="1" opacity="0.2" stroke-dasharray="3 3"/>
+
+    <defs>
+      <linearGradient id="paintTarget" x1="22" y1="20" x2="84" y2="58" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#22d3ee"/>
+        <stop offset="0.5" stop-color="#a855f7"/>
+        <stop offset="1" stop-color="#fb7185"/>
+      </linearGradient>
+      <linearGradient id="paintMix" x1="120" y1="38" x2="152" y2="68" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#38bdf8"/>
+        <stop offset="0.45" stop-color="#c084fc"/>
+        <stop offset="1" stop-color="#f472b6"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+{:else if gameId === "registry-10-grid-tap-colors"}
+  <!-- Grid Tap Colors: phone grid with one lit sequence path across the floor -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    {#each [0, 1, 2, 3] as col}
+      {#each [0, 1, 2] as row}
+        <rect
+          x={28 + col * 36}
+          y={18 + row * 22}
+          width="24"
+          height="16"
+          rx="3"
+          fill="{accent}"
+          opacity={(col === 0 && row === 1) || (col === 1 && row === 0) || (col === 2 && row === 2) || (col === 3 && row === 1) ? 0.15 : 0.06}
+          stroke="{accent}"
+          stroke-width="0.8"
+          stroke-opacity="0.2"
+        />
+      {/each}
+    {/each}
+    <rect x="28" y="40" width="24" height="16" rx="3" fill="#22d3ee" opacity="0.85" class="grid-lit-phone"/>
+    <rect x="64" y="18" width="24" height="16" rx="3" fill="#f472b6" opacity="0.8" class="grid-lit-phone-2"/>
+    <rect x="100" y="62" width="24" height="16" rx="3" fill="#facc15" opacity="0.8" class="grid-lit-phone-3"/>
+    <rect x="136" y="40" width="24" height="16" rx="3" fill="#4ade80" opacity="0.8" class="grid-lit-phone-4"/>
+    <path d="M40 48 C52 38, 67 32, 76 26 C84 22, 97 33, 112 70 C120 82, 132 56, 148 48"
+      stroke="{accent}" stroke-width="1.4" opacity="0.35" stroke-dasharray="3 4" class="grid-sequence"/>
+    <circle cx="40" cy="48" r="7" fill="none" stroke="{accent}" stroke-width="1" opacity="0.25" class="grid-pulse-start"/>
+    <circle cx="148" cy="48" r="7" fill="none" stroke="{accent}" stroke-width="1" opacity="0.2" class="grid-pulse-end"/>
+    <text x="100" y="92" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.35">LIGHT → TAP → NEXT</text>
+  </svg>
+
+{:else if gameId === "registry-28-wanted-ad"}
+  <!-- Wanted Ad: western poster with portrait slot, bounty line, and stamped reward -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <path d="M38 10 H118 L130 22 V82 H38 Z" fill="rgba(245, 222, 179, 0.08)" stroke="{accent}" stroke-width="1.1" opacity="0.4"/>
+    <path d="M118 10 V22 H130" fill="none" stroke="{accent}" stroke-width="1.1" opacity="0.3"/>
+    <text x="84" y="23" text-anchor="middle" fill="{accent}" font-size="10" font-weight="bold" opacity="0.55">WANTED</text>
+    <rect x="53" y="30" width="62" height="26" rx="3" fill="rgba(255,255,255,0.03)" stroke="{accent}" stroke-width="0.8" opacity="0.25"/>
+    <circle cx="84" cy="41" r="7" fill="{accent}" opacity="0.24"/>
+    <rect x="76" y="49" width="16" height="4" rx="2" fill="{accent}" opacity="0.18"/>
+    <line x1="54" y1="62" x2="114" y2="62" stroke="{accent}" stroke-width="0.9" opacity="0.25"/>
+    <line x1="54" y1="68" x2="108" y2="68" stroke="{accent}" stroke-width="0.9" opacity="0.22"/>
+    <line x1="54" y1="74" x2="110" y2="74" stroke="{accent}" stroke-width="0.9" opacity="0.18"/>
+    <circle cx="154" cy="52" r="18" fill="none" stroke="#fb7185" stroke-width="2" opacity="0.45" class="wanted-stamp"/>
+    <text x="154" y="49" text-anchor="middle" fill="#fb7185" font-size="7" font-weight="bold" opacity="0.75">$5000</text>
+    <text x="154" y="58" text-anchor="middle" fill="#fb7185" font-size="5" font-weight="bold" opacity="0.6">REWARD</text>
+    <path d="M142 78 C151 69, 161 69, 170 78" stroke="{accent}" stroke-width="1.4" opacity="0.3"/>
+    <line x1="151" y1="78" x2="151" y2="84" stroke="{accent}" stroke-width="1.2" opacity="0.3"/>
+    <line x1="161" y1="78" x2="161" y2="84" stroke="{accent}" stroke-width="1.2" opacity="0.3"/>
+  </svg>
+
+{:else if gameId === "registry-43-medical-story"}
+  <!-- Medical Story: ambulance arrival, patient silhouette, and absurd diagnosis board -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <rect x="16" y="44" width="54" height="24" rx="5" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="1" opacity="0.35"/>
+    <rect x="24" y="34" width="22" height="16" rx="3" fill="{accent}" opacity="0.18"/>
+    <rect x="46" y="38" width="14" height="12" rx="2" fill="{accent}" opacity="0.12"/>
+    <rect x="35" y="48" width="14" height="4" rx="2" fill="#ef4444" opacity="0.75"/>
+    <rect x="40" y="43" width="4" height="14" rx="2" fill="#ef4444" opacity="0.75"/>
+    <circle cx="28" cy="72" r="5" fill="{accent}" opacity="0.2"/>
+    <circle cx="58" cy="72" r="5" fill="{accent}" opacity="0.2"/>
+    <line x1="12" y1="36" x2="4" y2="36" stroke="#facc15" stroke-width="2" opacity="0.4" class="medical-siren"/>
+    <line x1="16" y1="30" x2="8" y2="24" stroke="#facc15" stroke-width="1.8" opacity="0.35" class="medical-siren"/>
+
+    <circle cx="108" cy="31" r="7" fill="{accent}" opacity="0.2"/>
+    <line x1="108" y1="38" x2="108" y2="56" stroke="{accent}" stroke-width="1.5" opacity="0.3"/>
+    <line x1="108" y1="44" x2="98" y2="49" stroke="{accent}" stroke-width="1.2" opacity="0.25"/>
+    <line x1="108" y1="44" x2="118" y2="47" stroke="{accent}" stroke-width="1.2" opacity="0.25"/>
+    <line x1="108" y1="56" x2="101" y2="67" stroke="{accent}" stroke-width="1.2" opacity="0.25"/>
+    <line x1="108" y1="56" x2="115" y2="67" stroke="{accent}" stroke-width="1.2" opacity="0.25"/>
+    <circle cx="116" cy="47" r="4" fill="#fb7185" opacity="0.25" class="medical-body-highlight"/>
+
+    <rect x="132" y="18" width="48" height="44" rx="5" fill="rgba(255,255,255,0.03)" stroke="{accent}" stroke-width="1" opacity="0.28"/>
+    <text x="156" y="31" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.45">DIAGNOSIS</text>
+    <line x1="142" y1="38" x2="171" y2="38" stroke="{accent}" stroke-width="0.9" opacity="0.2"/>
+    <line x1="142" y1="45" x2="168" y2="45" stroke="{accent}" stroke-width="0.9" opacity="0.18"/>
+    <line x1="142" y1="52" x2="174" y2="52" stroke="{accent}" stroke-width="0.9" opacity="0.16"/>
+    <text x="156" y="77" text-anchor="middle" fill="{accent}" font-size="6" opacity="0.35">complaint • procedure • brag</text>
+  </svg>
+
+{:else if gameId === "registry-45-news-broadcast"}
+  <!-- News Broadcast: anchor desk, broadcast screen, and scrolling lower third -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <rect x="18" y="14" width="72" height="42" rx="5" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="1" opacity="0.3"/>
+    <rect x="24" y="20" width="60" height="24" rx="3" fill="rgba(59,130,246,0.08)"/>
+    <path d="M30 38 C38 25, 52 25, 60 38 C67 48, 80 46, 84 30" stroke="{accent}" stroke-width="1.4" opacity="0.35" class="broadcast-wave"/>
+    <text x="54" y="50" text-anchor="middle" fill="{accent}" font-size="6" opacity="0.35">LIVE FEED</text>
+
+    <circle cx="132" cy="34" r="11" fill="{accent}" opacity="0.2"/>
+    <rect x="118" y="48" width="28" height="14" rx="7" fill="{accent}" opacity="0.16"/>
+    <rect x="108" y="64" width="48" height="10" rx="5" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="0.8" opacity="0.25"/>
+    <text x="132" y="71" text-anchor="middle" fill="{accent}" font-size="5" font-weight="bold" opacity="0.45">ANCHOR</text>
+
+    <rect x="16" y="78" width="168" height="10" rx="3" fill="#0f172a" opacity="0.8"/>
+    <rect x="16" y="78" width="34" height="10" rx="3" fill="#dc2626" opacity="0.9"/>
+    <text x="33" y="85" text-anchor="middle" fill="#ffffff" font-size="5" font-weight="bold">BREAKING</text>
+    <text x="58" y="85" fill="{accent}" font-size="5" opacity="0.55" class="ticker-scroll">RIDICULOUS HEADLINE • SCRIPT • VOICE • VOTE</text>
+  </svg>
+
+{:else if gameId === "registry-11-tier-ranking"}
+  <!-- S-Tier Ranking: stacked tier lanes with cards sorting into consensus ranks -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    {#each [
+      { label: 'S', y: 14, color: '#fbbf24' },
+      { label: 'A', y: 29, color: '#fb7185' },
+      { label: 'B', y: 44, color: '#38bdf8' },
+      { label: 'C', y: 59, color: '#4ade80' },
+      { label: 'D', y: 74, color: '#a78bfa' },
+    ] as tier}
+      <rect x="20" y={tier.y} width="160" height="11" rx="5.5" fill="{tier.color}" opacity="0.14"/>
+      <text x="30" y={tier.y + 7.5} fill="{tier.color}" font-size="7" font-weight="bold" opacity="0.85">{tier.label}</text>
+    {/each}
+    <rect x="62" y="15" width="24" height="9" rx="3" fill="rgba(255,255,255,0.06)" stroke="{accent}" stroke-width="0.8" opacity="0.35" class="tier-card-1"/>
+    <rect x="116" y="30" width="24" height="9" rx="3" fill="rgba(255,255,255,0.06)" stroke="{accent}" stroke-width="0.8" opacity="0.35" class="tier-card-2"/>
+    <rect x="90" y="45" width="24" height="9" rx="3" fill="rgba(255,255,255,0.06)" stroke="{accent}" stroke-width="0.8" opacity="0.35" class="tier-card-3"/>
+    <rect x="132" y="60" width="24" height="9" rx="3" fill="rgba(255,255,255,0.06)" stroke="{accent}" stroke-width="0.8" opacity="0.35" class="tier-card-4"/>
+    <rect x="72" y="75" width="24" height="9" rx="3" fill="rgba(255,255,255,0.06)" stroke="{accent}" stroke-width="0.8" opacity="0.35" class="tier-card-5"/>
+    <path d="M164 18 C171 24, 171 32, 164 38" stroke="{accent}" stroke-width="1" opacity="0.22" class="tier-vote-wave"/>
+    <path d="M169 16 C178 24, 178 34, 169 42" stroke="{accent}" stroke-width="0.8" opacity="0.16" class="tier-vote-wave"/>
+  </svg>
+
+{:else if gameId === "registry-44-western-standoff"}
+  <!-- Western Standoff: duel lane, draw signal, and two phones swinging into aim -->
+  <svg viewBox="0 0 200 100" fill="none" xmlns="http://www.w3.org/2000/svg" class="card-svg">
+    <rect x="22" y="76" width="156" height="2" rx="1" fill="{accent}" opacity="0.15"/>
+    <path d="M42 76 C50 64, 62 60, 72 56" stroke="{accent}" stroke-width="1" opacity="0.18" stroke-dasharray="3 3"/>
+    <path d="M158 76 C150 64, 138 60, 128 56" stroke="{accent}" stroke-width="1" opacity="0.18" stroke-dasharray="3 3"/>
+
+    <circle cx="52" cy="34" r="7" fill="{accent}" opacity="0.24"/>
+    <rect x="45" y="42" width="14" height="22" rx="4" fill="{accent}" opacity="0.16"/>
+    <line x1="59" y1="49" x2="69" y2="41" stroke="{accent}" stroke-width="1.8" opacity="0.28"/>
+    <line x1="52" y1="64" x2="46" y2="76" stroke="{accent}" stroke-width="1.4" opacity="0.24"/>
+    <line x1="52" y1="64" x2="58" y2="76" stroke="{accent}" stroke-width="1.4" opacity="0.24"/>
+    <g class="standoff-phone-left">
+      <rect x="70" y="43" width="24" height="11" rx="3" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="1.1" opacity="0.5"/>
+      <line x1="94" y1="48.5" x2="114" y2="48.5" stroke="{accent}" stroke-width="2.1" stroke-linecap="round" opacity="0.42"/>
+      <circle cx="118" cy="48.5" r="2.8" fill="#facc15" opacity="0.9" class="standoff-muzzle-flash"/>
+    </g>
+
+    <circle cx="148" cy="34" r="7" fill="{accent}" opacity="0.24"/>
+    <rect x="141" y="42" width="14" height="22" rx="4" fill="{accent}" opacity="0.16"/>
+    <line x1="141" y1="49" x2="131" y2="41" stroke="{accent}" stroke-width="1.8" opacity="0.28"/>
+    <line x1="148" y1="64" x2="142" y2="76" stroke="{accent}" stroke-width="1.4" opacity="0.24"/>
+    <line x1="148" y1="64" x2="154" y2="76" stroke="{accent}" stroke-width="1.4" opacity="0.24"/>
+    <g class="standoff-phone-right">
+      <rect x="106" y="43" width="24" height="11" rx="3" fill="rgba(255,255,255,0.04)" stroke="{accent}" stroke-width="1.1" opacity="0.5"/>
+      <line x1="106" y1="48.5" x2="86" y2="48.5" stroke="{accent}" stroke-width="2.1" stroke-linecap="round" opacity="0.42"/>
+    </g>
+
+    <circle cx="100" cy="22" r="10" fill="none" stroke="#fb7185" stroke-width="1.6" opacity="0.55" class="standoff-draw-ring"/>
+    <text x="100" y="25" text-anchor="middle" fill="#fb7185" font-size="7" font-weight="bold" opacity="0.85">DRAW</text>
+    <path d="M100 32 L100 38" stroke="#fb7185" stroke-width="1.4" opacity="0.45"/>
+    <text x="100" y="93" text-anchor="middle" fill="{accent}" font-size="7" font-weight="bold" opacity="0.38">TURN • AIM • FIRE</text>
   </svg>
 
 {:else}
@@ -598,6 +769,134 @@
 
   /* ── Audio Overlay animations ── */
   /* wave-r1, wave-r2 reuse Sound Replication wave-pulse */
+
+  /* ── Paint Match animations ── */
+  .paint-target { animation: paint-target-breathe 2.6s ease-in-out infinite alternate; }
+  .paint-palette { animation: paint-palette-float 3s ease-in-out infinite alternate; }
+  .paint-mix-orb { animation: paint-orb-shift 3.2s ease-in-out infinite alternate; }
+  .paint-match-ring { animation: paint-ring-pulse 1.8s ease-out infinite; }
+  .paint-drop-red, .paint-drop-yellow, .paint-drop-blue, .paint-drop-white, .paint-drop-black {
+    animation: paint-drop-bob 2s ease-in-out infinite alternate;
+  }
+  .paint-drop-yellow { animation-delay: 0.2s; }
+  .paint-drop-blue { animation-delay: 0.4s; }
+  .paint-drop-white { animation-delay: 0.6s; }
+  .paint-drop-black { animation-delay: 0.8s; }
+  @keyframes paint-target-breathe {
+    from { opacity: 0.9; }
+    to { opacity: 0.75; }
+  }
+  @keyframes paint-palette-float {
+    from { transform: translateY(0); }
+    to { transform: translateY(-2px); }
+  }
+  @keyframes paint-orb-shift {
+    from { transform: scale(0.96); }
+    to { transform: scale(1.04); }
+  }
+  @keyframes paint-ring-pulse {
+    0% { opacity: 0.22; transform: scale(0.9); }
+    100% { opacity: 0; transform: scale(1.12); }
+  }
+  @keyframes paint-drop-bob {
+    from { transform: translateY(0); }
+    to { transform: translateY(2px); }
+  }
+
+  /* ── Grid Tap Colors animations ── */
+  .grid-lit-phone, .grid-lit-phone-2, .grid-lit-phone-3, .grid-lit-phone-4 {
+    animation: grid-light-pop 1.1s ease-in-out infinite alternate;
+  }
+  .grid-lit-phone-2 { animation-delay: 0.25s; }
+  .grid-lit-phone-3 { animation-delay: 0.5s; }
+  .grid-lit-phone-4 { animation-delay: 0.75s; }
+  .grid-sequence { animation: grid-sequence-run 2.8s linear infinite; }
+  .grid-pulse-start, .grid-pulse-end { animation: grid-pulse-ring 1.6s ease-out infinite; }
+  .grid-pulse-end { animation-delay: 0.8s; }
+  @keyframes grid-light-pop {
+    from { opacity: 0.55; }
+    to { opacity: 0.95; }
+  }
+  @keyframes grid-sequence-run {
+    from { stroke-dashoffset: 0; }
+    to { stroke-dashoffset: -28; }
+  }
+  @keyframes grid-pulse-ring {
+    0% { opacity: 0.25; transform: scale(0.85); }
+    100% { opacity: 0; transform: scale(1.3); }
+  }
+
+  /* ── Wanted Ad animations ── */
+  .wanted-stamp { animation: wanted-stamp-thump 2.4s ease-in-out infinite; transform-origin: 154px 52px; }
+  @keyframes wanted-stamp-thump {
+    0%, 100% { transform: rotate(-8deg) scale(1); }
+    20% { transform: rotate(-8deg) scale(1.06); }
+    40% { transform: rotate(-8deg) scale(1); }
+  }
+
+  /* ── Medical Story animations ── */
+  .medical-siren { animation: medical-flash 0.9s ease-in-out infinite alternate; }
+  .medical-body-highlight { animation: medical-highlight 1.7s ease-in-out infinite alternate; }
+  @keyframes medical-flash {
+    from { opacity: 0.15; }
+    to { opacity: 0.5; }
+  }
+  @keyframes medical-highlight {
+    from { opacity: 0.15; transform: scale(0.9); }
+    to { opacity: 0.35; transform: scale(1.1); }
+  }
+
+  /* ── News Broadcast animations ── */
+  .broadcast-wave { animation: broadcast-signal 2s ease-in-out infinite; }
+  .ticker-scroll { animation: ticker-slide 4s linear infinite; }
+  @keyframes broadcast-signal {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 0.55; }
+  }
+  @keyframes ticker-slide {
+    from { transform: translateX(0); }
+    to { transform: translateX(-18px); }
+  }
+
+  /* ── S-Tier Ranking animations ── */
+  .tier-card-1, .tier-card-2, .tier-card-3, .tier-card-4, .tier-card-5 {
+    animation: tier-card-settle 2.2s ease-in-out infinite alternate;
+  }
+  .tier-card-2 { animation-delay: 0.15s; }
+  .tier-card-3 { animation-delay: 0.3s; }
+  .tier-card-4 { animation-delay: 0.45s; }
+  .tier-card-5 { animation-delay: 0.6s; }
+  .tier-vote-wave { animation: tier-vote-pulse 1.8s ease-in-out infinite; }
+  @keyframes tier-card-settle {
+    from { opacity: 0.25; }
+    to { opacity: 0.5; }
+  }
+  @keyframes tier-vote-pulse {
+    0%, 100% { opacity: 0.12; }
+    50% { opacity: 0.32; }
+  }
+
+  /* ── Western Standoff animations ── */
+  .standoff-phone-left { animation: standoff-aim-left 1.8s ease-in-out infinite alternate; transform-origin: 82px 48px; }
+  .standoff-phone-right { animation: standoff-aim-right 1.8s ease-in-out infinite alternate; transform-origin: 118px 48px; }
+  .standoff-draw-ring { animation: standoff-draw-pulse 1.2s ease-in-out infinite; transform-origin: 100px 22px; }
+  .standoff-muzzle-flash { animation: standoff-flash 0.5s ease-in-out infinite alternate; }
+  @keyframes standoff-aim-left {
+    from { transform: rotate(-10deg) translateX(-1px); }
+    to { transform: rotate(2deg) translateX(1px); }
+  }
+  @keyframes standoff-aim-right {
+    from { transform: rotate(10deg) translateX(1px); }
+    to { transform: rotate(-2deg) translateX(-1px); }
+  }
+  @keyframes standoff-draw-pulse {
+    0%, 100% { transform: scale(0.95); opacity: 0.4; }
+    50% { transform: scale(1.08); opacity: 0.75; }
+  }
+  @keyframes standoff-flash {
+    from { opacity: 0.2; r: 2.2px; }
+    to { opacity: 1; r: 3.4px; }
+  }
 
   /* ── Word Build animations ── */
   .wb-letter-1 { animation: wb-pop 1.5s ease-in-out infinite; }

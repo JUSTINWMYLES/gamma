@@ -170,9 +170,11 @@
         return "two_finger_johnny";
       }
       // During in_round, defer to TV component's musictrackchange dispatch
-      // which controls music based on the current sub-phase
+      // which controls music based on the current sub-phase.
+      // Fallback to the game's track so music keeps playing until the TV
+      // explicitly signals a stop (e.g. when recording starts).
       if (phase === "in_round") {
-        return viewerTrackOverride ?? null;
+        return viewerTrackOverride ?? "two_finger_johnny";
       }
       return null;
     }
@@ -181,9 +183,11 @@
         return "celebration";
       }
       // During in_round, defer to TV component's musictrackchange dispatch
-      // which controls music based on the current sub-phase
+      // which controls music based on the current sub-phase.
+      // Fallback to the game's track so music keeps playing until the TV
+      // explicitly signals a stop (e.g. after logo_creation ends).
       if (phase === "in_round") {
-        return viewerTrackOverride ?? null;
+        return viewerTrackOverride ?? "celebration";
       }
       return null;
     }
