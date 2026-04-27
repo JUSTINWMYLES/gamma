@@ -62,7 +62,8 @@ spec:
 Status phases: `Deploying` → `Running` | `Degraded` | `Failed`
 
 ## CRITICAL IMPLEMENTATION DETAILS
-- **Sticky sessions**: Server Service uses `SessionAffinity: ClientIP` (3600s timeout) — required because Colyseus rooms are in-memory. Don't remove this.
+- **Single server replica**: Colyseus rooms live in local memory. With >1 server replica, a player joining an existing room may land on a pod that does not host the room, causing "seat reservation expired". Keep `spec.server.replicas: 1` unless you deploy a `@colyseus/proxy` layer for room-aware routing.
+- **Sticky sessions**: Server Service uses `SessionAffinity: ClientIP` (3600s timeout). This is a secondary safety net, but it is NOT sufficient for multi-replica Colyseus setups because ingress routing happens first.
 - **WebSocket ingress**: `/ws` → server port, `/` → client port. Nginx annotations for proxy-http-version 1.1 and connection upgrade are auto-added.
 - **Client server URL**: if ingress is enabled, operator derives and injects `GAMMA_SERVER_URL` into the client container automatically.
 - **Redis env injection**: when `redis.enabled: true`, operator sets `REDIS_URL` and `STATE_BACKEND=redis` on the server deployment.

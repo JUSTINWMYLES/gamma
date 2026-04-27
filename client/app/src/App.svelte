@@ -172,7 +172,7 @@
       // During in_round, defer to TV component's musictrackchange dispatch
       // which controls music based on the current sub-phase
       if (phase === "in_round") {
-        return viewerTrackOverride ?? "two_finger_johnny";
+        return viewerTrackOverride ?? null;
       }
       return null;
     }
@@ -183,7 +183,7 @@
       // During in_round, defer to TV component's musictrackchange dispatch
       // which controls music based on the current sub-phase
       if (phase === "in_round") {
-        return viewerTrackOverride ?? "celebration";
+        return viewerTrackOverride ?? null;
       }
       return null;
     }
@@ -538,7 +538,7 @@
   {#if role === "viewer" && state && !error && viewerView === "room"}
     <div class="fixed top-3 left-3 z-50 rounded-lg bg-black/60 border border-indigo-400/80 px-3 py-1.5 text-left backdrop-blur-sm">
       <p class="text-[10px] uppercase tracking-[0.2em] text-indigo-300">Room</p>
-      <p class="font-mono text-base font-black tracking-[0.25em] text-indigo-200" data-testid="persistent-room-code">{state.roomCode}</p>
+      <p class="font-mono text-base font-black tracking-[0.25em] text-yellow-300" data-testid="persistent-room-code">{state.roomCode}</p>
     </div>
   {/if}
 

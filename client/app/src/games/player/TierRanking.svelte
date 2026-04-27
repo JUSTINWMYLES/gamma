@@ -245,7 +245,7 @@
   };
 </script>
 
-<div class="flex-1 flex flex-col gap-4 overflow-y-auto rounded-[28px] border border-slate-800 bg-[#0c0d14]/90 p-4" data-testid="tier-ranking">
+<div class="flex-1 flex flex-col gap-4 overflow-y-auto rounded-[28px] border border-slate-800 bg-gray-950 p-4" data-testid="tier-ranking">
   {#if roundSkipped}
     <div class="text-center space-y-3 mt-8">
       <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>

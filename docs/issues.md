@@ -50,3 +50,38 @@ I did a full play through and found a bunch of bugs. I need you to go through an
 ## S-tier
 
 - When in light mode there is a lot of dark on dark text during the reveal and throughout the game, fix the color issues for light mode. Dark mode is fine.
+
+
+# Round 2
+
+## System
+
+Review the colors for the instructions part across all games, light mode has light text on light backgrounds for all games. Also within the games it needs to be corrected. I can see that a fake fix was implemented by putting a dark block in the background, this did not help at all
+
+
+## Wanted ad
+
+- On the TV when in light mode, the players name above the text for `Sketching outlaw` is too dark to see, make it the same color as the countdown. Also the room code text is purple, make it the same color as the countdown
+- The wanted posters on the mobile device are good, but the icon drawing circle is too large on mobile devices, that needs to be size reduced
+
+## Audio overlay
+
+- The game has some serious issues now
+- The music is good for the background, but now it plays over the part where players are recording their audio. It needs to stop once the phase is done for selecting gifs
+- When players record their audio and then stop, it auto-submits after just a few short seconds, I don't want it to auto submit like that, the players should be allowed to re-record or to submit
+
+## Medical story
+
+- The left sidebar is still not fully against the side wall. It also does not go all the way to the top. Make sure that the text on the sidebar is moved down a bit so there is space for the room code
+- Light mode is still a problem on both the TV and the phones. Fix it so that the light mode colors are better
+
+## News broadcast
+
+- The light mode colors for text are completely wrong, and really just kind of overlay dark mode onto the game. Fix it so that this doesnt have the same issue. I want it to be light mode with proper colored text. Importantly, the text boxes are dark on dark and that needs to be fixed
+- When selecting a gif, I want there to be a button to actually submit, right now when a player taps on a gif it auto submits, I want them to be able to tap on one to select it then click submit
+- The music needs to stop during the actual broadacsts, right now it just keeps playing through it all
+- I cannot emphasize enough how broken the light mode is on this game
+
+## s-tier
+
+- the light mode just has a dark background block behind it. I want that gone and I want the system to actually just display proper light mode text colors

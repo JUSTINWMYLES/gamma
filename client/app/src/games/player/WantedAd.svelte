@@ -315,7 +315,7 @@
   $: myPosterResult = me ? resultPosters.find((poster) => poster.authorId === me.id) ?? null : null;
 </script>
 
-<div class="flex-1 flex flex-col gap-4 p-4 overflow-y-auto rounded-[28px] border border-amber-900/40 bg-[#160b06]/85" data-testid="wanted-ad-player">
+<div class="flex-1 flex flex-col gap-4 p-4 overflow-y-auto rounded-[28px] border border-amber-900/40 bg-gray-950" data-testid="wanted-ad-player">
   {#if roundSkipped}
     <div class="text-center space-y-3 mt-8">
       <h2 class="text-xl font-black text-yellow-400">Round Skipped</h2>

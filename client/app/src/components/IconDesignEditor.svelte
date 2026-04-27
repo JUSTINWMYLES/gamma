@@ -150,10 +150,10 @@ export let disabled = false;
   <div class="bg-gray-900/70 border border-gray-700 rounded-2xl p-4 space-y-4">
     <div class="text-xs text-gray-400">Draw directly in the circle</div>
 
-    <div class="flex justify-center">
+      <div class="flex justify-center">
       <div
         bind:this={canvasEl}
-        class="relative w-56 h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none"
+        class="relative w-40 h-40 sm:w-56 sm:h-56 rounded-full overflow-hidden border-2 border-white/10 shadow-inner touch-none"
         style="background:{design.bgColor};background-color:{design.bgColor};"
         on:pointerdown={startStroke}
         on:pointermove={moveStroke}

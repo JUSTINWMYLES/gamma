@@ -36,6 +36,10 @@ type ServerSpec struct {
 	// Container image for the Gamma Colyseus server.
 	Image string `json:"image"`
 	// Number of server pod replicas.
+	// IMPORTANT: Colyseus rooms live in local memory. With >1 replica,
+	// WebSocket connections may land on a pod that does not host the room,
+	// causing "seat reservation expired" errors. Use 1 replica unless you
+	// deploy a @colyseus/proxy layer for room-aware routing.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100

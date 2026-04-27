@@ -406,8 +406,8 @@
   });
 </script>
 
-<div class="flex-1 flex px-6 pt-8" data-testid="medical-story-tv">
-  <div class="w-72 border-r border-gray-800 bg-gray-900/70 pt-6 px-4 pb-4 flex flex-col gap-3 flex-shrink-0">
+<div class="flex-1 flex" data-testid="medical-story-tv">
+  <div class="w-72 border-r border-gray-800 bg-gray-900/70 pt-14 px-4 pb-4 flex flex-col gap-3 flex-shrink-0">
     <div>
       <p class="text-xs text-gray-300 uppercase tracking-widest font-semibold">Story So Far</p>
       <p class="mt-1 text-sm text-gray-400">Winning entries stay visible all round.</p>

@@ -397,9 +397,14 @@
     if (gifSelected) return;
     selectedMedia = media;
     gifError = "";
+  }
+
+  function submitGif() {
+    if (gifSelected || !selectedMedia) return;
+    gifError = "";
     room.send("game_input", {
       action: "nb_select_gif",
-      media,
+      media: selectedMedia,
     });
   }
 
@@ -1027,6 +1032,17 @@
             </div>
           {/if}
         </div>
+
+        {#if selectedMedia && selectedMedia.providerAssetId !== FALLBACK_MEDIA.providerAssetId && !gifSelected}
+          <button
+            type="button"
+            class={`w-full rounded-2xl py-3 font-bold transition-all active:scale-[0.98] ${selectedMedia ? "bg-sky-600 text-white active:bg-sky-500" : "bg-slate-800 text-slate-600"}`}
+            disabled={!selectedMedia || gifSelected}
+            on:click={submitGif}
+          >
+            Submit Visual Choice
+          </button>
+        {/if}
 
         {#if gifSelected}
           <div class="rounded-2xl border border-emerald-500/30 bg-emerald-950/30 p-4 text-sm text-emerald-100">

@@ -211,7 +211,7 @@
               <div class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center gap-3">
                 <PlayerIcon {player} size={42} />
                 <div>
-                  <p class="font-black text-white">{player.name}</p>
+                  <p class="font-black text-yellow-300">{player.name}</p>
                   <p class="text-xs uppercase tracking-[0.2em] text-red-100/55">Sketching outlaw</p>
                 </div>
               </div>
@@ -259,7 +259,7 @@
               <div class="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 flex items-center gap-3">
                 <PlayerIcon {player} size={42} />
                 <div>
-                  <p class="font-black text-white">{player.name}</p>
+                  <p class="font-black text-yellow-300">{player.name}</p>
                   <p class="text-xs uppercase tracking-[0.2em] text-amber-100/55">Writing bounty</p>
                 </div>
               </div>

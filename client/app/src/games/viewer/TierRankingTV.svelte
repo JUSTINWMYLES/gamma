@@ -213,7 +213,7 @@
   };
 </script>
 
-<div class="flex-1 flex flex-col items-center justify-center gap-8 bg-[#09090f] p-12 text-white" data-testid="tier-ranking-tv">
+<div class="flex-1 flex flex-col items-center justify-center gap-8 bg-gray-950 p-12 text-white" data-testid="tier-ranking-tv">
   {#if roundSkipped}
     <h2 class="text-3xl font-black text-yellow-400">Round Skipped</h2>
     <p class="text-xl text-gray-300">{skipReason}</p>
@@ -298,7 +298,7 @@
           <p class="text-lg text-gray-300">Revealing one item every 5 seconds, from the basement tiers up to the all-time greats.</p>
         </div>
 
-        <div class="min-h-[150px] rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+        <div class="min-h-[150px] rounded-3xl border border-white/10 bg-gray-900 p-5 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
           <p class="text-xs uppercase tracking-[0.3em] text-gray-300">Latest Reveal</p>
           {#if currentlyRevealedItem}
             <div class="mt-3 flex items-center gap-4">
@@ -322,16 +322,16 @@
         </div>
       </div>
 
-      <div class="space-y-3 rounded-[32px] border border-white/10 bg-[#0f1020] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
+      <div class="space-y-3 rounded-[32px] border border-white/10 bg-gray-900 p-5 shadow-[0_30px_80px_rgba(0,0,0,0.45)]">
         {#each tierBoard.slice().reverse() as row}
-          <div class="grid min-h-[92px] grid-cols-[110px_1fr] overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
+          <div class="grid min-h-[92px] grid-cols-[110px_1fr] overflow-hidden rounded-3xl border border-white/10 bg-gray-900/50">
             <div class={`flex items-center justify-center text-5xl font-black ${TIER_BG[row.tier]} ${TIER_TEXT[row.tier]}`}>
               {row.tier}
             </div>
             <div class="flex min-h-[92px] flex-wrap items-center gap-3 px-4 py-3">
               {#if row.items.length > 0}
                 {#each row.items as item}
-                  <div class="max-w-[220px] rounded-2xl border border-white/10 bg-black/30 px-4 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
+                  <div class="max-w-[220px] rounded-2xl border border-white/10 bg-gray-800 px-4 py-3 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
                     <p class="text-lg font-black text-white leading-tight">{item.item}</p>
                     <p class="mt-2 text-xs uppercase tracking-[0.2em] text-gray-300">
                       {#each REVEAL_TIERS.slice().reverse() as t, index}
@@ -353,7 +353,7 @@
           <p class="text-center text-sm uppercase tracking-[0.35em] text-gray-500">Round Scores</p>
           <div class="flex flex-wrap justify-center gap-3">
             {#each sortedPlayers as p}
-              <div class="flex min-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+              <div class="flex min-w-[220px] items-center gap-3 rounded-2xl border border-white/10 bg-gray-800 px-4 py-3">
                 <PlayerIcon player={p} size={24} />
                 <p class="flex-1 truncate text-sm text-gray-200">{p.name}</p>
                 <p class={`text-2xl font-black ${(roundScores[p.id] ?? 0) > 0 ? 'text-amber-300' : 'text-gray-300'}`}>

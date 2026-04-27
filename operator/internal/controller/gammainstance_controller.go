@@ -51,6 +51,14 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	if instance.Spec.Server.ServerReplicas() > 1 {
+		logger.Info(
+			"WARNING: spec.server.replicas > 1. Colyseus rooms live in local memory; "+
+			"players joining existing rooms may land on a pod that does not host the room, "+
+			"causing 'seat reservation expired' errors. Keep replicas=1 unless you deploy a proxy layer.",
+			"replicas", instance.Spec.Server.ServerReplicas())
+	}
+
 	if instance.Status.Phase == "" || instance.Status.Phase == "Pending" {
 		instance.Status.Phase = "Deploying"
 		if err := r.Status().Update(ctx, instance); err != nil {

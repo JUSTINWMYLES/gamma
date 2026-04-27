@@ -288,10 +288,6 @@
       audioPreviewUrl = URL.createObjectURL(blob);
       const encoded = await blobToBase64(blob);
       audioBase64 = encoded;
-      // Auto-submit as soon as encoding finishes so late-turn races don't drop takes.
-      if (!recordingSubmitted && encoded) {
-        submitRecording();
-      }
       stopMediaStream();
     };
 
