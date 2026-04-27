@@ -130,7 +130,7 @@
   let musicAudio: HTMLAudioElement | null = null;
   let currentTrack: TrackId | null = null;
   let userHasInteracted = false;
-  let viewerTrackOverride: TrackId | null = null;
+  let viewerTrackOverride: TrackId | null | undefined = undefined;
 
   function pauseAllTracks() {
     if (musicAudio) {
@@ -171,10 +171,10 @@
       }
       // During in_round, defer to TV component's musictrackchange dispatch
       // which controls music based on the current sub-phase.
-      // Fallback to the game's track so music keeps playing until the TV
-      // explicitly signals a stop (e.g. when recording starts).
+      // Fallback to the game's track only when the TV has not yet spoken
+      // (undefined). Once the TV dispatches null, that means STOP.
       if (phase === "in_round") {
-        return viewerTrackOverride ?? "two_finger_johnny";
+        return viewerTrackOverride !== undefined ? viewerTrackOverride : "two_finger_johnny";
       }
       return null;
     }
@@ -184,10 +184,10 @@
       }
       // During in_round, defer to TV component's musictrackchange dispatch
       // which controls music based on the current sub-phase.
-      // Fallback to the game's track so music keeps playing until the TV
-      // explicitly signals a stop (e.g. after logo_creation ends).
+      // Fallback to the game's track only when the TV has not yet spoken
+      // (undefined). Once the TV dispatches null, that means STOP.
       if (phase === "in_round") {
-        return viewerTrackOverride ?? "celebration";
+        return viewerTrackOverride !== undefined ? viewerTrackOverride : "celebration";
       }
       return null;
     }
@@ -477,8 +477,8 @@
   $: leaveButtonPositionClass = role === "viewer" ? "right-3" : "left-3";
   $: viewerChromeInsetClass = "";  // Room code overlay is fixed-position; no padding needed
 
-  $: if (state?.selectedGame !== "registry-26-audio-overlay" && viewerTrackOverride !== null) {
-    viewerTrackOverride = null;
+  $: if (state?.selectedGame !== "registry-26-audio-overlay" && viewerTrackOverride !== undefined) {
+    viewerTrackOverride = undefined;
   }
 
   // Keep viewer music in sync with room phase + selected game.

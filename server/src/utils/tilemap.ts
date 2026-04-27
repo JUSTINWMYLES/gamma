@@ -1,27 +1,18 @@
 /**
  * server/src/utils/tilemap.ts
  *
- * Procedural tile map generator for registry-14 "Don't Get Caught".
+ * Fixed tile map definition for registry-14 "Don't Get Caught".
  *
  * Tile legend
  * ───────────
  *   0  floor  — walkable, open space
  *   1  wall   — blocks movement (guards ignore walls)
  *
- * The map is generated fresh each game via generateMap().
- * Guards are supernatural — they move through walls.
+ * The map layout is fixed so guard patrol/navigation can be deterministic.
  * Players cannot move through walls.
- *
- * Map layout algorithm
- * ────────────────────
- * 1. Fill with walls
- * 2. Carve a grid of rooms (variable size) with corridors connecting them
- * 3. Enforce a 1-tile wall border around the whole map
- * 4. Validate spawn + patrol positions are walkable
  */
 
 import { TileMap, Vec2 } from "./los";
-import { seededRng } from "./rng";
 
 // ── Dimensions ────────────────────────────────────────────────────────────────
 
@@ -45,119 +36,81 @@ export interface GeneratedMap {
   guardStart: Vec2;
 }
 
-/**
- * Procedurally generate a tile map.
- *
- * @param seed  Random seed — same seed → same map.
- */
-export function generateMap(seed: number): GeneratedMap {
-  const rng = seededRng(seed);
-  const tiles = new Array<number>(MAP_WIDTH * MAP_HEIGHT).fill(1); // all walls
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
-  function set(col: number, row: number, tile: number) {
+const FIXED_OBSTACLES: Rect[] = [
+  { x: 4, y: 3, w: 4, h: 4 },
+  { x: 13, y: 4, w: 5, h: 4 },
+  { x: 23, y: 3, w: 4, h: 4 },
+  { x: 30, y: 5, w: 3, h: 4 },
+  { x: 7, y: 10, w: 5, h: 4 },
+  { x: 17, y: 9, w: 4, h: 5 },
+  { x: 25, y: 11, w: 5, h: 4 },
+  { x: 4, y: 17, w: 4, h: 4 },
+  { x: 14, y: 17, w: 5, h: 4 },
+  { x: 24, y: 17, w: 4, h: 4 },
+  { x: 30, y: 16, w: 3, h: 4 },
+];
+
+const FIXED_SPAWN_POSITIONS: Vec2[] = [
+  { x: 2, y: 2 },
+  { x: 10, y: 2 },
+  { x: 20, y: 2 },
+  { x: 28, y: 2 },
+  { x: 33, y: 3 },
+  { x: 2, y: 9 },
+  { x: 14, y: 9 },
+  { x: 22, y: 9 },
+  { x: 33, y: 10 },
+  { x: 2, y: 15 },
+  { x: 13, y: 15 },
+  { x: 22, y: 15 },
+  { x: 33, y: 15 },
+  { x: 10, y: 21 },
+  { x: 20, y: 21 },
+  { x: 28, y: 21 },
+];
+
+const FIXED_PATROL_PATH: Vec2[] = [
+  { x: 2, y: 2 },
+  { x: 10, y: 2 },
+  { x: 20, y: 2 },
+  { x: 28, y: 2 },
+  { x: 33, y: 3 },
+  { x: 33, y: 9 },
+  { x: 30, y: 10 },
+  { x: 22, y: 9 },
+  { x: 14, y: 9 },
+  { x: 9, y: 9 },
+  { x: 2, y: 9 },
+  { x: 2, y: 15 },
+  { x: 10, y: 15 },
+  { x: 15, y: 15 },
+  { x: 22, y: 15 },
+  { x: 30, y: 15 },
+  { x: 33, y: 15 },
+  { x: 33, y: 21 },
+  { x: 28, y: 21 },
+  { x: 20, y: 21 },
+  { x: 10, y: 21 },
+  { x: 2, y: 21 },
+];
+
+const FIXED_GUARD_START: Vec2 = { x: 18, y: 15 };
+
+function buildFixedMapTiles(): number[] {
+  const tiles = new Array<number>(MAP_WIDTH * MAP_HEIGHT).fill(0);
+
+  const set = (col: number, row: number, tile: number) => {
     if (col < 0 || row < 0 || col >= MAP_WIDTH || row >= MAP_HEIGHT) return;
     tiles[row * MAP_WIDTH + col] = tile;
-  }
+  };
 
-  function get(col: number, row: number): number {
-    if (col < 0 || row < 0 || col >= MAP_WIDTH || row >= MAP_HEIGHT) return 1;
-    return tiles[row * MAP_WIDTH + col];
-  }
-
-  // Carve rooms: 5-col × 4-row grid of rooms, each variable size
-  // leaving 1-tile wall corridors between them
-  const ROOM_COLS = 5;
-  const ROOM_ROWS = 4;
-  type Room = { x: number; y: number; w: number; h: number };
-  const rooms: Room[] = [];
-
-  // Available interior: cols 1..MAP_WIDTH-2, rows 1..MAP_HEIGHT-2
-  const interiorW = MAP_WIDTH  - 2;
-  const interiorH = MAP_HEIGHT - 2;
-  const cellW = Math.floor(interiorW / ROOM_COLS);
-  const cellH = Math.floor(interiorH / ROOM_ROWS);
-
-  for (let ry = 0; ry < ROOM_ROWS; ry++) {
-    for (let rx = 0; rx < ROOM_COLS; rx++) {
-      const cellX = 1 + rx * cellW;
-      const cellY = 1 + ry * cellH;
-
-      // Room occupies most of its cell with a variable margin for walls/corridors
-      const marginX = 1 + Math.floor(rng() * 2); // 1 or 2
-      const marginY = 1 + Math.floor(rng() * 2); // 1 or 2
-      const room: Room = {
-        x: cellX + marginX,
-        y: cellY + marginY,
-        w: Math.max(2, cellW - marginX * 2),
-        h: Math.max(2, cellH - marginY * 2),
-      };
-      rooms.push(room);
-
-      // Carve room interior
-      for (let row = room.y; row < room.y + room.h; row++) {
-        for (let col = room.x; col < room.x + room.w; col++) {
-          set(col, row, 0);
-        }
-      }
-    }
-  }
-
-  // Carve horizontal corridors between adjacent rooms in the same row
-  for (let ry = 0; ry < ROOM_ROWS; ry++) {
-    for (let rx = 0; rx < ROOM_COLS - 1; rx++) {
-      const left  = rooms[ry * ROOM_COLS + rx];
-      const right = rooms[ry * ROOM_COLS + rx + 1];
-      const midY  = Math.floor(left.y + left.h / 2);
-      const startX = left.x + left.w;
-      const endX   = right.x;
-      for (let col = startX; col <= endX; col++) {
-        set(col, midY, 0);
-        set(col, midY - 1, 0); // 2-wide corridor
-      }
-    }
-  }
-
-  // Carve vertical corridors between adjacent rooms in the same column
-  for (let ry = 0; ry < ROOM_ROWS - 1; ry++) {
-    for (let rx = 0; rx < ROOM_COLS; rx++) {
-      const top    = rooms[ry * ROOM_COLS + rx];
-      const bottom = rooms[(ry + 1) * ROOM_COLS + rx];
-      const midX   = Math.floor(top.x + top.w / 2);
-      const startY = top.y + top.h;
-      const endY   = bottom.y;
-      for (let row = startY; row <= endY; row++) {
-        set(midX, row, 0);
-        set(midX + 1, row, 0); // 2-wide corridor
-      }
-    }
-  }
-
-  // Add extra random corridors between non-adjacent rooms for more interconnectivity.
-  // This creates alternate routes and prevents the map from feeling too grid-like.
-  const EXTRA_CORRIDORS = 3 + Math.floor(rng() * 3); // 3-5 extra connections
-  for (let ec = 0; ec < EXTRA_CORRIDORS; ec++) {
-    const aIdx = Math.floor(rng() * rooms.length);
-    const bIdx = Math.floor(rng() * rooms.length);
-    if (aIdx === bIdx) continue;
-    const a = rooms[aIdx];
-    const b = rooms[bIdx];
-    const aCx = Math.floor(a.x + a.w / 2);
-    const aCy = Math.floor(a.y + a.h / 2);
-    const bCx = Math.floor(b.x + b.w / 2);
-    const bCy = Math.floor(b.y + b.h / 2);
-
-    // L-shaped corridor: go horizontal first, then vertical
-    for (let col = Math.min(aCx, bCx); col <= Math.max(aCx, bCx); col++) {
-      set(col, aCy, 0);
-      if (aCy + 1 < MAP_HEIGHT - 1) set(col, aCy + 1, 0); // 2-wide
-    }
-    for (let row = Math.min(aCy, bCy); row <= Math.max(aCy, bCy); row++) {
-      set(bCx, row, 0);
-      if (bCx + 1 < MAP_WIDTH - 1) set(bCx + 1, row, 0); // 2-wide
-    }
-  }
-
-  // Ensure border is all walls
   for (let col = 0; col < MAP_WIDTH; col++) {
     set(col, 0, 1);
     set(col, MAP_HEIGHT - 1, 1);
@@ -167,50 +120,54 @@ export function generateMap(seed: number): GeneratedMap {
     set(MAP_WIDTH - 1, row, 1);
   }
 
-  // ── Spawn positions: one per room interior centre ─────────────────────────
-  const spawnPositions: Vec2[] = rooms.map((r) => ({
-    x: Math.floor(r.x + r.w / 2),
-    y: Math.floor(r.y + r.h / 2),
-  }));
-
-  // ── Patrol path: spread across room centres for diverse guard coverage ──────
-  // Pick evenly-spaced rooms for the patrol loop — corners, midpoints, and center
-  const patrolIndices: number[] = [];
-  // Four corners
-  patrolIndices.push(0);                                          // top-left
-  patrolIndices.push(ROOM_COLS - 1);                              // top-right
-  patrolIndices.push(ROOM_COLS * ROOM_ROWS - 1);                  // bottom-right
-  patrolIndices.push(ROOM_COLS * (ROOM_ROWS - 1));                // bottom-left
-  // Mid-edge rooms
-  patrolIndices.push(Math.floor(ROOM_COLS / 2));                  // top-center
-  patrolIndices.push(ROOM_COLS * (ROOM_ROWS - 1) + Math.floor(ROOM_COLS / 2)); // bottom-center
-  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS);     // left-center
-  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS + ROOM_COLS - 1); // right-center
-  // Center room
-  patrolIndices.push(Math.floor(ROOM_ROWS / 2) * ROOM_COLS + Math.floor(ROOM_COLS / 2));
-
-  const patrolPath: Vec2[] = [...new Set(patrolIndices)]
-    .filter((i) => i < rooms.length)
-    .map((i) => ({ x: Math.floor(rooms[i].x + rooms[i].w / 2), y: Math.floor(rooms[i].y + rooms[i].h / 2) }));
-
-  // ── Guard start: centre of the map ────────────────────────────────────────
-  const guardStart: Vec2 = { x: Math.floor(MAP_WIDTH / 2), y: Math.floor(MAP_HEIGHT / 2) };
-  // Ensure guard start is walkable — if not, find nearest floor tile
-  if (get(guardStart.x, guardStart.y) !== 0) {
-    outer: for (let r = 1; r < 5; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (get(guardStart.x + dx, guardStart.y + dy) === 0) {
-            guardStart.x += dx;
-            guardStart.y += dy;
-            break outer;
-          }
-        }
+  for (const obstacle of FIXED_OBSTACLES) {
+    for (let row = obstacle.y; row < obstacle.y + obstacle.h; row++) {
+      for (let col = obstacle.x; col < obstacle.x + obstacle.w; col++) {
+        set(col, row, 1);
       }
     }
   }
 
-  return { tiles, width: MAP_WIDTH, height: MAP_HEIGHT, spawnPositions, patrolPath, guardStart };
+  return tiles;
+}
+
+function isTileWalkableIn(tiles: number[], col: number, row: number): boolean {
+  if (col < 0 || row < 0 || col >= MAP_WIDTH || row >= MAP_HEIGHT) return false;
+  return !WALL_TILE_IDS.has(tiles[row * MAP_WIDTH + col]);
+}
+
+/**
+ * Build the fixed game map.
+ *
+ * The seed is accepted for API compatibility but ignored because the map is static.
+ */
+export function generateMap(_seed: number): GeneratedMap {
+  const tiles = buildFixedMapTiles();
+
+  for (const spawn of FIXED_SPAWN_POSITIONS) {
+    if (!isTileWalkableIn(tiles, spawn.x, spawn.y)) {
+      throw new Error(`Invalid fixed spawn position at (${spawn.x}, ${spawn.y})`);
+    }
+  }
+
+  for (const waypoint of FIXED_PATROL_PATH) {
+    if (!isTileWalkableIn(tiles, waypoint.x, waypoint.y)) {
+      throw new Error(`Invalid fixed patrol waypoint at (${waypoint.x}, ${waypoint.y})`);
+    }
+  }
+
+  if (!isTileWalkableIn(tiles, FIXED_GUARD_START.x, FIXED_GUARD_START.y)) {
+    throw new Error(`Invalid fixed guard start at (${FIXED_GUARD_START.x}, ${FIXED_GUARD_START.y})`);
+  }
+
+  return {
+    tiles,
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
+    spawnPositions: FIXED_SPAWN_POSITIONS.map((pos) => ({ ...pos })),
+    patrolPath: FIXED_PATROL_PATH.map((pos) => ({ ...pos })),
+    guardStart: { ...FIXED_GUARD_START },
+  };
 }
 
 // ── Static exports (built from a fixed seed for determinism in tests) ─────────

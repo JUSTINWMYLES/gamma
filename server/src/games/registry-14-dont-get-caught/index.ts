@@ -1,11 +1,11 @@
 /**
  * server/src/games/registry-14-dont-get-caught/index.ts
  *
- * "Don't Get Caught" — run from guards on a procedural map.
+ * "Don't Get Caught" — run from guards on a fixed stealth map.
  *
  * Game Rules
  * ──────────
- * • Players spawn on a procedurally-generated tile map and move via joystick
+ * • Players spawn on a fixed tile map and move via joystick
  *   or device tilt.
  * • Guards patrol waypoints and respect walls (axis-sliding collision).
  * • 5 guards patrol every round.
@@ -19,8 +19,7 @@
  * Guard behaviour
  * ───────────────
  * • Smooth patrol: facing angle is lerped rather than snapped — no twitching.
- * • Wander offset drifts slowly so guards aren't perfectly predictable.
- * • Occasional direction reversal for unpredictability.
+ * • Patrols follow a deterministic coverage route tailored to the fixed map.
  * • Guards collide with walls (axis-sliding), same as players.
  * • On alert (detection meter >= ALERT_THRESHOLD): enters "alert" mode.
  * • On full detection (meter >= 100): enters "chase" mode.
@@ -96,15 +95,6 @@ const MAX_GUARDS = 5;
 /** Angle lerp rate (radians/tick) — controls how quickly guard turns. Higher = snappier. */
 const ANGLE_LERP_RATE = 0.12;
 
-/** Probability (per tick) that a patrolling guard reverses patrol direction. */
-const REVERSE_PROBABILITY = 0.004;
-
-/** Probability (per tick) that a patrolling guard picks a sideways detour. */
-const SIDE_TURN_PROBABILITY = 0.016;
-
-/** Wander radius (tiles): how far off a waypoint the guard drifts. */
-const WANDER_RADIUS = 2.0;
-
 /** Player bounding-box half-size for wall collision (tiles). Should be < 0.5. */
 const PLAYER_HALF = 0.3;
 
@@ -128,13 +118,6 @@ interface GuardRuntime {
   id: string;
   /** +1 or -1 — patrol direction multiplier. */
   patrolDir: number;
-  /** LCG seed for this guard's per-tick RNG. */
-  rngSeed: number;
-  /** Current lateral wander offset (tiles) applied to waypoint target. */
-  wanderX: number;
-  wanderY: number;
-  /** Temporary side target so guards do not only bounce end-to-end. */
-  sideTurnTarget: { x: number; y: number } | null;
   /** BFS-computed path (list of tile centres). Empty = no active path. */
   bfsPath: Array<{ x: number; y: number }>;
   /** Tick count since last BFS recompute — prevents recomputing every tick. */
@@ -360,7 +343,7 @@ export default class DontGetCaughtGame extends BaseGame {
     this.currentRound = round;
     this.caughtThisRound.clear();
 
-    // Regenerate the map each round — different layout every time
+    // Refresh the fixed map exports each round so all clients receive the same layout
     const seed = Date.now() + round * 1_000_003;
     resetMap(seed);
     refreshLegacyExports();
@@ -447,58 +430,27 @@ export default class DontGetCaughtGame extends BaseGame {
     this.guardRuntimes = [];
 
     const patrolPath = getPatrolPath();
-    const mapCenter = { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
-
-    /** Positions of guards already placed (for minimum spacing check). */
-    const placedPositions: { x: number; y: number }[] = [];
+    if (patrolPath.length === 0) return;
 
     for (let i = 0; i < count; i++) {
       const g = new GuardState();
       const key = String(i);
       g.id = key;
 
-      // Score every patrol waypoint: prefer central starts while spacing guards out.
-      let bestIdx = i % patrolPath.length;
-      let bestScore = -Infinity;
-
-      for (let pi = 0; pi < patrolPath.length; pi++) {
-        const wp = patrolPath[pi];
-
-        // Minimum distance to any already-placed guard
-        const minGuardDist = placedPositions.reduce((min, gp) => {
-          const d = Math.sqrt((wp.x + 0.5 - gp.x) ** 2 + (wp.y + 0.5 - gp.y) ** 2);
-          return Math.min(min, d);
-        }, Infinity);
-
-        if (placedPositions.length > 0 && minGuardDist < MIN_GUARD_GUARD_DIST) continue; // too close to another guard
-
-        const distFromCenter = Math.hypot(wp.x + 0.5 - mapCenter.x, wp.y + 0.5 - mapCenter.y);
-        const score = (placedPositions.length > 0 ? minGuardDist * 2.5 : 0) - distFromCenter * 2;
-        if (score > bestScore) {
-          bestScore = score;
-          bestIdx = pi;
-        }
-      }
-
-      const startWp = patrolPath[bestIdx];
+      const startIdx = Math.floor((i * patrolPath.length) / count) % patrolPath.length;
+      const startWp = patrolPath[startIdx] ?? patrolPath[0];
 
       g.x = (startWp?.x ?? getGuardStart().x) + 0.5;
       g.y = (startWp?.y ?? getGuardStart().y) + 0.5;
       g.facingAngle = (i / count) * Math.PI * 2;
-      g.patrolIndex = bestIdx;
+      g.patrolIndex = startIdx;
       g.guardMode = "patrol";
       g.targetPlayerId = "";
-
-      placedPositions.push({ x: g.x, y: g.y });
 
       this.room.state.guards.set(key, g);
       this.guardRuntimes.push({
         id: key,
         patrolDir: 1,
-        rngSeed: i * 31337 + 997,
-        wanderX: 0,
-        wanderY: 0,
-        sideTurnTarget: null,
         bfsPath: [],
         bfsAge: 0,
         prevX: g.x,
@@ -527,10 +479,6 @@ export default class DontGetCaughtGame extends BaseGame {
       const rt = this.guardRuntimes[i];
       const guard = this.room.state.guards.get(rt.id);
       if (!guard) continue;
-
-      // Per-guard LCG random number
-      rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
-      const rand = rt.rngSeed / 0x100000000;
 
       rt.bfsAge++;
 
@@ -580,73 +528,13 @@ export default class DontGetCaughtGame extends BaseGame {
         }
       }
 
-      // Occasionally reverse patrol direction
-      if (rand < REVERSE_PROBABILITY) {
-        rt.patrolDir *= -1;
-      }
-
-      if (rt.sideTurnTarget && Math.hypot(guard.x - rt.sideTurnTarget.x, guard.y - rt.sideTurnTarget.y) < 0.18) {
-        rt.sideTurnTarget = null;
-        rt.bfsPath = [];
-      }
-
-      if (!rt.sideTurnTarget && rand < SIDE_TURN_PROBABILITY) {
-        const sideTurnTarget = this._pickSideTurnTarget(guard, patrolPath, rt.rngSeed);
-        if (sideTurnTarget) {
-          rt.sideTurnTarget = sideTurnTarget;
-          rt.bfsPath = [];
-          rt.bfsAge = 999;
-        }
-      }
-
-      // Occasionally update the wander offset (smooth drift, not per-tick jitter)
-      if (rand < 0.02) {
-        rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
-        const r2 = rt.rngSeed / 0x100000000;
-        rt.rngSeed = (Math.imul(1664525, rt.rngSeed) + 1013904223) >>> 0;
-        const r3 = rt.rngSeed / 0x100000000;
-        const candidateWX = (r2 - 0.5) * 2 * WANDER_RADIUS;
-        const candidateWY = (r3 - 0.5) * 2 * WANDER_RADIUS;
-
-        // Only accept wander offset if the resulting target is walkable.
-        // This prevents guards from heading towards a point inside a wall,
-        // which causes them to get stuck on wall edges.
-        const waypointForCheck = patrolPath[this._normalizePatrolIndex(guard.patrolIndex, patrolPath.length)];
-        if (waypointForCheck) {
-          const testX = waypointForCheck.x + 0.5 + candidateWX;
-          const testY = waypointForCheck.y + 0.5 + candidateWY;
-          if (this._guardPositionWalkable(testX, testY)) {
-            rt.wanderX = candidateWX;
-            rt.wanderY = candidateWY;
-          } else {
-            // Reject bad wander — reset to zero so guard returns to waypoint center
-            rt.wanderX = 0;
-            rt.wanderY = 0;
-          }
-        }
-      }
-
-      // Patrol: move towards current waypoint + wander
+      // Patrol: move toward the next deterministic coverage waypoint
       const waypointIdx = this._normalizePatrolIndex(guard.patrolIndex, patrolPath.length);
       const waypoint = patrolPath[waypointIdx % patrolPath.length];
       if (!waypoint) continue;
 
-      let targetX = waypoint.x + 0.5 + rt.wanderX;
-      let targetY = waypoint.y + 0.5 + rt.wanderY;
-
-      if (rt.sideTurnTarget) {
-        targetX = rt.sideTurnTarget.x;
-        targetY = rt.sideTurnTarget.y;
-      }
-
-      // Final safety: if the wandered target is not walkable (e.g. map changed),
-      // fall back to the raw waypoint center
-      if (!this._guardPositionWalkable(targetX, targetY)) {
-        targetX = waypoint.x + 0.5;
-        targetY = waypoint.y + 0.5;
-        rt.wanderX = 0;
-        rt.wanderY = 0;
-      }
+      const targetX = waypoint.x + 0.5;
+      const targetY = waypoint.y + 0.5;
 
       // Try direct movement first; if blocked, use BFS pathfinding
       const hasDirectRoute = hasLineOfSight(
@@ -674,37 +562,23 @@ export default class DontGetCaughtGame extends BaseGame {
       // If stuck for too many ticks, force BFS recompute and clear wander
       const isStuck = rt.stuckTicks >= STUCK_TICK_THRESHOLD;
       if (isStuck) {
-        rt.wanderX = 0;
-        rt.wanderY = 0;
         rt.bfsPath = [];
         rt.bfsAge = 999; // force recompute below
-        // Recompute target without wander
-        targetX = waypoint.x + 0.5;
-        targetY = waypoint.y + 0.5;
       }
 
       if (moveResult.arrived) {
-        if (rt.sideTurnTarget) {
-          rt.sideTurnTarget = null;
-        } else {
-          guard.patrolIndex =
-            (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
-        }
-        rt.wanderX = 0;
-        rt.wanderY = 0;
+        guard.patrolIndex =
+          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
         rt.bfsPath = [];
         rt.stuckTicks = 0;
       } else if (moveResult.blocked || isStuck) {
         // Guard is stuck — use BFS to navigate around the wall
-        if (rt.bfsPath.length === 0 || rt.bfsAge >= 6) {
+        if (rt.bfsPath.length === 0 || rt.bfsAge >= 4) {
           const newPath = findPath(guard.x, guard.y, targetX, targetY, 200);
           if (newPath && newPath.length > 0) {
             rt.bfsPath = newPath;
           } else {
             // No path found — skip to next waypoint
-            rt.wanderX = 0;
-            rt.wanderY = 0;
-            rt.sideTurnTarget = null;
             guard.patrolIndex =
               (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
             rt.bfsPath = [];
@@ -723,7 +597,7 @@ export default class DontGetCaughtGame extends BaseGame {
           } else if (bfsResult.blocked) {
             // BFS step also blocked — recompute
             rt.bfsPath = [];
-            rt.bfsAge = 6;
+            rt.bfsAge = 4;
           }
         }
       } else {
@@ -875,42 +749,6 @@ export default class DontGetCaughtGame extends BaseGame {
   private _normalizePatrolIndex(index: number, length: number): number {
     if (length <= 0) return 0;
     return ((index % length) + length) % length;
-  }
-
-  private _pickSideTurnTarget(
-    guard: GuardState,
-    patrolPath: Array<{ x: number; y: number }>,
-    seed: number,
-  ): { x: number; y: number } | null {
-    if (patrolPath.length === 0) return null;
-
-    const currentIdx = this._normalizePatrolIndex(guard.patrolIndex, patrolPath.length);
-    const current = patrolPath[currentIdx];
-    const next = patrolPath[this._normalizePatrolIndex(currentIdx + 1, patrolPath.length)] ?? current;
-    const forwardDx = next.x - current.x;
-    const forwardDy = next.y - current.y;
-    const forwardLength = Math.hypot(forwardDx, forwardDy) || 1;
-    const sideX = -forwardDy / forwardLength;
-    const sideY = forwardDx / forwardLength;
-    const preferredSide = seed % 2 === 0 ? 1 : -1;
-
-    const candidates: Array<{ x: number; y: number; score: number }> = [];
-    for (const point of patrolPath) {
-      const dx = point.x + 0.5 - guard.x;
-      const dy = point.y + 0.5 - guard.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 1.5 || dist > 7) continue;
-
-      const lateral = (dx * sideX + dy * sideY) * preferredSide;
-      if (lateral < 1.25) continue;
-
-      const forward = dx * (forwardDx / forwardLength) + dy * (forwardDy / forwardLength);
-      const score = lateral - Math.abs(forward) * 0.35 - dist * 0.08;
-      candidates.push({ x: point.x + 0.5, y: point.y + 0.5, score });
-    }
-
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates[0] ?? null;
   }
 
   // ── Detection ─────────────────────────────────────────────────────────────
