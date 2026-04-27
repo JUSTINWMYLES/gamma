@@ -59,6 +59,7 @@ import {
 } from "../../utils/tilemap";
 import { canGuardSeeTarget, hasLineOfSight } from "../../utils/los";
 import { GuardState } from "../../schema/GuardState";
+import { seededRng, seededShuffle } from "../../utils/rng";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ const BASE_DETECTION_INCREMENT = 2;
 const DETECTION_PROXIMITY_MULTIPLIER = 2;
 const DETECTION_DECREMENT = 2;
 
-const BASE_GUARD_SPEED = 2.64;      // tiles/s
+const BASE_GUARD_SPEED = 2.64 * 1.2; // 20% faster than previous baseline
 const CHASE_SPEED_MULTIPLIER = 1.6;
 const CATCH_LIMIT = 3;
 const SURVIVAL_POINTS = 100;
@@ -119,6 +120,10 @@ interface GuardRuntime {
   id: string;
   /** +1 or -1 — patrol direction multiplier. */
   patrolDir: number;
+  /** Number of patrol waypoints to skip when advancing. */
+  patrolStride: number;
+  /** Small per-guard speed variance to reduce synchronisation. */
+  speedMultiplier: number;
   /** BFS-computed path (list of tile centres). Empty = no active path. */
   bfsPath: Array<{ x: number; y: number }>;
   /** Tick count since last BFS recompute — prevents recomputing every tick. */
@@ -170,6 +175,12 @@ export default class DontGetCaughtGame extends BaseGame {
 
   /** Seed for bracket randomization. */
   private bracketSeed = 0;
+
+  /** Seed used for guard spawn / patrol variation each round. */
+  private guardPatrolSeed = 1;
+
+  /** Seeded per-round guard decision RNG. */
+  private guardDecisionRng: () => number = seededRng(1);
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -352,6 +363,8 @@ export default class DontGetCaughtGame extends BaseGame {
 
     // Refresh the fixed map exports each round so all clients receive the same layout
     const seed = Date.now() + round * 1_000_003;
+    this.guardPatrolSeed = seed ^ 0x9e3779b9;
+    this.guardDecisionRng = seededRng(this.guardPatrolSeed);
     resetMap(seed);
     refreshLegacyExports();
 
@@ -441,8 +454,14 @@ export default class DontGetCaughtGame extends BaseGame {
     this.guardRuntimes = [];
 
     const patrolPath = getPatrolPath();
-    const guardSpawnPositions = getGuardSpawnPositions();
+    const guardSpawnPositions = this._buildGuardSpawnOrder(getGuardSpawnPositions(), count);
     if (patrolPath.length === 0 || guardSpawnPositions.length === 0) return;
+
+    const patrolDirections = seededShuffle(
+      Array.from({ length: count }, (_, index) => (index % 2 === 0 ? 1 : -1)),
+      this.guardPatrolSeed ^ 0x85ebca6b,
+    );
+    const waypointJitterRange = Math.max(1, Math.floor(patrolPath.length / Math.max(count, 1)));
 
     for (let i = 0; i < count; i++) {
       const g = new GuardState();
@@ -450,11 +469,26 @@ export default class DontGetCaughtGame extends BaseGame {
       g.id = key;
 
       const spawn = guardSpawnPositions[i % guardSpawnPositions.length] ?? getGuardStart();
-      const startIdx = Math.floor((i * patrolPath.length) / count) % patrolPath.length;
+      const patrolDir = patrolDirections[i] ?? (i % 2 === 0 ? 1 : -1);
+      const baseStartIdx = Math.floor((i * patrolPath.length) / count) % patrolPath.length;
+      const startJitter = Math.floor(this.guardDecisionRng() * (waypointJitterRange + 1));
+      const patrolStride = 1 + Math.floor(this.guardDecisionRng() * 3);
+      const speedMultiplier = 1 + this.guardDecisionRng() * 0.12;
+      const startIdx = this._normalizePatrolIndex(
+        baseStartIdx + patrolDir * startJitter,
+        patrolPath.length,
+      );
+      const initialTargetIndex = this._normalizePatrolIndex(
+        startIdx + patrolDir * patrolStride,
+        patrolPath.length,
+      );
+      const initialTarget = patrolPath[initialTargetIndex] ?? patrolPath[startIdx];
 
       g.x = spawn.x + 0.5;
       g.y = spawn.y + 0.5;
-      g.facingAngle = (i / count) * Math.PI * 2;
+      g.facingAngle = initialTarget
+        ? Math.atan2(initialTarget.y + 0.5 - g.y, initialTarget.x + 0.5 - g.x)
+        : (i / count) * Math.PI * 2;
       g.patrolIndex = startIdx;
       g.guardMode = "patrol";
       g.targetPlayerId = "";
@@ -462,7 +496,9 @@ export default class DontGetCaughtGame extends BaseGame {
       this.room.state.guards.set(key, g);
       this.guardRuntimes.push({
         id: key,
-        patrolDir: 1,
+        patrolDir,
+        patrolStride,
+        speedMultiplier,
         bfsPath: [],
         bfsAge: 0,
         prevX: g.x,
@@ -492,6 +528,9 @@ export default class DontGetCaughtGame extends BaseGame {
       const guard = this.room.state.guards.get(rt.id);
       if (!guard) continue;
 
+      const patrolSpeed = this.guardSpeed * rt.speedMultiplier * dt;
+      const chaseSpeed = patrolSpeed * CHASE_SPEED_MULTIPLIER;
+
       rt.bfsAge++;
 
       // Chase mode: pathfind towards target player
@@ -501,6 +540,7 @@ export default class DontGetCaughtGame extends BaseGame {
           guard.guardMode = "patrol";
           guard.targetPlayerId = "";
           rt.bfsPath = [];
+          this._advancePatrolWaypoint(guard, rt, patrolPath.length, true);
         } else {
           // Recompute BFS path every 10 ticks (0.5s) or if no path
           if (rt.bfsPath.length === 0 || rt.bfsAge >= 10) {
@@ -516,7 +556,7 @@ export default class DontGetCaughtGame extends BaseGame {
             const nextWp = rt.bfsPath[0];
             const result = this._moveTowardsSmooth(
               guard, nextWp.x, nextWp.y,
-              this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
+              chaseSpeed,
             );
             if (result.arrived) {
               rt.bfsPath.shift();
@@ -529,11 +569,12 @@ export default class DontGetCaughtGame extends BaseGame {
             // No BFS path — fall back to direct movement (close range)
             const result = this._moveTowardsSmooth(
               guard, target.x, target.y,
-              this.guardSpeed * CHASE_SPEED_MULTIPLIER * dt,
+              chaseSpeed,
             );
             if (result.blocked) {
               guard.guardMode = "patrol";
               guard.targetPlayerId = "";
+              this._advancePatrolWaypoint(guard, rt, patrolPath.length, true);
             }
           }
           continue;
@@ -555,7 +596,7 @@ export default class DontGetCaughtGame extends BaseGame {
         { x: targetX, y: targetY },
       );
       const moveResult = hasDirectRoute
-        ? this._moveTowardsSmooth(guard, targetX, targetY, this.guardSpeed * dt)
+        ? this._moveTowardsSmooth(guard, targetX, targetY, patrolSpeed)
         : { arrived: false, blocked: true };
 
       // ── Stuck detection: track position delta across ticks ──
@@ -579,8 +620,7 @@ export default class DontGetCaughtGame extends BaseGame {
       }
 
       if (moveResult.arrived) {
-        guard.patrolIndex =
-          (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+        this._advancePatrolWaypoint(guard, rt, patrolPath.length);
         rt.bfsPath = [];
         rt.stuckTicks = 0;
       } else if (moveResult.blocked || isStuck) {
@@ -591,8 +631,7 @@ export default class DontGetCaughtGame extends BaseGame {
             rt.bfsPath = newPath;
           } else {
             // No path found — skip to next waypoint
-            guard.patrolIndex =
-              (guard.patrolIndex + rt.patrolDir + patrolPath.length) % patrolPath.length;
+            this._advancePatrolWaypoint(guard, rt, patrolPath.length, true);
             rt.bfsPath = [];
             rt.stuckTicks = 0;
           }
@@ -602,7 +641,7 @@ export default class DontGetCaughtGame extends BaseGame {
         // Follow BFS path step
         if (rt.bfsPath.length > 0) {
           const nextStep = rt.bfsPath[0];
-          const bfsResult = this._moveTowardsSmooth(guard, nextStep.x, nextStep.y, this.guardSpeed * dt);
+          const bfsResult = this._moveTowardsSmooth(guard, nextStep.x, nextStep.y, patrolSpeed);
           if (bfsResult.arrived) {
             rt.bfsPath.shift();
             rt.stuckTicks = 0;
@@ -761,6 +800,84 @@ export default class DontGetCaughtGame extends BaseGame {
   private _normalizePatrolIndex(index: number, length: number): number {
     if (length <= 0) return 0;
     return ((index % length) + length) % length;
+  }
+
+  private _advancePatrolWaypoint(
+    guard: GuardState,
+    rt: GuardRuntime,
+    pathLength: number,
+    forceVariation: boolean = false,
+  ): void {
+    if (pathLength <= 0) return;
+
+    if (forceVariation || this.guardDecisionRng() < 0.18) {
+      rt.patrolDir *= -1;
+    }
+
+    if (forceVariation || this.guardDecisionRng() < 0.35) {
+      rt.patrolStride = 1 + Math.floor(this.guardDecisionRng() * 3);
+    }
+
+    const extraStep = this.guardDecisionRng() < 0.25 ? 1 : 0;
+    const step = Math.max(1, Math.min(pathLength - 1, rt.patrolStride + extraStep));
+    guard.patrolIndex = this._normalizePatrolIndex(
+      guard.patrolIndex + rt.patrolDir * step,
+      pathLength,
+    );
+  }
+
+  private _buildGuardSpawnOrder(
+    spawnPositions: Array<{ x: number; y: number }>,
+    count: number,
+  ): Array<{ x: number; y: number }> {
+    if (spawnPositions.length <= 1 || count <= 1) {
+      return spawnPositions.map((spawn) => ({ ...spawn }));
+    }
+
+    const remaining = seededShuffle(
+      spawnPositions.map((spawn) => ({ ...spawn })),
+      this.guardPatrolSeed ^ 0x27d4eb2d,
+    );
+    const ordered: Array<{ x: number; y: number }> = [];
+
+    while (ordered.length < Math.min(count, spawnPositions.length) && remaining.length > 0) {
+      if (ordered.length === 0) {
+        const first = remaining.shift();
+        if (first) ordered.push(first);
+        continue;
+      }
+
+      let bestIndex = 0;
+      let bestScore = -Infinity;
+      const lastSelected = ordered[ordered.length - 1] ?? ordered[0];
+
+      for (let i = 0; i < remaining.length; i++) {
+        const candidate = remaining[i];
+        if (!candidate) continue;
+
+        const minDist = ordered.reduce(
+          (best, selected) => Math.min(best, Math.hypot(candidate.x - selected.x, candidate.y - selected.y)),
+          Infinity,
+        );
+        const distFromLast = lastSelected
+          ? Math.hypot(candidate.x - lastSelected.x, candidate.y - lastSelected.y)
+          : 0;
+        const separationBonus = minDist >= MIN_GUARD_GUARD_DIST ? 10 : 0;
+        const score = separationBonus + minDist * 2 + distFromLast + this.guardDecisionRng() * 0.01;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestIndex = i;
+        }
+      }
+
+      const [selected] = remaining.splice(bestIndex, 1);
+      if (selected) {
+        ordered.push(selected);
+      }
+    }
+
+    return ordered;
   }
 
   // ── Detection ─────────────────────────────────────────────────────────────

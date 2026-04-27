@@ -6,12 +6,14 @@
     getIconStrokeRenderWidth,
     ICON_VIEWBOX_SIZE,
     iconDesignHasVisibleContent,
+    type IconDesign,
   } from "../../../shared/playerIconDesign";
 
   export let player: PlayerState;
   export let size: number = 28;
+  export let designOverride: IconDesign | null = null;
 
-  $: design = designFromPlayer(player);
+  $: design = designOverride ?? designFromPlayer(player);
   $: hasVisibleDesign = iconDesignHasVisibleContent(design);
   $: fallbackText = player.name?.charAt(0)?.toUpperCase() || "?";
   $: fontSize = Math.round(size * 0.4);
@@ -32,14 +34,23 @@
     <svg class="absolute inset-0 w-full h-full" viewBox={`0 0 ${ICON_VIEWBOX_SIZE} ${ICON_VIEWBOX_SIZE}`} aria-hidden="true">
       <circle cx={ICON_VIEWBOX_SIZE / 2} cy={ICON_VIEWBOX_SIZE / 2} r={ICON_VIEWBOX_SIZE / 2} fill={design.bgColor} />
       {#each design.strokes as stroke}
-        <path
-          d={pointsToPath(stroke.points)}
-          fill="none"
-          stroke={stroke.color}
-          stroke-width={getIconStrokeRenderWidth(stroke.size)}
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
+        {#if stroke.points.length === 1}
+          <circle
+            cx={stroke.points[0].x}
+            cy={stroke.points[0].y}
+            r={getIconStrokeRenderWidth(stroke.size) / 2}
+            fill={stroke.color}
+          />
+        {:else}
+          <path
+            d={pointsToPath(stroke.points)}
+            fill="none"
+            stroke={stroke.color}
+            stroke-width={getIconStrokeRenderWidth(stroke.size)}
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        {/if}
       {/each}
     </svg>
 

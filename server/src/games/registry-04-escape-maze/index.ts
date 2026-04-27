@@ -41,6 +41,7 @@ import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
 import { buildBracket, advanceBracket, resolveHeat } from "../../utils/bracket";
 import { Heat } from "../../schema/BracketState";
+import { seededRng, seededShuffle } from "../../utils/rng";
 
 // ── Tile constants ────────────────────────────────────────────────────────────
 
@@ -106,16 +107,6 @@ const DIR_OFFSETS: Record<Direction, { dx: number; dy: number }> = {
   left:  { dx: -1, dy: 0 },
   right: { dx: 1,  dy: 0 },
 };
-
-// ── Seeded RNG ────────────────────────────────────────────────────────────────
-
-function seededRng(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s * 1664525 + 1013904223) | 0;
-    return (s >>> 0) / 0xffffffff;
-  };
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -194,14 +185,20 @@ export default class EscapeMazeGame extends BaseGame {
   /** Resolve to end the round early (all escaped). */
   private roundResolve: (() => void) | null = null;
 
-  /** Extra timers for cleanup. */
-  private _extraTimers: ReturnType<typeof setTimeout>[] = [];
+  /** Active timeout that force-ends the current round. */
+  private roundTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  /** Monotonic token so stale round timers cannot end a newer round. */
+  private activeRoundToken = 0;
 
   /** Seed for maze generation. */
   private mazeSeed = 0;
 
   /** Seed for bracket randomization. */
   private bracketSeed = 0;
+
+  /** Seed for per-round randomness (maze layout, team shuffle). */
+  private roundSeed = 0;
 
   private configuredMode(): "individual" | "team" {
     return this.room.state.gameConfig.gameMode === "team" ? "team" : "individual";
@@ -371,12 +368,10 @@ export default class EscapeMazeGame extends BaseGame {
   }
 
   protected override async runRound(round: number): Promise<void> {
-    this.finishCount = 0;
-    this.roundStartMs = Date.now();
+    const roundToken = this._beginRound(round);
 
     // Generate a new maze for this round
-    const roundSeed = this.mazeSeed + round * 7919;
-    this._generateMaze(roundSeed);
+    this._generateMaze(this.roundSeed);
 
     // Set map data on room state (for TV rendering)
     this.room.state.mapTiles = JSON.stringify(this.mazeTiles);
@@ -385,13 +380,13 @@ export default class EscapeMazeGame extends BaseGame {
     this.room.state.roundDurationSecs = ROUND_DURATION_SECS;
 
     if (this.gameMode === "individual") {
-      await this._runIndividualRound(round);
+      await this._runIndividualRound(round, roundToken);
     } else {
-      await this._runTeamRound(round);
+      await this._runTeamRound(round, roundToken);
     }
 
     // Clean up intervals
-    this._clearIntervals();
+    this._clearRoundLifecycle(roundToken);
   }
 
   protected override scoreRound(_round: number): void {
@@ -434,9 +429,8 @@ export default class EscapeMazeGame extends BaseGame {
 
   override teardown(): void {
     super.teardown();
-    this._clearIntervals();
-    for (const t of this._extraTimers) clearTimeout(t);
-    this._extraTimers = [];
+    this.activeRoundToken++;
+    this._clearRoundLifecycle();
     this.playerPositions.clear();
     this.teams = [];
     this.roundResolve = null;
@@ -699,7 +693,7 @@ export default class EscapeMazeGame extends BaseGame {
 
   // ── Individual mode ───────────────────────────────────────────────────────
 
-  private async _runIndividualRound(_round: number): Promise<void> {
+  private async _runIndividualRound(_round: number, roundToken: number): Promise<void> {
     const players = this._activePlayers();
 
     // Initialize player positions at start
@@ -737,10 +731,7 @@ export default class EscapeMazeGame extends BaseGame {
     // Wait for round to end (all escaped or time runs out)
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
-      const timeout = setTimeout(() => {
-        this._endRound();
-      }, ROUND_DURATION_SECS * 1000);
-      this._extraTimers.push(timeout);
+      this._scheduleRoundTimeout(roundToken);
     });
   }
 
@@ -838,12 +829,12 @@ export default class EscapeMazeGame extends BaseGame {
 
   // ── Team mode ─────────────────────────────────────────────────────────────
 
-  private async _runTeamRound(_round: number): Promise<void> {
+  private async _runTeamRound(_round: number, roundToken: number): Promise<void> {
     const players = this._motionReadyPlayers();
     const teamCount = Math.floor(players.length / 4);
 
     // Shuffle players and split into teams of 4
-    const shuffled = [...players].sort(() => Math.random() - 0.5);
+    const shuffled = seededShuffle(players, this.roundSeed ^ 0x51f15e5d);
     this.teams = [];
 
     const directions: Direction[] = ["up", "down", "left", "right"];
@@ -915,10 +906,7 @@ export default class EscapeMazeGame extends BaseGame {
     // Wait for round to end
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
-      const timeout = setTimeout(() => {
-        this._endRound();
-      }, ROUND_DURATION_SECS * 1000);
-      this._extraTimers.push(timeout);
+      this._scheduleRoundTimeout(roundToken);
     });
   }
 
@@ -1080,12 +1068,18 @@ export default class EscapeMazeGame extends BaseGame {
 
   // ── Round end ─────────────────────────────────────────────────────────────
 
-  private _endRound(): void {
+  private _endRound(roundToken: number = this.activeRoundToken): void {
+    if (roundToken !== this.activeRoundToken) return;
+
     this._clearIntervals();
-    if (this.roundResolve) {
-      this.roundResolve();
-      this.roundResolve = null;
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+      this.roundTimeout = null;
     }
+
+    const resolve = this.roundResolve;
+    this.roundResolve = null;
+    resolve?.();
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────
@@ -1135,6 +1129,37 @@ export default class EscapeMazeGame extends BaseGame {
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
+    }
+  }
+
+  private _beginRound(round: number): number {
+    this._clearRoundLifecycle();
+    this.activeRoundToken += 1;
+    this.finishCount = 0;
+    this.roundStartMs = Date.now();
+    this.roundResolve = null;
+    this.playerPositions.clear();
+    this.teams = [];
+    this.roundSeed = this.mazeSeed + round * 7919;
+    return this.activeRoundToken;
+  }
+
+  private _scheduleRoundTimeout(roundToken: number): void {
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+    }
+
+    this.roundTimeout = setTimeout(() => {
+      this._endRound(roundToken);
+    }, ROUND_DURATION_SECS * 1000);
+  }
+
+  private _clearRoundLifecycle(roundToken?: number): void {
+    if (roundToken !== undefined && roundToken !== this.activeRoundToken) return;
+    this._clearIntervals();
+    if (this.roundTimeout) {
+      clearTimeout(this.roundTimeout);
+      this.roundTimeout = null;
     }
   }
 }

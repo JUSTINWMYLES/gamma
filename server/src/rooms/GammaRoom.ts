@@ -33,6 +33,7 @@ import {
   sanitizePlayerName,
   playerNamesMatch,
 } from "./playerNameUtils";
+import { sanitizeIconDesignForStorage } from "../utils/playerIconDesign";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -330,7 +331,10 @@ export class GammaRoom extends Room<RoomState> {
           p.iconBgColor = data.iconBgColor;
         }
         if (typeof data.iconDesign === "string") {
-          p.iconDesign = data.iconDesign.slice(0, 20_000);
+          const sanitizedIconDesign = sanitizeIconDesignForStorage(data.iconDesign);
+          if (sanitizedIconDesign !== null) {
+            p.iconDesign = sanitizedIconDesign;
+          }
         }
       },
     );

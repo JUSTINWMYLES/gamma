@@ -401,6 +401,15 @@
     Boolean(submissionText.trim()) &&
     (!requiresBodyPart || Boolean(selectedBodyPart)) &&
     (!requiresAction || Boolean(selectedAction));
+  $: sortedPhaseResults = [...phaseResults].sort((a, b) => {
+    if (b.voteCount !== a.voteCount) return b.voteCount - a.voteCount;
+    return getPlayerName(a.playerId).localeCompare(getPlayerName(b.playerId));
+  });
+  $: topPhaseResults = sortedPhaseResults.slice(0, 3);
+  $: myPhaseResult = sortedPhaseResults.find((result) => result.playerId === me?.id) ?? null;
+  $: myPhasePlacement = myPhaseResult ? sortedPhaseResults.findIndex((result) => result.playerId === myPhaseResult.playerId) + 1 : 0;
+  $: myPhaseResultInTopThree = topPhaseResults.some((result) => result.playerId === me?.id);
+  $: myPhasePoints = me ? phasePoints[me.id] : undefined;
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -806,22 +815,51 @@
         <p class="text-gray-400">No winner this round.</p>
       {/if}
 
-      <!-- All results -->
-      <div class="space-y-2">
-        {#each phaseResults as result, i}
-          <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-800 text-sm">
-            <div class="flex-1 text-left">
-              <span class="text-gray-300">"{result.text}"</span>
-              <span class="text-gray-500 ml-1">— {getPlayerName(result.playerId)}</span>
+      {#if topPhaseResults.length > 0}
+        <div class="space-y-2">
+          <p class="text-xs font-semibold uppercase tracking-widest text-gray-400">Top 3 Results</p>
+          {#each topPhaseResults as result, i}
+            <div class={`rounded-xl border p-3 text-left ${i === 0 ? "border-amber-500 bg-amber-950/20" : "border-gray-700 bg-gray-800/80"}`}>
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <p class={`text-xs uppercase tracking-widest ${i === 0 ? "text-amber-300" : "text-gray-500"}`}>#{i + 1} · {getPlayerName(result.playerId)}</p>
+                  <p class="mt-1 text-sm font-semibold text-white break-words">"{result.text}"</p>
+                  {#if result.bodyPart}
+                    <p class="mt-1 text-xs text-gray-300">📍 {result.bodyPart}</p>
+                  {/if}
+                  {#if result.action}
+                    <p class="mt-1 text-xs text-gray-300">⚡ {result.action}</p>
+                  {/if}
+                  {#if result.tests && result.tests.length > 0}
+                    <p class="mt-1 text-xs text-gray-300">🧪 {result.tests.join(", ")}</p>
+                  {/if}
+                </div>
+                <div class="text-right text-xs whitespace-nowrap">
+                  <p class="font-bold text-gray-200">{result.voteCount}🗳️</p>
+                  <p class={`mt-1 font-semibold ${(phasePoints[result.playerId] ?? 0) > 0 ? "text-emerald-300" : "text-gray-500"}`}>+{phasePoints[result.playerId] ?? 0}</p>
+                </div>
+              </div>
             </div>
-            <span class="text-gray-400 ml-2">{result.voteCount}🗳️</span>
+          {/each}
+        </div>
+      {/if}
+
+      {#if myPhaseResult && !myPhaseResultInTopThree}
+        <div class="rounded-xl border border-emerald-600/40 bg-emerald-950/20 p-4 text-left">
+          <p class="text-xs font-semibold uppercase tracking-widest text-emerald-300">Your result</p>
+          <div class="mt-2 flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-semibold text-white">#{myPhasePlacement} · "{myPhaseResult.text}"</p>
+              <p class="mt-1 text-xs text-gray-400">{myPhaseResult.voteCount} vote{myPhaseResult.voteCount !== 1 ? 's' : ''}</p>
+            </div>
+            <p class={`text-sm font-bold ${((myPhasePoints ?? 0) > 0) ? "text-emerald-300" : "text-gray-500"}`}>+{myPhasePoints ?? 0}</p>
           </div>
-        {/each}
-      </div>
+        </div>
+      {/if}
 
       <!-- My points -->
-      {#if me && phasePoints[me.id]}
-        <p class="text-2xl font-black text-green-400">+{phasePoints[me.id]} pts</p>
+      {#if me && myPhasePoints !== undefined}
+        <p class={`text-2xl font-black ${(myPhasePoints ?? 0) > 0 ? "text-green-400" : "text-gray-500"}`}>+{myPhasePoints ?? 0} pts</p>
       {/if}
     </div>
 

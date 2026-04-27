@@ -204,8 +204,83 @@
     "sharpener": "✏️", "gears": "⚙️", "camp-stove": "🏕️", "exercise-ball": "⚽",
   };
 
+  const SELLER_NAMES = [
+    "Definitely_Legit_Seller_42", "xX_BargainKing_Xx", "GarageCleanout2026",
+    "NotAScam_Promise", "TrustMe_Bro_Sales", "MyWifeSaidSellIt",
+    "BasementTreasures99", "OneOwner_Honest", "NeedGoneTODAY",
+    "PriceIsNegotiable_Maybe", "DownsizingDave", "Grandmas_Attic_Finds",
+    "MovingSale_ASAP", "CashOnly_NoLowballs", "IKnowWhatIHave",
+  ];
+
+  const CONDITIONS = [
+    "Like New (Used Twice)", "Gently Loved", "It Exists", "Fair (Generous)",
+    "Vintage (Old)", "Mint* (*in my opinion)", "Well-Worn Character",
+    "Suspiciously Clean", "Battle-Tested", "Collector Grade (Self-Certified)",
+    "Needs TLC", "Works On My End",
+  ];
+
+  const LOCATIONS = [
+    "Parking lot behind Wendy's", "My cousin's garage", "Undisclosed location",
+    "Corner of Elm & Regret", "Behind the old Kmart", "Curb pickup only",
+    "Somewhere in the tri-state area", "GPS coordinates upon request",
+    "The good part of town (trust me)", "Storage unit #???",
+  ];
+
+  const SHIPPING_OPTIONS = [
+    "Your problem", "Will yeet from porch", "Local pickup, bring a truck",
+    "I'll think about shipping", "Carrier pigeon available", "Free if you hurry",
+    "Shipping = $500 (it's heavy)", "You figure it out", "Drone delivery (untested)",
+  ];
+
   function emojiFor(hint: string): string {
     return IMAGE_EMOJI[hint] ?? "🏷️";
+  }
+
+  function fakeSellerName(hint: string): string {
+    return SELLER_NAMES[Math.abs(hashCode(hint)) % SELLER_NAMES.length];
+  }
+
+  function fakeCondition(hint: string): string {
+    return CONDITIONS[Math.abs(hashCode(hint + "c")) % CONDITIONS.length];
+  }
+
+  function fakeLocation(hint: string): string {
+    return LOCATIONS[Math.abs(hashCode(hint + "l")) % LOCATIONS.length];
+  }
+
+  function fakeShipping(hint: string): string {
+    return SHIPPING_OPTIONS[Math.abs(hashCode(hint + "s")) % SHIPPING_OPTIONS.length];
+  }
+
+  function fakeViews(hint: string): number {
+    return 3 + (Math.abs(hashCode(hint + "v")) % 247);
+  }
+
+  function fakeSaves(hint: string): number {
+    return Math.abs(hashCode(hint + "f")) % 18;
+  }
+
+  function fakeTimeAgo(hint: string): string {
+    const mins = 1 + (Math.abs(hashCode(hint + "t")) % 180);
+    if (mins < 60) return `${mins} min ago`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m ago`;
+  }
+
+  function fakeRating(hint: string): string {
+    const stars = 1 + (Math.abs(hashCode(hint + "r")) % 5);
+    return "★".repeat(stars) + "☆".repeat(5 - stars);
+  }
+
+  function fakeReviewCount(hint: string): number {
+    return Math.abs(hashCode(hint + "rc")) % 12;
+  }
+
+  function hashCode(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+    }
+    return h;
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
@@ -477,6 +552,7 @@
     ? fmResults.entries.find((e) => e.playerId === fmResults?.winner)
     : null;
   $: fmStatusList = [...fmPlayerStatuses.values()];
+  $: topFivePlayers = sortedPlayers.slice(0, 5);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="lowball-marketplace-tv">
@@ -749,9 +825,9 @@
 
       <!-- Overall standings -->
       <div class="bg-gray-800 rounded-xl p-4">
-        <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Overall Standings</p>
+        <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Top 5 Overall Standings</p>
         <div class="space-y-1">
-          {#each sortedPlayers as p, i}
+          {#each topFivePlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
               <PlayerIcon player={p} size={24} />
@@ -855,7 +931,7 @@
 
   {:else if subPhase === "fm_reveal"}
     <!-- Structured Reveal — animated step-by-step -->
-    <div class="w-full max-w-3xl space-y-6">
+    <div class="w-full max-w-6xl space-y-6">
       <div class="text-center">
         <p class="text-sm text-gray-500 uppercase tracking-widest">Message {fmRevealHistory.length}</p>
       </div>
@@ -871,29 +947,69 @@
       {/if}
 
       {#if fmRevealItem && fmRevealStep >= 1}
-        <!-- Step 1: Full listing card slides in -->
-        <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl overflow-hidden animate-slide-up max-w-2xl mx-auto">
-          <!-- Item hero -->
-          <div class="flex gap-6 p-6 items-center">
-            <div class="w-28 h-28 bg-gray-700 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-600">
-              <span class="text-6xl">{emojiFor(fmRevealItem.imageHint)}</span>
+        <div class={`grid gap-6 items-start ${fmRevealStep >= 2 ? "xl:grid-cols-[1.1fr_0.9fr]" : "max-w-3xl mx-auto"}`}>
+          <!-- Step 1: Full listing card slides in -->
+          <div class="bg-gray-800 border-2 border-emerald-600 rounded-2xl overflow-hidden animate-slide-up shadow-2xl">
+            <div class="bg-emerald-900/40 border-b border-emerald-700 px-6 py-3 flex items-center gap-3">
+              <span class="text-2xl">🏪</span>
+              <span class="text-emerald-300 font-bold uppercase tracking-widest text-sm">Lowball Marketplace</span>
+              <span class="ml-auto text-xs text-gray-500">{fakeTimeAgo(fmRevealItem.imageHint)}</span>
             </div>
-            <div class="flex-1 space-y-1">
-              <p class="text-xs text-emerald-400 uppercase tracking-widest">{fmRevealItem.category}</p>
-              <p class="text-2xl font-black text-white">{fmRevealItem.name}</p>
-              <p class="text-sm text-gray-400">{fmRevealItem.description}</p>
-              <p class="text-xl font-black text-emerald-400 mt-1">{formatPrice(fmRevealItem.askingPrice)}</p>
+
+            <div class="p-6 space-y-5">
+              <div class="flex gap-6 items-start">
+                <div class="relative w-32 h-32 bg-gray-700 rounded-xl flex items-center justify-center flex-shrink-0 border border-gray-600">
+                  <span class="text-7xl">{emojiFor(fmRevealItem.imageHint)}</span>
+                  <span class="absolute top-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-gray-300">{fakeViews(fmRevealItem.imageHint)} views</span>
+                </div>
+                <div class="flex-1 min-w-0 space-y-2">
+                  <p class="text-xs text-emerald-400 uppercase tracking-widest">{fmRevealItem.category}</p>
+                  <p class="text-3xl font-black text-white leading-tight">{fmRevealItem.name}</p>
+                  <p class="text-base text-gray-300 leading-relaxed">{fmRevealItem.description}</p>
+                  <div class="flex items-end justify-between gap-4 pt-1">
+                    <div>
+                      <p class="text-4xl font-black text-emerald-400">{formatPrice(fmRevealItem.askingPrice)}</p>
+                      <p class="text-xs text-gray-500 mt-1">or best offer • {fakeSaves(fmRevealItem.imageHint)} saves</p>
+                    </div>
+                    <div class="text-right text-xs text-gray-500">
+                      <p>Condition: <span class="font-semibold text-yellow-400">{fakeCondition(fmRevealItem.imageHint)}</span></p>
+                      <p class="mt-1">Shipping: <span class="font-semibold text-gray-300">{fakeShipping(fmRevealItem.imageHint)}</span></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 text-sm">
+                <div class="rounded-xl border border-gray-700 bg-gray-900/60 p-3">
+                  <p class="text-xs uppercase tracking-widest text-gray-500">Location</p>
+                  <p class="mt-1 font-semibold text-white">{fakeLocation(fmRevealItem.imageHint)}</p>
+                </div>
+                <div class="rounded-xl border border-gray-700 bg-gray-900/60 p-3">
+                  <p class="text-xs uppercase tracking-widest text-gray-500">Seller rating</p>
+                  <p class="mt-1 font-semibold text-white">{fakeRating(fmRevealItem.imageHint)} <span class="text-gray-400">({fakeReviewCount(fmRevealItem.imageHint)} reviews)</span></p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-4 border-t border-gray-700 pt-4">
+                <div class="w-11 h-11 bg-gray-600 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span class="text-lg">🤷</span>
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-gray-200">{fakeSellerName(fmRevealItem.imageHint)}</p>
+                  <p class="text-xs text-gray-500">Member since yesterday • replies eventually</p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      {/if}
 
-      {#if fmRevealStep >= 2}
-        <!-- Step 2: Message pops up below -->
-        <div class="bg-gray-900 border-2 border-yellow-500/60 rounded-2xl p-6 max-w-2xl mx-auto animate-pop-in">
-          <p class="text-xs text-yellow-400 uppercase tracking-widest mb-3">Message to Seller</p>
-          <p class="text-2xl text-white leading-relaxed italic">"{fmRevealMessage}"</p>
-          <p class="text-right text-sm text-gray-500 mt-3">-- {fmRevealPlayerName}</p>
+          {#if fmRevealStep >= 2}
+            <!-- Step 2: Message pops up beside the full ad -->
+            <div class="bg-gray-900 border-2 border-yellow-500/60 rounded-2xl p-6 animate-pop-in shadow-2xl">
+              <p class="text-xs text-yellow-400 uppercase tracking-widest mb-3">Message to Seller</p>
+              <p class="text-2xl text-white leading-relaxed italic">"{fmRevealMessage}"</p>
+              <p class="text-right text-sm text-gray-500 mt-3">-- {fmRevealPlayerName}</p>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1004,9 +1120,9 @@
 
         <!-- Overall standings -->
         <div class="bg-gray-800 rounded-xl p-4">
-          <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Overall Standings</p>
+          <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Top 5 Overall Standings</p>
           <div class="space-y-1">
-            {#each sortedPlayers as p, i}
+            {#each topFivePlayers as p, i}
               <div class="flex items-center gap-3">
                 <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
                 <PlayerIcon player={p} size={24} />

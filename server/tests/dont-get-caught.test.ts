@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DontGetCaughtGame from "../src/games/registry-14-dont-get-caught";
+import { seededRng } from "../src/utils/rng";
 
 function createPlayer(id: string, name: string) {
   return {
@@ -88,5 +89,25 @@ describe("DontGetCaughtGame round timing", () => {
     expect(secondRoundResolved).toBe(true);
 
     await secondRound;
+  });
+
+  it("spawns guards with more divergent patrol routes at the faster baseline speed", () => {
+    const room = createRoomStub(["p1"]);
+    const game = new DontGetCaughtGame(room) as any;
+
+    game.guardPatrolSeed = 2_468;
+    game.guardDecisionRng = seededRng(2_468);
+    game._spawnGuards(6);
+
+    const runtimes = game.guardRuntimes;
+    const guards = [...room.state.guards.values()];
+
+    expect(guards).toHaveLength(6);
+    expect(game.guardSpeed).toBeCloseTo(3.168, 6);
+    expect(runtimes.map((rt: { patrolDir: number }) => rt.patrolDir)).toContain(1);
+    expect(runtimes.map((rt: { patrolDir: number }) => rt.patrolDir)).toContain(-1);
+    expect(new Set(runtimes.map((rt: { patrolStride: number }) => rt.patrolStride)).size).toBeGreaterThan(1);
+    expect(new Set(guards.map((guard: { patrolIndex: number }) => guard.patrolIndex)).size).toBeGreaterThan(4);
+    expect(new Set(guards.map((guard: { x: number; y: number }) => `${guard.x},${guard.y}`)).size).toBeGreaterThan(4);
   });
 });

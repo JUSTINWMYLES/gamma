@@ -425,6 +425,7 @@
   }
 
   $: leaderboard = [...state.players.values()].sort((a, b) => b.score - a.score);
+  $: leaderboardTopFive = leaderboard.slice(0, 5);
   $: winningEntries = results?.entries.filter((entry) => entry.isWinner) ?? [];
 
   let activeMusicTrack: "celebration" | null = null;
@@ -496,9 +497,9 @@
     </div>
 
     <div class="mt-auto">
-      <p class="mb-2 text-xs uppercase tracking-widest text-slate-300">Leaderboard</p>
+      <p class="mb-2 text-xs uppercase tracking-widest text-slate-300">Top 5 Leaderboard</p>
       <ul class="space-y-1.5">
-        {#each leaderboard as player, index}
+        {#each leaderboardTopFive as player, index}
           <li class="flex items-center gap-2 rounded-xl bg-slate-800 px-2 py-2">
             <span class="w-5 text-xs font-mono text-slate-400">{index + 1}.</span>
             <PlayerIcon {player} size={20} />

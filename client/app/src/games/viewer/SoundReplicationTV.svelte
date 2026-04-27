@@ -265,6 +265,7 @@
   });
 
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
+  $: topFivePlayers = sortedPlayers.slice(0, 5);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="sound-replication-tv">
@@ -521,9 +522,9 @@
 
       <!-- Overall standings -->
       <div class="bg-gray-800 rounded-xl p-4">
-        <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Overall Standings</p>
+        <p class="text-xs text-gray-400 uppercase tracking-widest mb-3 text-center">Top 5 Overall Standings</p>
         <div class="space-y-1">
-          {#each sortedPlayers as p, i}
+          {#each topFivePlayers as p, i}
             <div class="flex items-center gap-3">
               <span class="w-6 text-center text-gray-500 font-mono text-sm">{i + 1}.</span>
               <PlayerIcon player={p} size={24} />

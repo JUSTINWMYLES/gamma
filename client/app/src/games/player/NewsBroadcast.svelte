@@ -943,10 +943,17 @@
 
   {:else if subPhase === "gif_selection"}
     <div class="w-full max-w-md space-y-4">
-      <div class="text-center space-y-2">
-        <p class="text-xs uppercase tracking-[0.35em] text-sky-300/80">Select Visual</p>
-        <h2 class="text-2xl font-black text-white">Pick a GIF</h2>
-        <p class="text-sm text-slate-400">{Math.ceil(timeLeft)}s remaining</p>
+      <div class="sticky top-0 z-10 space-y-3 rounded-3xl border border-slate-800/80 bg-slate-950/95 p-4 backdrop-blur-sm">
+        <div class="text-center space-y-2">
+          <p class="text-xs uppercase tracking-[0.35em] text-sky-300/80">Select Visual</p>
+          <h2 class="text-2xl font-black text-white">Pick a GIF</h2>
+          <p class="text-sm text-slate-400">{Math.ceil(timeLeft)}s remaining</p>
+        </div>
+
+        <div class="rounded-2xl border border-sky-500/20 bg-sky-950/25 px-4 py-3 text-center">
+          <p class="text-xs uppercase tracking-[0.3em] text-sky-200/80">Assigned headline</p>
+          <p class="mt-2 text-base font-black leading-snug text-white">{assignedHeadline || "Waiting for your headline..."}</p>
+        </div>
       </div>
 
       <div class="rounded-3xl border border-slate-800 bg-slate-950/70 p-4 space-y-3">

@@ -102,6 +102,8 @@
   // ── Round recap ──────────────────────────────────────────────────────
   let phaseWinners: Record<string, PhaseResult | null> = {};
   let roundScores: Record<string, number> = {};
+  let liveRoundScoreBonuses: Record<string, number> = {};
+  let roundStartScores: Record<string, number> = {};
   let recapRoles: Record<string, string> = {};
   let recapTimeline: RecapTimelineEntry[] = [];
   let recapStartTime = 0;
@@ -190,6 +192,16 @@
     playerList = data.playerList;
     roleVoteDurationMs = data.durationMs;
     roleVoteEndTime = data.serverTimestamp + data.durationMs;
+    phaseHistory = [];
+    phaseResults = [];
+    phaseWinner = null;
+    phasePoints = {};
+    phaseWinners = {};
+    roundScores = {};
+    liveRoundScoreBonuses = {};
+    revealedPhaseWinners = new Set();
+    revealedRecapPhases = new Set();
+    captureRoundStartScores();
 
     clearAllTimers();
     roleVoteTimer = setInterval(() => {
@@ -302,6 +314,7 @@
     phaseResults = data.results;
     phaseWinner = data.phaseWinner;
     phasePoints = data.points;
+    addLiveRoundScoreBonuses(data.points);
     scene3dPlaceholder = data.scene3dPlaceholder ?? null;
     phaseHistory = data.history ?? phaseHistory;
 
@@ -322,6 +335,7 @@
     subPhase = "round_recap";
     phaseWinners = data.phaseWinners;
     roundScores = data.scores;
+    liveRoundScoreBonuses = { ...data.scores };
     recapRoles = data.roles;
     phaseHistory = data.history ?? phaseHistory;
     recapTimeline = data.recapTimeline ?? [];
@@ -348,6 +362,7 @@
   function onRoundSkipped(data: { reason: string }) {
     roundSkipped = true;
     skipReason = data.reason;
+    liveRoundScoreBonuses = {};
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────
@@ -385,7 +400,45 @@
     return phase === "complaint";
   }
 
-  $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
+  function captureRoundStartScores() {
+    roundStartScores = {};
+    for (const player of state.players.values()) {
+      roundStartScores[player.id] = player.score;
+    }
+  }
+
+  function addLiveRoundScoreBonuses(points: Record<string, number>) {
+    const nextBonuses = { ...liveRoundScoreBonuses };
+    for (const [playerId, score] of Object.entries(points)) {
+      nextBonuses[playerId] = (nextBonuses[playerId] ?? 0) + score;
+    }
+    liveRoundScoreBonuses = nextBonuses;
+  }
+
+  function getSidebarScore(playerId: string): number {
+    if (state.phase !== "in_round") {
+      return state.players.get(playerId)?.score ?? 0;
+    }
+
+    const baseScore = roundStartScores[playerId] ?? state.players.get(playerId)?.score ?? 0;
+    return baseScore + (liveRoundScoreBonuses[playerId] ?? 0);
+  }
+
+  $: sidebarPlayers = [...state.players.values()]
+    .map((player) => ({
+      player,
+      displayScore: getSidebarScore(player.id),
+      pendingScore: state.phase === "in_round" ? (liveRoundScoreBonuses[player.id] ?? 0) : 0,
+    }))
+    .sort((a, b) => {
+      if (b.displayScore !== a.displayScore) return b.displayScore - a.displayScore;
+      return a.player.name.localeCompare(b.player.name);
+    });
+  $: sortedPhaseResults = [...phaseResults].sort((a, b) => {
+    if (b.voteCount !== a.voteCount) return b.voteCount - a.voteCount;
+    return getPlayerName(a.playerId).localeCompare(getPlayerName(b.playerId));
+  });
+  $: topPhaseResults = sortedPhaseResults.slice(0, 3);
 
   // ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -646,20 +699,35 @@
           <p class="text-xl text-gray-400">No submissions this phase.</p>
         {/if}
 
-        <!-- All results ranked -->
-        <div class="space-y-2 max-w-xl mx-auto">
-          {#each phaseResults as result, i}
-            <div class="flex items-center gap-3 px-4 py-2 rounded-xl bg-gray-800 text-left
-              {i === 0 ? 'border border-amber-500' : 'border border-gray-700'}">
-              <span class="text-lg font-bold text-gray-500 w-8">#{i + 1}</span>
-              <div class="flex-1">
-                <span class="text-sm text-white">"{result.text}"</span>
-                <span class="text-xs text-gray-500 ml-2">— {getPlayerName(result.playerId)}</span>
-              </div>
-              <span class="text-sm text-gray-400">{result.voteCount}🗳️</span>
+        {#if topPhaseResults.length > 0}
+          <div class="w-full max-w-3xl mx-auto space-y-3">
+            <p class="text-sm uppercase tracking-widest text-gray-400 text-center">Top 3 This Phase</p>
+            <div class="grid gap-3 md:grid-cols-3">
+              {#each topPhaseResults as result, i}
+                <div class={`rounded-2xl border p-4 text-left ${i === 0 ? 'border-amber-500 bg-amber-950/20' : 'border-gray-700 bg-gray-800/80'}`}>
+                  <div class="flex items-start justify-between gap-3">
+                    <p class={`text-xs uppercase tracking-widest ${i === 0 ? 'text-amber-300' : 'text-gray-500'}`}>#{i + 1}</p>
+                    <p class="text-sm font-bold text-gray-300">{result.voteCount}🗳️</p>
+                  </div>
+                  <p class="mt-2 text-base font-bold text-white leading-snug">"{result.text}"</p>
+                  {#if result.bodyPart}
+                    <p class="mt-2 text-sm text-gray-300">📍 {result.bodyPart}</p>
+                  {/if}
+                  {#if result.action}
+                    <p class="mt-2 text-sm text-gray-300">⚡ {result.action}</p>
+                  {/if}
+                  {#if result.tests && result.tests.length > 0}
+                    <p class="mt-2 text-sm text-gray-300">🧪 {result.tests.join(", ")}</p>
+                  {/if}
+                  <div class="mt-3 flex items-center justify-between gap-3 text-sm">
+                    <span class="truncate text-gray-400">{getPlayerName(result.playerId)}</span>
+                    <span class={`font-bold ${(phasePoints[result.playerId] ?? 0) > 0 ? 'text-emerald-300' : 'text-gray-500'}`}>+{phasePoints[result.playerId] ?? 0}</span>
+                  </div>
+                </div>
+              {/each}
             </div>
-          {/each}
-        </div>
+          </div>
+        {/if}
       </div>
 
     {:else if subPhase === "results_pending"}
@@ -713,13 +781,18 @@
 
     <div>
         <p class="text-xs text-gray-400 uppercase tracking-widest mb-2">Leaderboard</p>
-        <ul class="space-y-1">
-          {#each sortedPlayers as p, i}
-            <li class="flex items-center gap-2 rounded px-2 py-1.5 bg-gray-900">
+        <ul class="space-y-0.5">
+          {#each sidebarPlayers as entry, i}
+            <li class="flex items-center gap-2 rounded px-2 py-1 bg-gray-900">
               <span class="w-5 text-xs text-gray-500 font-mono">{i + 1}.</span>
-              <PlayerIcon player={p} size={20} />
-              <span class="flex-1 text-sm truncate text-gray-200">{p.name}</span>
-              <span class="text-sm font-mono font-bold text-white">{p.score}</span>
+              <PlayerIcon player={entry.player} size={18} />
+              <span class="flex-1 text-xs truncate text-gray-200">{entry.player.name}</span>
+              <div class="text-right leading-tight">
+                <span class="block text-xs font-mono font-bold text-white">{entry.displayScore}</span>
+                {#if entry.pendingScore > 0}
+                  <span class="block text-[10px] font-semibold text-emerald-300">+{entry.pendingScore}</span>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>

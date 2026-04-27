@@ -6,6 +6,8 @@
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 
+  const TV_STANDINGS_LIMIT = 5;
+
   $: winner = sortedPlayers[0];
   $: allTied = sortedPlayers.length > 1 && sortedPlayers.every((p) => p.score === sortedPlayers[0].score);
 
@@ -56,7 +58,7 @@
     return 2;               // 3rd → right
   }
 
-  let showFullList = false;
+  $: topFinalists = sortedPlayers.slice(0, TV_STANDINGS_LIMIT);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="game-over-screen">
@@ -86,24 +88,21 @@
     </div>
   {/if}
 
-  <!-- Full list toggle -->
-  <button
-    class="text-sm text-gray-500 underline hover:text-gray-300 transition-colors"
-    on:click={() => (showFullList = !showFullList)}
-  >{showFullList ? 'Hide full scoreboard' : 'Show full scoreboard'}</button>
+  <div class="w-full max-w-md space-y-2">
+    <p class="text-center text-sm uppercase tracking-widest text-gray-500">Top 5 Final Standings</p>
+    {#each topFinalists as p, i}
+      {@const resolvedRank = rankNumber(i, sortedPlayers)}
+      <div class="flex items-center gap-4 bg-gray-800 rounded-xl px-6 py-3">
+        <span class="text-2xl w-10 text-center">{rankBadge(resolvedRank)}</span>
+        <PlayerIcon player={p} size={32} />
+        <span class="flex-1 font-semibold">{p.name}</span>
+        <span class="font-mono text-xl">{p.score}</span>
+      </div>
+    {/each}
+  </div>
 
-  {#if showFullList}
-    <div class="w-full max-w-md space-y-2">
-      {#each sortedPlayers as p, i}
-        {@const resolvedRank = rankNumber(i, sortedPlayers)}
-        <div class="flex items-center gap-4 bg-gray-800 rounded-xl px-6 py-3">
-          <span class="text-2xl w-10 text-center">{rankBadge(resolvedRank)}</span>
-          <PlayerIcon player={p} size={32} />
-          <span class="flex-1 font-semibold">{p.name}</span>
-          <span class="font-mono text-xl">{p.score}</span>
-        </div>
-      {/each}
-    </div>
+  {#if sortedPlayers.length > TV_STANDINGS_LIMIT}
+    <p class="text-sm text-gray-500">Full standings are available on the players' phones.</p>
   {/if}
 
   <p class="mt-2 text-sm text-gray-500">Use the host phone to continue.</p>

@@ -4,6 +4,8 @@
   export let state: RoomState;
   export let sortedPlayers: PlayerState[];
 
+  const TV_STANDINGS_LIMIT = 5;
+
   // Compute display rank that handles ties (same score = same rank)
   function displayRank(index: number, players: PlayerState[]): string {
     if (index === 0) return ['🥇','🥈','🥉'][0];
@@ -17,6 +19,7 @@
   }
 
   $: allTied = sortedPlayers.length > 1 && sortedPlayers.every((p) => p.score === sortedPlayers[0].score);
+  $: topPlayers = sortedPlayers.slice(0, TV_STANDINGS_LIMIT);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="scoreboard-screen">
@@ -25,7 +28,7 @@
     <p class="text-2xl text-yellow-400 font-bold">Everyone's tied at {sortedPlayers[0]?.score ?? 0}!</p>
   {/if}
   <div class="w-full max-w-lg space-y-3">
-    {#each sortedPlayers as p, i}
+    {#each topPlayers as p, i}
       <div class="flex items-center gap-4 rounded-xl px-6 py-4 transition-all {i === 0 ? 'bg-indigo-700 scale-105 shadow-xl' : 'bg-gray-800'}">
         <span class="text-3xl">{displayRank(i, sortedPlayers)}</span>
         <PlayerIcon player={p} size={36} />
@@ -34,4 +37,7 @@
       </div>
     {/each}
   </div>
+  {#if sortedPlayers.length > TV_STANDINGS_LIMIT}
+    <p class="text-sm text-gray-400">Full standings are available on the players' phones.</p>
+  {/if}
 </div>
