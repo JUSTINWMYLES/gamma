@@ -54,11 +54,18 @@ type GameConstructor = {
 /** In-memory cache so repeated room creates don't re-require the module. */
 const cache = new Map<string, GameConstructor>();
 
+/** Regex validating registry-NN-slug pattern to prevent path traversal. */
+const GAME_ID_REGEX = /^registry-\d{2}-[a-z0-9-]+$/;
+
 /**
  * Dynamically import and validate a game plugin by registry ID.
  * Throws if the module is missing or does not satisfy the plugin interface.
  */
 export async function loadGame(gameId: string): Promise<GameConstructor> {
+  if (!GAME_ID_REGEX.test(gameId)) {
+    throw new Error(`[gameLoader] Invalid gameId format: "${gameId}". Must match registry-NN-slug.`);
+  }
+
   if (cache.has(gameId)) return cache.get(gameId)!;
 
   const modulePath = path.resolve(__dirname, gameId, "index");

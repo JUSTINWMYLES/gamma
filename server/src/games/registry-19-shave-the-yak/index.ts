@@ -350,6 +350,13 @@ export default class ShaveYakGame extends BaseGame {
 
     const { x1, y1, x2, y2, onTarget } = input;
 
+    if (
+      typeof x1 !== "number" || typeof y1 !== "number" ||
+      typeof x2 !== "number" || typeof y2 !== "number" ||
+      !Number.isFinite(x1) || !Number.isFinite(y1) ||
+      !Number.isFinite(x2) || !Number.isFinite(y2)
+    ) return;
+
     if (onTarget) {
       // Validate the swipe coordinates are at least partially in bounds (loose check)
       const inBounds =

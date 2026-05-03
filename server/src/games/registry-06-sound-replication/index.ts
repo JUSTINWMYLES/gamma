@@ -147,6 +147,9 @@ interface SoundReplicationInput {
   durationSecs?: number;
 }
 
+/** Maximum allowed base64-encoded audio size (~375KB decoded, sufficient for 5s Opus). */
+const MAX_AUDIO_BASE64_SIZE = 500_000;
+
 // ── Game class ────────────────────────────────────────────────────────────────
 
 export default class SoundReplicationGame extends BaseGame {
@@ -368,13 +371,19 @@ export default class SoundReplicationGame extends BaseGame {
         if (sessionId !== currentPlayerId) return;
         if (this.currentSubmitted) return;
 
+        const audioBase64 = input.audioBase64 ?? "";
+        if (audioBase64.length > MAX_AUDIO_BASE64_SIZE) {
+          this.send(sessionId, "sound_submit_rejected", { reason: "Audio too large" });
+          return;
+        }
+
         this.currentSubmitted = true;
         const player = this.room.state.players.get(sessionId);
 
         this.attempts.set(sessionId, {
           playerId: sessionId,
           playerName: player?.name ?? "Unknown",
-          audioBase64: input.audioBase64 ?? "",
+          audioBase64,
           durationSecs: input.durationSecs ?? 0,
           similarityScore: 0, // computed later
           energyProfile: [], // computed later

@@ -34,6 +34,13 @@ import {
 const PORT = Number(process.env.PORT ?? 2567);
 const TTS_JOB_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,127})$/;
 
+/** Parse CORS origins from comma-separated env var. Falls back to allow all in dev. */
+function getCorsOrigins(): cors.CorsOptions["origin"] {
+  const raw = process.env.ALLOWED_ORIGINS?.trim();
+  if (!raw) return undefined; // cors() defaults to '*' for dev convenience
+  return raw.split(",").map((o) => o.trim()).filter(Boolean);
+}
+
 function sanitizeTTSJobId(value: string): string | null {
   const trimmed = value.trim();
   return TTS_JOB_ID_PATTERN.test(trimmed) ? trimmed : null;
@@ -45,7 +52,7 @@ async function main() {
 
   // ── HTTP layer ──────────────────────────────────────────────────────────────
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: getCorsOrigins() }));
   app.use(express.json());
 
   /** Health probe used by Docker Compose and Kubernetes liveness checks. */

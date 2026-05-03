@@ -24,7 +24,7 @@ import { RoomState } from "../schema/RoomState";
 import { PlayerState } from "../schema/PlayerState";
 import { GameConfig } from "../schema/GameConfig";
 import { BaseGame } from "../games/BaseGame";
-import { loadGame } from "../games/gameLoader";
+import { loadGame, getAvailableGames } from "../games/gameLoader";
 import { generateRoomCode } from "../utils/rng";
 import { meter, tracer } from "../telemetry";
 import { SpanStatusCode, type Span } from "@opentelemetry/api";
@@ -34,7 +34,7 @@ import {
   playerNamesMatch,
 } from "./playerNameUtils";
 import { sanitizeIconDesignForStorage } from "../utils/playerIconDesign";
-import { RECONNECT_GRACE_MS, RECONNECT_GRACE_SECONDS } from "../config";
+import { RECONNECT_GRACE_MS, RECONNECT_GRACE_SECONDS, getAllowedOrigins } from "../config";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -76,6 +76,9 @@ export class GammaRoom extends Room<RoomState> {
   /** Players currently in a Colyseus allowReconnection window.
    * Guards against duplicate-player claims from page refresh (C1). */
   private pendingReconnects = new Map<string, PendingReconnect>();
+
+  /** Per-session message rate tracking for flood protection. */
+  private messageRateMap = new Map<string, { count: number; windowStart: number }>();
 
   // ── OTEL metrics ──────────────────────────────────────────────────────────
   private static roomsCreated = meter.createCounter("gamma.rooms.created", {
@@ -129,7 +132,15 @@ export class GammaRoom extends Room<RoomState> {
     this._onPlayerJoin(client, options);
   }
 
-  onAuth(_client: Client, options: JoinOptions): boolean {
+  onAuth(client: Client, options: JoinOptions): boolean {
+    const allowed = getAllowedOrigins();
+    if (allowed.length > 0) {
+      const origin = client.upgradeReq?.headers?.origin as string | undefined;
+      if (!origin || !allowed.includes(origin)) {
+        throw new ServerError(4001, "Origin not allowed");
+      }
+    }
+
     if (options.role !== "player") return true;
 
     const incomingName = sanitizePlayerName(options.name);
@@ -192,6 +203,9 @@ export class GammaRoom extends Room<RoomState> {
       this.viewScreenSessionId = null;
       console.log("[GammaRoom] view screen disconnected");
     }
+
+    // Clean up rate limiting state
+    this.messageRateMap.delete(client.sessionId);
   }
 
   onDispose(): void {
@@ -514,6 +528,13 @@ export class GammaRoom extends Room<RoomState> {
     this.onMessage("select_game", async (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;
       if (!this._requirePhase(client, ["lobby"])) return;
+
+      const available = getAvailableGames();
+      if (!available.includes(data.gameId)) {
+        client.send("error", { code: 4005, message: `Game "${data.gameId}" is not available.` });
+        return;
+      }
+
       this.state.selectedGame = data.gameId;
 
       try {
@@ -636,6 +657,7 @@ export class GammaRoom extends Room<RoomState> {
     this.onMessage("game_input", (client, data: unknown) => {
       if (!this._requirePlayer(client)) return;
       if (!this._requirePhase(client, ["game_loading", "instructions", "countdown", "in_round", "round_end", "scoreboard"])) return;
+      if (this._isRateLimited(client.sessionId)) return;
       if (this.game) this.game.handleInput(client, data);
     });
 
@@ -663,18 +685,25 @@ export class GammaRoom extends Room<RoomState> {
       if (this.state.phase !== "lobby") return;
       if (!Array.isArray(data.queue)) return;
 
+      const available = getAvailableGames();
+      const validQueue = data.queue.filter((item) => available.includes(item));
+      if (validQueue.length !== data.queue.length) {
+        const invalid = data.queue.filter((item) => !available.includes(item));
+        console.warn(`[GammaRoom] set_queue filtered out invalid items: ${invalid.join(", ")}`);
+      }
+
       // Replace the queue
-      this.state.gameQueue = new ArraySchema<string>(...data.queue);
+      this.state.gameQueue = new ArraySchema<string>(...validQueue);
       this.state.queueIndex = 0;
 
       // Auto-select the first game in the queue
-      if (data.queue.length > 0) {
-        this.state.selectedGame = data.queue[0];
+      if (validQueue.length > 0) {
+        this.state.selectedGame = validQueue[0];
       } else {
         this.state.selectedGame = "";
       }
 
-      console.log(`[GammaRoom] queue set — ${data.queue.length} games, code=${this.state.roomCode}`);
+      console.log(`[GammaRoom] queue set — ${validQueue.length} games, code=${this.state.roomCode}`);
     });
 
     /**
@@ -913,5 +942,21 @@ export class GammaRoom extends Room<RoomState> {
       return false;
     }
     return true;
+  }
+
+  /** Maximum messages per second per client before rate limiting kicks in. */
+  private static readonly MAX_MESSAGES_PER_SECOND = 60;
+
+  /** Rate-limit check. Returns true if the client has exceeded the limit. */
+  private _isRateLimited(sessionId: string): boolean {
+    const now = Date.now();
+    const entry = this.messageRateMap.get(sessionId) ?? { count: 0, windowStart: now };
+    if (now - entry.windowStart > 1000) {
+      entry.count = 0;
+      entry.windowStart = now;
+    }
+    entry.count++;
+    this.messageRateMap.set(sessionId, entry);
+    return entry.count > GammaRoom.MAX_MESSAGES_PER_SECOND;
   }
 }

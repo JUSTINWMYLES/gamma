@@ -430,6 +430,7 @@ export default class DontGetCaughtGame extends BaseGame {
 
     const input = data as InputMessage;
     if (input.action === "move" && input.dx !== undefined && input.dy !== undefined) {
+      if (typeof input.dx !== "number" || typeof input.dy !== "number" || !Number.isFinite(input.dx) || !Number.isFinite(input.dy)) return;
       this._handleMove(player.id, input.dx, input.dy);
     }
   }

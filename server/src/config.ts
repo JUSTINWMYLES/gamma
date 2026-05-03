@@ -19,3 +19,10 @@ export const ACTIVE_WAIT_TOLERANCE_SECONDS = Number(process.env.ACTIVE_WAIT_TOLE
 
 /** Same as above, in milliseconds. */
 export const ACTIVE_WAIT_TOLERANCE_MS = ACTIVE_WAIT_TOLERANCE_SECONDS * 1000;
+
+/** Parse allowed WebSocket origins from comma-separated env var. Empty = allow all (dev). */
+export function getAllowedOrigins(): string[] {
+  const raw = process.env.ALLOWED_ORIGINS?.trim();
+  if (!raw) return [];
+  return raw.split(",").map((o) => o.trim()).filter(Boolean);
+}
