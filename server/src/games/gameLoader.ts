@@ -93,3 +93,27 @@ export async function loadGame(gameId: string): Promise<GameConstructor> {
   cache.set(gameId, GameClass);
   return GameClass;
 }
+
+/**
+ * Scan the filesystem for all available game plugins.
+ * Returns an array of registry IDs that match the `registry-NN-slug` pattern.
+ */
+export function getAvailableGames(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs") as typeof import("fs");
+
+  const gamesDir = path.resolve(__dirname);
+  const entries = fs.readdirSync(gamesDir, { withFileTypes: true });
+
+  return entries
+    .filter((e) => e.isDirectory() && /^registry-\d{2}-[a-z0-9-]+$/.test(e.name))
+    .map((e) => e.name)
+    .sort();
+}
+
+/**
+ * Clear the in-memory game cache (useful in tests to force re-loading).
+ */
+export function clearGameCache(): void {
+  cache.clear();
+}

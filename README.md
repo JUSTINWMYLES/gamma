@@ -35,7 +35,7 @@ cp .env.example .env
 make dev
 ```
 
-`make dev` starts only the Node server and unified Svelte client. News Broadcast TTS stays disabled unless `TTS_API_URL` points at a running TTS stack. For the full local News Broadcast flow with Redis, MinIO, `tts-api`, and `tts-worker`, use Docker Compose below.
+`make dev` starts only the Node server and unified Svelte client. News Broadcast TTS stays disabled unless `TTS_API_URL` points at a running TTS stack. For the full local News Broadcast flow with Redis, SeaweedFS, `tts-api`, and `tts-worker`, use Docker Compose below.
 
 Open in your browser:
 - **View screen / TV display**: http://localhost:5173 (select "Host a Room")
@@ -51,12 +51,12 @@ make compose-up
 # or: docker compose up --build -d
 ```
 
-Compose brings up the full local News Broadcast stack:
+Compose brings up the full local News Broadcast + shared object-store stack:
 
 - `server` — Colyseus game server
 - `client` — unified SPA served by nginx
 - `redis` — TTS queue + job metadata
-- `minio` — S3-compatible audio artifact storage
+- `object-store` — SeaweedFS S3-compatible artifact storage
 - `tts-api` — Go job / voice / artifact API
 - `tts-worker` — Python ONNX worker for real speech generation
 
@@ -68,8 +68,8 @@ Useful local ports and endpoints:
 - **TTS API health**: http://localhost:8090/healthz
 - **TTS API readiness**: http://localhost:8090/readyz
 - **TTS voices**: http://localhost:8090/tts/voices
-- **MinIO API**: http://localhost:9000
-- **MinIO console**: http://localhost:9001
+- **Object store S3 API**: http://localhost:8333
+- **Object store filer / console**: http://localhost:9333
 - **Redis**: `localhost:6379`
 
 Default local object-storage credentials are `gamma` / `gammalocal`, and the default TTS artifact bucket is `gamma-tts-artifacts`.
@@ -167,7 +167,7 @@ gamma/
 | `make dev` | Start server + client in watch mode |
 | `make dev-server` | Server only |
 | `make dev-client` | Client only |
-| `make compose-up` | Docker Compose (server + client + Redis + MinIO + TTS) |
+| `make compose-up` | Docker Compose (server + client + Redis + SeaweedFS + TTS) |
 | `make compose-down` | Stop Docker Compose |
 | `make compose-logs` | Stream Docker Compose logs |
 | `make build` | Build TypeScript + Svelte bundles |
@@ -209,11 +209,17 @@ See `.env.example` for full documentation.
 | `RECONNECT_GRACE_SECONDS` | `30` | How long to hold disconnected player slots |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection string for queued TTS jobs |
 | `TTS_REDIS_KEY_PREFIX` | `gamma:tts` | Redis key prefix for TTS metadata |
-| `MINIO_ENDPOINT` | `localhost:9000` | MinIO / S3-compatible endpoint for generated audio |
+| `MINIO_ENDPOINT` | `localhost:8333` | SeaweedFS / S3-compatible endpoint for generated News Broadcast audio |
 | `MINIO_USE_SSL` | `false` | Use HTTPS for MinIO / S3 connections |
 | `MINIO_ACCESS_KEY` | `gamma` | Object storage access key |
 | `MINIO_SECRET_KEY` | `gammalocal` | Object storage secret key |
 | `MINIO_BUCKET_NAME` | `gamma-tts-artifacts` | Bucket used for generated News Broadcast audio |
+| `AUDIO_OVERLAY_OBJECT_STORE_ENDPOINT` | _(empty)_ | Enable SeaweedFS / S3 storage for Audio Overlay recordings; leave unset locally to keep base64 playback |
+| `AUDIO_OVERLAY_OBJECT_STORE_USE_SSL` | `false` | Use HTTPS for Audio Overlay object-store connections |
+| `AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY` | `gamma` | Audio Overlay object-store access key |
+| `AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY` | `gammalocal` | Audio Overlay object-store secret key |
+| `AUDIO_OVERLAY_OBJECT_STORE_BUCKET` | `gamma-audio-overlay-clips` | Bucket used for recorded Audio Overlay clips |
+| `AUDIO_OVERLAY_OBJECT_STORE_PREFIX` | `audio-overlay-clips` | Object prefix used for recorded Audio Overlay clips |
 | `TTS_REQUIRE_WORKER_READY` | `true` | Make the TTS API wait for a healthy worker heartbeat before reporting ready |
 | `TTS_WARMUP_ENABLED` | `false` | Warm the TTS worker eagerly at startup instead of first synthesis |
 | `TTS_CPU_THREADS` | `2` | CPU thread count used by the local TTS worker |

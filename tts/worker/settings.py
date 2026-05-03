@@ -32,11 +32,11 @@ class WorkerConfig:
     heartbeat_ttl: timedelta
     lease_duration: timedelta
     poll_interval: timedelta
-    busy_poll_interval: timedelta
     queue_claim_batch_size: int
     retry_backoff_base: timedelta
     retry_backoff_max: timedelta
     cpu_threads: int
+    ort_inter_op_threads: int
     sample_mode: str
     do_sample: bool
     voice_clone_max_text_tokens: int
@@ -48,10 +48,13 @@ class WorkerConfig:
     random_seed: int | None
     log_level: str
     health_file: Path
+    health_server_port: int
 
 
 def load_config() -> WorkerConfig:
-    cpu_default = max(1, min(4, os.cpu_count() or 1))
+    cpu_count = os.cpu_count() or 1
+    cpu_default = max(1, min(4, cpu_count))
+    ort_inter_op_default = 1 if cpu_count <= 2 else 2
     heartbeat_interval = env_duration("TTS_WORKER_HEARTBEAT_INTERVAL", timedelta(seconds=10))
     heartbeat_max_age = env_duration("TTS_WORKER_HEARTBEAT_MAX_AGE", timedelta(seconds=45))
     heartbeat_ttl = env_duration(
@@ -78,12 +81,12 @@ def load_config() -> WorkerConfig:
         heartbeat_interval=heartbeat_interval,
         heartbeat_ttl=heartbeat_ttl,
         lease_duration=env_duration("TTS_WORKER_LEASE_DURATION", timedelta(seconds=90)),
-        poll_interval=env_duration("TTS_WORKER_POLL_INTERVAL", timedelta(seconds=1)),
-        busy_poll_interval=env_duration("TTS_WORKER_BUSY_POLL_INTERVAL", timedelta(milliseconds=250)),
+        poll_interval=env_duration("TTS_WORKER_POLL_INTERVAL", timedelta(milliseconds=250)),
         queue_claim_batch_size=env_int("TTS_WORKER_QUEUE_CLAIM_BATCH_SIZE", 10),
         retry_backoff_base=env_duration("TTS_WORKER_RETRY_BACKOFF_BASE", timedelta(seconds=2)),
         retry_backoff_max=env_duration("TTS_WORKER_RETRY_BACKOFF_MAX", timedelta(seconds=30)),
         cpu_threads=max(1, env_int("TTS_CPU_THREADS", cpu_default)),
+        ort_inter_op_threads=max(1, env_int("TTS_ORT_INTER_OP_THREADS", ort_inter_op_default)),
         sample_mode=env_string("TTS_SAMPLE_MODE", "fixed"),
         do_sample=env_bool("TTS_DO_SAMPLE", True),
         voice_clone_max_text_tokens=max(1, env_int("TTS_VOICE_CLONE_MAX_TEXT_TOKENS", 75)),
@@ -95,6 +98,7 @@ def load_config() -> WorkerConfig:
         random_seed=env_optional_int("TTS_RANDOM_SEED"),
         log_level=env_string("TTS_LOG_LEVEL", "INFO"),
         health_file=env_path("TTS_WORKER_HEALTH_FILE", Path("/tmp/gamma-tts-worker-health")),
+        health_server_port=env_int("TTS_WORKER_HEALTH_PORT", 8091),
     )
 
 

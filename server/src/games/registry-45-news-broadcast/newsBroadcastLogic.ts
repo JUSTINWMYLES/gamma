@@ -84,10 +84,13 @@ export interface BroadcastSubmission {
   estimatedSpeechMs: number;
   submittedAt: number;
   ttsJobId?: string;
+  ttsPriority?: TTSJobPriority;
   ttsStatus?: string;
   audioDurationMs?: number;
   audioMimeType?: string;
 }
+
+export type TTSJobPriority = "blocker" | "next" | "background";
 
 export interface BroadcastResult extends BroadcastSubmission {
   voteCount: number;
@@ -163,9 +166,12 @@ export function buildSpokenText(headline: string, script: string): string {
 }
 
 export function estimateSpeechMs(text: string): number {
-  const normalized = normalizeSpokenText(text);
-  const words = normalized.split(/\s+/).filter(Boolean).length;
-  const punctuationBonus = (normalized.match(/[,.!?]/g) ?? []).length * 120;
+  return estimateSpeechMsFromNormalizedText(normalizeSpokenText(text));
+}
+
+export function estimateSpeechMsFromNormalizedText(normalizedText: string): number {
+  const words = normalizedText.split(/\s+/).filter(Boolean).length;
+  const punctuationBonus = (normalizedText.match(/[,.!?]/g) ?? []).length * 120;
   return Math.max(3_000, Math.round(words * 380 + punctuationBonus + 900));
 }
 
@@ -186,7 +192,7 @@ export function buildFallbackScript(headline: string): string {
 export function trimTextToSpeechBudget(text: string): string {
   const words = normalizeSpokenText(text).split(/\s+/).filter(Boolean);
   let candidate = words.join(" ");
-  while (words.length > 1 && estimateSpeechMs(candidate) > MAX_SPOKEN_DURATION_MS) {
+  while (words.length > 1 && estimateSpeechMsFromNormalizedText(ensureSentence(candidate)) > MAX_SPOKEN_DURATION_MS) {
     words.pop();
     candidate = words.join(" ");
   }

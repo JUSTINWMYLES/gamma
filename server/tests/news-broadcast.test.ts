@@ -28,6 +28,7 @@ import {
   normalizeSpokenText,
   buildSpokenText,
   estimateSpeechMs,
+  estimateSpeechMsFromNormalizedText,
   validateSpokenTextWithinBudget,
   pickFallbackHeadline,
   buildFallbackScript,
@@ -291,6 +292,11 @@ describe("estimateSpeechMs", () => {
     const without = estimateSpeechMs("Hello world");
     const withPunctuation = estimateSpeechMs("Hello, world! This is a test.");
     expect(withPunctuation).toBeGreaterThan(without);
+  });
+
+  it("matches normalized-text fast path", () => {
+    const normalized = normalizeSpokenText("Hello, world! This is a test.");
+    expect(estimateSpeechMsFromNormalizedText(normalized)).toBe(estimateSpeechMs(normalized));
   });
 });
 

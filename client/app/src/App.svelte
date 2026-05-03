@@ -8,11 +8,27 @@
    *   1. RoleSelectScreen — user picks "Display" or "Player"
    *   2a. Viewer path: auto-creates room as view_screen, shows TV screens
    *   2b. Player path: Landing → Join/Host → room screens
+   *
+   * Extracted modules (M1):
+   *   - lib/roomConnector.ts: session persistence, room wiring, connection flows
+   *   - lib/musicManager.ts: viewer background music management
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
-  import { hostRoom, joinRoom, createRoom, joinAsViewer } from "../../shared/colyseusClient";
   import type { RoomState, Phase, PlayerState } from "../../shared/types";
+
+  // ── Extracted modules ─────────────────────────────────────────────
+  import {
+    saveSession,
+    loadSession,
+    clearSession,
+    describeError,
+    wireRoom,
+    viewerJoinRoom as doViewerJoin,
+    onJoin as doJoin,
+    onHost as doHost,
+  } from "./lib/roomConnector";
+  import { MusicManager, type TrackId } from "./lib/musicManager";
 
   // ── Shared components ─────────────────────────────────────────────
   import FloatingBackground from "./components/FloatingBackground.svelte";
@@ -62,232 +78,19 @@
   let connecting = false;
   let leavingVoluntarily = false;
   let showLeaveConfirm = false;
-
-  // ── Session persistence for reconnection on page refresh ──────────
-  const SESSION_KEY = "gamma-session";
-
-  interface SessionInfo {
-    roomCode: string;
-    name: string;
-    role: "player" | "viewer";
-  }
-
-  function saveSession(info: SessionInfo) {
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(info));
-    } catch { /* quota exceeded or private browsing — non-critical */ }
-  }
-
-  function loadSession(): SessionInfo | null {
-    try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      if (!raw) return null;
-      return JSON.parse(raw) as SessionInfo;
-    } catch { return null; }
-  }
-
-  function clearSession() {
-    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
-  }
-
-  // ── Viewer-only background music ──────────────────────────────────
-
-  type TrackId =
-    | "cloud"
-    | "discovery_hit"
-    | "fart"
-    | "newer_wave"
-    | "zazie"
-    | "pixelland"
-    | "vivacity"
-    | "le_grand_chase"
-    | "thinking"
-    | "entertainer"
-    | "ouroboros"
-    | "two_finger_johnny"
-    | "pinball_spring_160"
-    | "hyperfun"
-    | "celebration";
-
-  const TRACK_CONFIG: Record<TrackId, { file: string; volume: number; attribution: string; loop?: boolean }> = {
-    cloud:          { file: "/cloud_dancer.mp3",    volume: 0.35, attribution: '"Cloud Dancer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    discovery_hit:  { file: "/discovery_hit.mp3",   volume: 0.35, attribution: '"Discovery Hit" — Kevin MacLeod (incompetech.com), CC BY 4.0', loop: false },
-    fart:           { file: "/farting_around.mp3",   volume: 0.42, attribution: '"Farting Around" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    newer_wave:     { file: "/newer_wave.mp3",       volume: 0.35, attribution: '"Newer Wave" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    zazie:          { file: "/zazie.mp3",            volume: 0.35, attribution: '"Zazie" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    pixelland:      { file: "/pixelland.mp3",        volume: 0.35, attribution: '"Pixelland" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    vivacity:       { file: "/vivacity.mp3",         volume: 0.35, attribution: '"Vivacity" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    le_grand_chase: { file: "/le_grand_chase.mp3",   volume: 0.35, attribution: '"Le Grand Chase" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    thinking:       { file: "/thinking_music.mp3",   volume: 0.35, attribution: '"Thinking Music" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    entertainer:    { file: "/the_entertainer.mp3",  volume: 0.34, attribution: '"The Entertainer" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    ouroboros:      { file: "/ouroboros.mp3",        volume: 0.36, attribution: '"Ouroboros" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    two_finger_johnny: { file: "/two_finger_johnny.mp3", volume: 0.35, attribution: '"Two Finger Johnny" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    pinball_spring_160: { file: "/pinball_spring_160.mp3", volume: 0.35, attribution: '"Pinball Spring 160" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    hyperfun:       { file: "/hyperfun.mp3",       volume: 0.35, attribution: '"Hyperfun" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-    celebration:    { file: "/celebration.mp3",    volume: 0.35, attribution: '"Celebration" — Kevin MacLeod (incompetech.com), CC BY 4.0' },
-  };
-
-  let musicAudio: HTMLAudioElement | null = null;
-  let currentTrack: TrackId | null = null;
-  let userHasInteracted = false;
   let viewerTrackOverride: TrackId | null | undefined = undefined;
 
-  function pauseAllTracks() {
-    if (musicAudio) {
-      musicAudio.pause();
-    }
-  }
-
-  /** Game-to-track mapping for in_round phase. */
-  const GAME_TRACK_MAP: Record<string, TrackId> = {
-    "registry-03-tap-speed":             "pinball_spring_160",
-    "registry-19-shave-the-yak":        "fart",
-    "registry-25-lowball-marketplace":   "zazie",
-    "registry-28-wanted-ad":             "hyperfun",
-    "registry-45-news-broadcast":        "celebration",
-    "registry-04-escape-maze":           "pixelland",
-    "registry-17-fire-match-blow-shake": "vivacity",
-    "registry-14-dont-get-caught":       "le_grand_chase",
-    "registry-20-odd-one-out":           "thinking",
-    "registry-40-paint-match":           "thinking",
-    "registry-10-grid-tap-colors":       "ouroboros",
-    "registry-11-tier-ranking":          "newer_wave",
-  };
-
-  function desiredTrack(): TrackId | null {
-    if (role !== "viewer" || !state) return null;
-    if (phase === "lobby") {
-      return "cloud";
-    }
-    if (phase === "game_over") {
-      return "discovery_hit";
-    }
-    if (state.selectedGame === "registry-43-medical-story") {
-      return "entertainer";
-    }
-    if (state.selectedGame === "registry-26-audio-overlay") {
-      if (phase === "instructions" || phase === "countdown") {
-        return "two_finger_johnny";
-      }
-      // During in_round, defer to TV component's musictrackchange dispatch
-      // which controls music based on the current sub-phase.
-      // Fallback to the game's track only when the TV has not yet spoken
-      // (undefined). Once the TV dispatches null, that means STOP.
-      if (phase === "in_round") {
-        return viewerTrackOverride !== undefined ? viewerTrackOverride : "two_finger_johnny";
-      }
-      return null;
-    }
-    if (state.selectedGame === "registry-45-news-broadcast") {
-      if (phase === "instructions" || phase === "countdown") {
-        return "celebration";
-      }
-      // During in_round, defer to TV component's musictrackchange dispatch
-      // which controls music based on the current sub-phase.
-      // Fallback to the game's track only when the TV has not yet spoken
-      // (undefined). Once the TV dispatches null, that means STOP.
-      if (phase === "in_round") {
-        return viewerTrackOverride !== undefined ? viewerTrackOverride : "celebration";
-      }
-      return null;
-    }
-    // Play game-specific music during in_round (and countdown/instructions for smoother transitions)
-    if (phase === "in_round" || phase === "countdown" || phase === "instructions") {
-      return GAME_TRACK_MAP[state.selectedGame] ?? null;
-    }
-    return null;
-  }
+  // ── Music manager ─────────────────────────────────────────────────
+  const music = new MusicManager();
+  let musicAudio: HTMLAudioElement | null = null;
 
   function onViewerMusicTrackChange(event: CustomEvent<{ trackId: TrackId | null }>) {
     viewerTrackOverride = event.detail.trackId;
   }
 
-  async function syncTrackPlayback() {
-    if (!musicAudio) return;
-
-    const next = desiredTrack();
-    if (!next) {
-      pauseAllTracks();
-      musicAudio.loop = false;
-      if (musicAudio) musicAudio.currentTime = 0;
-      currentTrack = null;
-      return;
-    }
-
-    const config = TRACK_CONFIG[next];
-    const targetSrc = new URL(config.file, window.location.href).href;
-    const sourceChanged = musicAudio.src !== targetSrc;
-
-    musicAudio.loop = config.loop ?? true;
-    musicAudio.volume = config.volume;
-    // Start muted if the user hasn't interacted yet — browsers allow muted autoplay.
-    // Once the user has interacted, play unmuted.
-    musicAudio.muted = !userHasInteracted;
-
-    if (sourceChanged) {
-      musicAudio.pause();
-      musicAudio.src = targetSrc;
-      musicAudio.load();
-      musicAudio.currentTime = 0;
-    }
-
-    if (!sourceChanged && next === currentTrack && !musicAudio.paused) {
-      return;
-    }
-
-    try {
-      await musicAudio.play();
-      currentTrack = next;
-    } catch {
-      // Extremely rare edge case — browser still blocked even muted play.
-      currentTrack = null;
-    }
-  }
-
-  function onMusicEnded() {
-    if (!musicAudio) return;
-
-    const next = desiredTrack();
-    if (!next || currentTrack !== next) return;
-
-    const config = TRACK_CONFIG[next];
-    if (config.loop === false) return;
-
-    musicAudio.currentTime = 0;
-    musicAudio.play().catch(() => {
-      // If the browser blocks replay, the next state sync/user gesture will retry.
-    });
-  }
-
-  function onUserInteraction() {
-    if (userHasInteracted) return;
-    userHasInteracted = true;
-    // Unmute the already-playing audio now that we have a user gesture
-    if (musicAudio && !musicAudio.paused) {
-      musicAudio.muted = false;
-    }
-  }
-
-  function describeError(e: unknown): string {
-    if (e instanceof Error) return e.message;
-
-    if (typeof e === "object" && e !== null) {
-      const maybeEvent = e as { type?: string; message?: unknown; constructor?: { name?: string } };
-      const tag = Object.prototype.toString.call(e);
-      if (maybeEvent.type === "error" || maybeEvent.type === "timeout" || maybeEvent.constructor?.name === "ProgressEvent" || tag === "[object ProgressEvent]") {
-        return "Could not reach the game server. This browser may not support the required connection features, or the public server URL/WebSocket routing may be blocked.";
-      }
-      if (typeof maybeEvent.message === "string" && maybeEvent.message.length > 0) {
-        return maybeEvent.message;
-      }
-    }
-
-    return String(e);
-  }
-
   // ── Role selection handlers ───────────────────────────────────────
 
-  async function selectViewer() {
+  function selectViewer() {
     role = "viewer";
     viewerView = "join_code";
   }
@@ -297,8 +100,16 @@
     connecting = true;
     error = "";
     try {
-      const r = await joinAsViewer(roomCode);
-      wireRoom(r);
+      const r = await doViewerJoin(roomCode);
+      cleanupRoomListeners = wireRoom(r, {
+        onStateChange: (s, p) => { state = s; phase = p as Phase; },
+        onError: (err) => { error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+        onLeave: (err) => { if (leavingVoluntarily) return; error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+      });
+      room = r;
+      myId = r.sessionId;
+      state = r.state;
+      phase = state.phase;
       viewerView = "room";
       connecting = false;
       saveSession({ roomCode: roomCode.toUpperCase(), name: "", role: "viewer" });
@@ -313,49 +124,22 @@
     playerView = "landing";
   }
 
-  // ── Room wiring (shared between viewer/player) ────────────────────
-
-  function wireRoom(r: Room<RoomState>) {
-    room = r;
-    myId = r.sessionId;
-    state = r.state;
-    phase = state.phase;
-
-    r.onStateChange((s) => {
-      state = s;
-      phase = s.phase;
-    });
-
-    r.onError((code: number, msg?: string) => {
-      error = `Server error ${code}: ${msg ?? "unknown"}`;
-      // Serious errors: auto-return to start after a brief delay
-      setTimeout(() => {
-        if (error) resetToRoleSelect();
-      }, 4000);
-    });
-
-    r.onLeave((code: number) => {
-      if (leavingVoluntarily) return;
-      if (code === 4001) {
-        error = "You were kicked from the room by the host.";
-      } else {
-        error = "Disconnected from server.";
-      }
-      // Auto-return to start after showing the message
-      setTimeout(() => {
-        if (error) resetToRoleSelect();
-      }, 4000);
-    });
-  }
-
   // ── Player flow handlers ──────────────────────────────────────────
 
   async function onJoin(roomCode: string, name: string) {
     leavingVoluntarily = false;
     joinError = "";
     try {
-      const r = await joinRoom(roomCode, name);
-      wireRoom(r);
+      const r = await doJoin(roomCode, name);
+      cleanupRoomListeners = wireRoom(r, {
+        onStateChange: (s, p) => { state = s; phase = p as Phase; },
+        onError: (err) => { error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+        onLeave: (err) => { if (leavingVoluntarily) return; error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+      });
+      room = r;
+      myId = r.sessionId;
+      state = r.state;
+      phase = state.phase;
       playerView = "room";
       saveSession({ roomCode: roomCode.toUpperCase(), name, role: "player" });
     } catch (e) {
@@ -372,11 +156,18 @@
   async function onHost(name: string) {
     leavingVoluntarily = false;
     try {
-      const r = await createRoom(name);
-      wireRoom(r);
+      const r = await doHost(name);
+      cleanupRoomListeners = wireRoom(r, {
+        onStateChange: (s, p) => { state = s; phase = p as Phase; },
+        onError: (err) => { error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+        onLeave: (err) => { if (leavingVoluntarily) return; error = err; setTimeout(() => { if (error) resetToRoleSelect(); }, 4000); },
+      });
+      room = r;
+      myId = r.sessionId;
+      state = r.state;
+      phase = state.phase;
       playerView = "room";
       joinError = "";
-      // Room code is in the state — save it for reconnection
       const roomCode = r.state?.roomCode ?? "";
       if (roomCode) {
         saveSession({ roomCode, name, role: "player" });
@@ -387,8 +178,12 @@
     }
   }
 
+  let cleanupRoomListeners: (() => void) | null = null;
+
   function resetToRoleSelect() {
     leavingVoluntarily = true;
+    cleanupRoomListeners?.();
+    cleanupRoomListeners = null;
     room?.leave();
     room = null;
     state = null;
@@ -402,8 +197,8 @@
     showLeaveConfirm = false;
     joinError = "";
     clearSession();
-    pauseAllTracks();
-    currentTrack = null;
+    music.pause();
+    music.cleanup();
     viewerTrackOverride = null;
   }
 
@@ -414,21 +209,12 @@
   }
 
   onMount(() => {
-    if (musicAudio) {
-      musicAudio.preload = "auto";
-      musicAudio.loop = false;
-      musicAudio.setAttribute("playsinline", "");
-      musicAudio.setAttribute("webkit-playsinline", "true");
-    }
+    music.bind(musicAudio);
 
-    window.addEventListener("pointerdown", onUserInteraction);
-    window.addEventListener("keydown", onUserInteraction);
-    window.addEventListener("touchstart", onUserInteraction, { passive: true });
+    window.addEventListener("pointerdown", music.onUserInteraction.bind(music));
+    window.addEventListener("keydown", music.onUserInteraction.bind(music));
+    window.addEventListener("touchstart", music.onUserInteraction.bind(music), { passive: true });
 
-    // ── Auto-reconnect on page refresh ────────────────────────────────
-    // If we have a saved session (from before refresh), attempt to rejoin
-    // the same room with the same name so the server can match us to our
-    // disconnected PlayerState and restore our score/state.
     const saved = loadSession();
     if (saved) {
       if (saved.role === "player" && saved.roomCode && saved.name) {
@@ -437,7 +223,6 @@
         onJoin(saved.roomCode, saved.name)
           .then(() => { connecting = false; })
           .catch(() => {
-            // Room gone or server restarted — clear stale session and show landing
             clearSession();
             connecting = false;
             error = "";
@@ -451,15 +236,12 @@
   });
 
   onDestroy(() => {
-    window.removeEventListener("pointerdown", onUserInteraction);
-    window.removeEventListener("keydown", onUserInteraction);
-    window.removeEventListener("touchstart", onUserInteraction);
-    pauseAllTracks();
-    if (musicAudio) {
-      musicAudio.src = "";
-      musicAudio.load();
-    }
+    window.removeEventListener("pointerdown", music.onUserInteraction.bind(music));
+    window.removeEventListener("keydown", music.onUserInteraction.bind(music));
+    window.removeEventListener("touchstart", music.onUserInteraction.bind(music));
+    music.cleanup();
     leavingVoluntarily = true;
+    cleanupRoomListeners?.();
     room?.leave();
   });
 
@@ -475,7 +257,7 @@
   $: showHostEndToLobby = isPlayerHost && phase !== "lobby";
   $: themeTogglePositionClass = room && role === "viewer" && viewerView === "room" ? "right-14" : "right-3";
   $: leaveButtonPositionClass = role === "viewer" ? "right-3" : "left-3";
-  $: viewerChromeInsetClass = "";  // Room code overlay is fixed-position; no padding needed
+  $: viewerChromeInsetClass = "";
 
   $: if (state?.selectedGame !== "registry-26-audio-overlay" && viewerTrackOverride !== undefined) {
     viewerTrackOverride = undefined;
@@ -485,15 +267,12 @@
   $: if (role === "viewer" && !connecting && !error && state) {
     phase;
     viewerTrackOverride;
-    void syncTrackPlayback();
+    void music.sync(role, phase, state.selectedGame, viewerTrackOverride, connecting, error, !!state);
   } else {
-    pauseAllTracks();
-    currentTrack = null;
+    music.pause();
   }
 
-  $: activeTrackAttribution = currentTrack
-    ? `Music: ${TRACK_CONFIG[currentTrack].attribution}`
-    : "";
+  $: activeTrackAttribution = music.attribution;
 
   // Viewer room mode: lock to viewport height to prevent TV scrolling
   $: appRootClass = role === "viewer" && viewerView === "room" && state && !error
@@ -512,7 +291,7 @@
 
 <div data-testid="app-root" class={appRootClass}>
 
-  <audio bind:this={musicAudio} preload="auto" on:ended={onMusicEnded} />
+  <audio bind:this={musicAudio} preload="auto" on:ended={() => music.onMusicEnded(role, phase, state?.selectedGame ?? "", viewerTrackOverride)} />
 
   {#if showBackground}
     <FloatingBackground dark={$isDark} />
@@ -604,7 +383,6 @@
   <!-- ═══════════════════════════════════════════════════════════════ -->
   {:else if role === "viewer"}
     {#if viewerView === "join_code" && !state}
-      <!-- Viewer: enter room code to join existing room -->
       <div class="flex-1 flex flex-col items-center justify-center gap-6 p-8">
         <h2 class="text-2xl font-bold text-gray-200">Join a Room as Display</h2>
         <p class="text-gray-400 text-sm text-center max-w-md">Enter the room code shown on the host's device. A player must create the room first.</p>
@@ -674,7 +452,6 @@
         on:join={() => { playerView = "join"; }}
         on:host={() => { playerView = "host"; }}
       />
-      <!-- Back to role select from landing -->
       <div class="absolute top-4 left-4 z-50">
         <button
           class="text-sm text-gray-500 hover:text-gray-300 underline"
@@ -724,7 +501,7 @@
   {/if}
 
   {#if role === "viewer"}
-    {#if activeTrackAttribution}
+    {#if activeTrackAttribution && (phase === "lobby" || phase === "game_over" || phase === "scoreboard")}
       <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
         {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
       </div>

@@ -123,6 +123,7 @@
   let audioBase64 = "";
   let audioPreviewUrl = "";
   let recordingSubmitted = false;
+  let recordingSubmitPending = false;
   let recordedDurationSecs = 0;
   let recordingStartedAt = 0;
 
@@ -244,6 +245,7 @@
     isRecording = false;
     recordingDone = false;
     audioBase64 = "";
+    recordingSubmitPending = false;
     recordedDurationSecs = 0;
     recordingStartedAt = 0;
     recordingProgress = 0;
@@ -253,7 +255,7 @@
   }
 
   async function startHeldRecording() {
-    if (recordingSubmitted || isRecording) return;
+    if (recordingSubmitted || recordingSubmitPending || isRecording) return;
     if (recordingTimeLeft <= 0) return;
 
     if (!mediaStream) {
@@ -365,8 +367,8 @@
   }
 
   function submitRecording() {
-    if (!audioBase64 || recordingSubmitted) return;
-    recordingSubmitted = true;
+    if (!audioBase64 || recordingSubmitted || recordingSubmitPending) return;
+    recordingSubmitPending = true;
     room.send("game_input", {
       action: "submit_recording",
       audioBase64,
@@ -548,11 +550,22 @@
     assignedMode = data.mode;
     maxClipDurationMs = data.maxClipDurationMs;
     recordingSubmitted = false;
+    recordingSubmitPending = false;
     resetTakeState();
   }
 
   function onRecordingSubmitted(data: { playerId: string }) {
-    if (data.playerId !== me?.id) {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
+    recordingTimeLeft = 0;
+    recordingProgress = 1;
+
+    if (data.playerId === me?.id) {
+      recordingSubmitted = true;
+      recordingSubmitPending = false;
+    } else {
       // Someone else finished — advance their wait UI
     }
   }
@@ -957,7 +970,7 @@
             on:pointerdown|preventDefault={startHeldRecording}
             on:pointerup|preventDefault={stopHeldRecording}
             on:pointerleave={stopHeldRecording}
-            disabled={recordingSubmitted || recordingTimeLeft <= 0}
+            disabled={recordingSubmitted || recordingSubmitPending || recordingTimeLeft <= 0}
           >
             {isRecording ? 'Recording... release to stop' : 'Press and Hold to Record'}
           </button>
@@ -972,11 +985,11 @@
               <button
                 class="py-3 rounded-xl bg-green-600 text-white font-bold active:bg-green-500 transition-all active:scale-95"
                 on:click={submitRecording}
-                disabled={recordingSubmitted}
-              >Submit Take</button>
-            </div>
-          {/if}
-        </div>
+                disabled={recordingSubmitted || recordingSubmitPending}
+              >{recordingSubmitPending ? 'Submitting...' : 'Submit Take'}</button>
+             </div>
+           {/if}
+         </div>
       {/if}
     </div>
 
@@ -1006,20 +1019,22 @@
           resetTakeState();
           subPhase = 'my_recording';
         }}
-        disabled={recordingTimeLeft <= 0 || recordingSubmitted}
+        disabled={recordingTimeLeft <= 0 || recordingSubmitted || recordingSubmitPending}
       >Record Again</button>
 
       <button
         class="w-full py-4 rounded-xl text-lg font-bold transition-all active:scale-95
           bg-green-600 text-white active:bg-green-500"
         on:click={submitRecording}
-        disabled={recordingSubmitted}
+        disabled={recordingSubmitted || recordingSubmitPending}
       >
-        {recordingSubmitted ? "Submitted!" : "Submit Recording"}
+        {recordingSubmitted ? "Submitted!" : recordingSubmitPending ? "Submitting..." : "Submit Recording"}
       </button>
 
       {#if recordingSubmitted}
         <p class="text-sm text-green-400">Waiting for next player...</p>
+      {:else if recordingSubmitPending}
+        <p class="text-sm text-yellow-400">Submitting your take...</p>
       {/if}
     </div>
 

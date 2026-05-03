@@ -32,6 +32,15 @@ func (r *GammaInstanceReconciler) reconcileServerDeployment(ctx context.Context,
 		// Build environment variables.
 		env := buildServerEnv(instance)
 
+		// Colyseus rooms are pod-local — scaling beyond 1 replica causes
+		// "seat reservation expired" errors because WebSocket connections
+		// may land on a pod that does not host the room.
+		// Without a @colyseus/proxy layer for room-aware routing, we must
+		// hard-cap replicas at 1.
+		if !hasColyseusProxy(instance) {
+			replicas = 1
+		}
+
 		// When autoscaling is active, do not set replicas (let HPA manage it).
 		var replicaPtr *int32
 		if instance.Spec.Autoscaling == nil || !instance.Spec.Autoscaling.Enabled {
@@ -168,6 +177,27 @@ func buildServerEnv(instance *gammav1alpha1.GammaInstance) []corev1.EnvVar {
 		env = append(env, corev1.EnvVar{Name: "TTS_API_URL", Value: ttsAPIServiceURL(instance)})
 	}
 
+	if instance.Spec.AudioOverlay.UsesObjectStore() {
+		credentials := instance.Spec.TTS.ObjectStore.Credentials
+		env = append(env,
+			corev1.EnvVar{Name: "AUDIO_OVERLAY_OBJECT_STORE_ENDPOINT", Value: objectStoreServiceEndpoint(instance)},
+			corev1.EnvVar{Name: "AUDIO_OVERLAY_OBJECT_STORE_USE_SSL", Value: "false"},
+			credentials.AccessKeyEnvVar(),
+			credentials.SecretKeyEnvVar(),
+			corev1.EnvVar{Name: "AUDIO_OVERLAY_OBJECT_STORE_BUCKET", Value: instance.Spec.AudioOverlay.ObjectStore.BucketNameValue()},
+			corev1.EnvVar{Name: "AUDIO_OVERLAY_OBJECT_STORE_PREFIX", Value: instance.Spec.AudioOverlay.ObjectStore.PrefixValue()},
+		)
+
+		for i := range env {
+			switch env[i].Name {
+			case "WEED_S3_ACCESS_KEY":
+				env[i].Name = "AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY"
+			case "WEED_S3_SECRET_KEY":
+				env[i].Name = "AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY"
+			}
+		}
+	}
+
 	// Append user-supplied env vars.
 	env = append(env, instance.Spec.Server.Env...)
 
@@ -228,4 +258,15 @@ func (r *GammaInstanceReconciler) reconcileServerService(ctx context.Context, in
 
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+// hasColyseusProxy returns true when the GammaInstance spec indicates a
+// @colyseus/proxy layer is deployed, which enables room-aware routing
+// across multiple server pods.
+func hasColyseusProxy(instance *gammav1alpha1.GammaInstance) bool {
+	if instance.Spec.Server.Annotations == nil {
+		return false
+	}
+	_, ok := instance.Spec.Server.Annotations["gamma.io/colyseus-proxy"]
+	return ok
 }

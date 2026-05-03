@@ -67,7 +67,6 @@ export interface RoomState {
   phase: Phase;
   roomCode: string;
   hostSessionId: string;
-  tvConnected: boolean; // @deprecated — use viewScreenConnected
   viewScreenConnected: boolean;
   selectedGame: string;
   currentRound: number;
@@ -233,6 +232,8 @@ export interface GameMeta {
   tags: string[];
   /** Estimated play time per round/session in minutes. */
   estimatedMinutes: number;
+  /** Viewer music track played during in_round phase. Empty = no music override. */
+  musicTrack: string;
 }
 
 export const GAME_REGISTRY: GameMeta[] = [
@@ -248,6 +249,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["competitive", "bracket", "speed"],
     estimatedMinutes: 5,
+    musicTrack: "pinball_spring_160",
   },
   {
     id: "registry-04-escape-maze",
@@ -261,6 +263,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["puzzle", "maze", "team"],
     estimatedMinutes: 8,
+    musicTrack: "pixelland",
   },
   {
     id: "registry-06-sound-replication",
@@ -274,6 +277,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["audio", "creative", "turn-based"],
     estimatedMinutes: 10,
+    musicTrack: "",
   },
   {
     id: "registry-07-hot-potato",
@@ -287,6 +291,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["physical", "party", "fast"],
     estimatedMinutes: 6,
+    musicTrack: "",
   },
   {
     id: "registry-14-dont-get-caught",
@@ -300,6 +305,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["stealth", "strategy"],
     estimatedMinutes: 12,
+    musicTrack: "le_grand_chase",
   },
   {
     id: "registry-17-fire-match-blow-shake",
@@ -313,6 +319,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["physical", "sensor", "fast"],
     estimatedMinutes: 5,
+    musicTrack: "vivacity",
   },
   {
     id: "registry-19-shave-the-yak",
@@ -326,6 +333,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["swipe", "reflex", "funny"],
     estimatedMinutes: 5,
+    musicTrack: "fart",
   },
   {
     id: "registry-20-odd-one-out",
@@ -339,6 +347,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["social", "deduction", "voting"],
     estimatedMinutes: 8,
+    musicTrack: "thinking",
   },
   {
     id: "registry-25-lowball-marketplace",
@@ -352,6 +361,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["bidding", "strategy", "funny"],
     estimatedMinutes: 10,
+    musicTrack: "zazie",
   },
   {
     id: "registry-40-paint-match",
@@ -365,6 +375,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["creative", "color", "competitive"],
     estimatedMinutes: 8,
+    musicTrack: "thinking",
   },
   {
     id: "registry-10-grid-tap-colors",
@@ -378,6 +389,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 32,
     tags: ["physical", "speed", "memory", "competitive"],
     estimatedMinutes: 8,
+    musicTrack: "ouroboros",
   },
   {
     id: "registry-27-word-build",
@@ -391,6 +403,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 20,
     tags: ["team", "physical", "word", "party"],
     estimatedMinutes: 8,
+    musicTrack: "",
   },
   {
     id: "registry-28-wanted-ad",
@@ -404,6 +417,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["creative", "voting", "party", "western"],
     estimatedMinutes: 8,
+    musicTrack: "hyperfun",
   },
   {
     id: "registry-26-audio-overlay",
@@ -417,6 +431,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["audio", "creative", "voting"],
     estimatedMinutes: 10,
+    musicTrack: "",
   },
   {
     id: "registry-43-medical-story",
@@ -430,6 +445,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["creative", "voting", "party", "funny"],
     estimatedMinutes: 10,
+    musicTrack: "",
   },
   {
     id: "registry-44-western-standoff",
@@ -443,6 +459,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["western", "bracket", "reaction", "sensor"],
     estimatedMinutes: 6,
+    musicTrack: "",
   },
   {
     id: "registry-45-news-broadcast",
@@ -456,6 +473,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 12,
     tags: ["creative", "tv", "captions", "voting"],
     estimatedMinutes: 10,
+    musicTrack: "",
   },
   {
     id: "registry-11-tier-ranking",
@@ -469,6 +487,7 @@ export const GAME_REGISTRY: GameMeta[] = [
     maxPlayers: 16,
     tags: ["social", "voting", "creative", "party"],
     estimatedMinutes: 8,
+    musicTrack: "newer_wave",
   },
 ];
 
@@ -480,9 +499,6 @@ export function getGameUnavailableReason(
   game: GameMeta,
   state: Pick<RoomState, "locationMode" | "activityLevel" | "hasSecondaryDisplay" | "viewScreenConnected" | "players">,
 ): string | null {
-  if (game.id === "registry-20-odd-one-out") {
-    return "Under maintenance";
-  }
   if (game.requiresSameRoom && state.locationMode === "remote") {
     return "Requires same-room play";
   }

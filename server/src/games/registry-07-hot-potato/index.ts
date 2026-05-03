@@ -34,7 +34,6 @@
  *   "potato_round_start"  { potatoDeviceId, potatoDeviceName, timerDurationMs }
  *   "potato_show_target"  { targetId, targetName, passNumber }
  *   "potato_accepted"     { acceptorName, passNumber }
- *   "potato_timer"        { timeRemaining }
  *   "potato_exploded"     { holderId, holderName, targetId, targetName, passCount }
  *   "potato_play_sound"   {}
  *   "potato_vote_start"   { holderId, holderName, targetId, targetName, durationMs, serverTimestamp }
@@ -62,7 +61,7 @@ const TIMER_DECREMENT_MS = 2_000;
 /** Minimum timer regardless of round (ms). */
 const MIN_TIMER_MS = 8_000;
 
-/** How often to broadcast timer updates (ms). */
+/** How often to check hidden timer / disconnects (ms). */
 const TIMER_TICK_MS = 500;
 
 /** Duration of the voting phase (ms). */
@@ -199,7 +198,7 @@ export default class HotPotatoGame extends BaseGame {
       passNumber: 0,
     });
 
-    // ── 4. Start the countdown timer (hidden) ──────────────────────────────
+    // ── 4. Start the hidden countdown monitor ──────────────────────────────
     this.timerInterval = setInterval(() => this._timerTick(), TIMER_TICK_MS);
 
     // ── 5. Wait for explosion ──────────────────────────────────────────────
@@ -339,9 +338,6 @@ export default class HotPotatoGame extends BaseGame {
     if (!rd || rd.exploded) return;
 
     const timeRemaining = Math.max(0, rd.timerEndsAt - Date.now());
-
-    // Broadcast timer to all clients (for TV display / urgency cues)
-    this.broadcast("potato_timer", { timeRemaining });
 
     // Check for disconnected holder — auto-pass
     this._checkHolderDisconnect();

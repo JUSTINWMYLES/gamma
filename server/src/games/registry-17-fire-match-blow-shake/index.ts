@@ -4,6 +4,7 @@ import { buildBracket, advanceBracket, resolveHeat } from "../../utils/bracket";
 import { Heat } from "../../schema/BracketState";
 
 const UPDATE_INTERVAL_MS = 250;
+const UPDATE_HEARTBEAT_MS = 1000;
 
 /**
  * The four sequential stages of the fire game.
@@ -99,6 +100,8 @@ export default class FireMatchBlowShakeGame extends BaseGame {
   private updateTimer: ReturnType<typeof setInterval> | null = null;
   private roundResolve: (() => void) | null = null;
   private roundEndAt = 0;
+  private updateDirty = false;
+  private lastUpdateBroadcastAt = 0;
 
   /** Seed for bracket randomization. */
   private bracketSeed = 0;
@@ -299,24 +302,26 @@ export default class FireMatchBlowShakeGame extends BaseGame {
         finished: false,
       })),
     });
+    this.updateDirty = false;
+    this.lastUpdateBroadcastAt = startedAt;
 
     // Wait for either all players to finish or time to run out.
     await new Promise<void>((resolve) => {
       this.roundResolve = resolve;
 
       this.updateTimer = setInterval(() => {
-        this._broadcastUpdate(stageTargets);
+        this._broadcastUpdate();
 
         // Check: all players finished?
         const allFinished = [...this.playerProgress.values()].every((pp) => pp.finished);
         if (allFinished) {
-          this._endRound(round, stageTargets, true);
+          this._endRound(round, true);
           return;
         }
 
         // Check: time's up?
         if (Date.now() >= this.roundEndAt) {
-          this._endRound(round, stageTargets, false);
+          this._endRound(round, false);
           return;
         }
       }, UPDATE_INTERVAL_MS);
@@ -324,7 +329,7 @@ export default class FireMatchBlowShakeGame extends BaseGame {
       // Safety net timeout.
       this.delay(totalDurationMs + 2000).then(() => {
         if (this.roundResolve) {
-          this._endRound(round, stageTargets, false);
+          this._endRound(round, false);
         }
       });
     });
@@ -433,6 +438,7 @@ export default class FireMatchBlowShakeGame extends BaseGame {
 
     pp.current += gain;
     pp.totalContribution += gain;
+    this.updateDirty = true;
 
     // Check if player completed their current stage.
     const completed = cfg.invertedProgress
@@ -486,6 +492,8 @@ export default class FireMatchBlowShakeGame extends BaseGame {
       clearInterval(this.updateTimer);
       this.updateTimer = null;
     }
+    this.updateDirty = false;
+    this.lastUpdateBroadcastAt = 0;
     this.playerProgress.clear();
     this.roundResults.clear();
     this.roundResolve = null;
@@ -502,9 +510,9 @@ export default class FireMatchBlowShakeGame extends BaseGame {
   // ── Internal helpers ──────────────────────────────────────────────────────
 
   private _activePlayers() {
-    return [...this.room.state.players.values()].filter(
-      (p) => this.isPlayerActive(p) && this.hasMicPermission(p) && this.hasMotionPermission(p),
-    );
+    // Include every active player in round/bracket participation.
+    // Stage-specific sensor requirements are enforced in handleInput().
+    return [...this.room.state.players.values()].filter((p) => this.isPlayerActive(p));
   }
 
   /**
@@ -537,8 +545,13 @@ export default class FireMatchBlowShakeGame extends BaseGame {
     return results.map((r, i) => ({ playerId: r.playerId, rank: i + 1 }));
   }
 
-  private _broadcastUpdate(stageTargets: number[]): void {
-    const timeLeftMs = Math.max(0, this.roundEndAt - Date.now());
+  private _broadcastUpdate(force = false): void {
+    const now = Date.now();
+    if (!force && !this.updateDirty && now - this.lastUpdateBroadcastAt < UPDATE_HEARTBEAT_MS) {
+      return;
+    }
+
+    const timeLeftMs = Math.max(0, this.roundEndAt - now);
     const playerStates = [...this.playerProgress.entries()].map(([pid, pp]) => {
       const player = this.room.state.players.get(pid);
       const stage = pp.stageIndex < STAGE_ORDER.length ? STAGE_ORDER[pp.stageIndex] : null;
@@ -560,16 +573,18 @@ export default class FireMatchBlowShakeGame extends BaseGame {
       timeLeftMs,
       players: playerStates,
     });
+    this.updateDirty = false;
+    this.lastUpdateBroadcastAt = now;
   }
 
-  private _endRound(round: number, stageTargets: number[], allFinished: boolean): void {
+  private _endRound(round: number, allFinished: boolean): void {
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
       this.updateTimer = null;
     }
 
     // Final update.
-    this._broadcastUpdate(stageTargets);
+    this._broadcastUpdate(true);
 
     const playerResults = [...this.playerProgress.entries()].map(([pid, pp]) => ({
       playerId: pid,

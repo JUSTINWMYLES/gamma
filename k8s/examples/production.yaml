@@ -53,6 +53,12 @@ spec:
       size: 5Gi
       storageClassName: gp3
 
+  audioOverlay:
+    objectStore:
+      enabled: true
+      bucketName: gamma-audio-overlay-clips
+      prefix: audio-overlay-clips
+
   # News Broadcast TTS artifacts stay private behind the Gamma server proxy.
   tts:
     enabled: true

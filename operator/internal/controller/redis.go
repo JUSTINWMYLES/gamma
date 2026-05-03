@@ -25,13 +25,13 @@ func (r *GammaInstanceReconciler) reconcileRedisConfigMap(ctx context.Context, i
 	return r.createOrUpdate(ctx, instance, cm, func() error {
 		cm.Labels = labelsForComponent(instance, "redis")
 		cm.Data = map[string]string{
-			"redis.conf": `appendonly yes
+			"redis.conf": fmt.Sprintf(`appendonly yes
 appendfsync everysec
-maxmemory 200mb
+maxmemory %s
 maxmemory-policy allkeys-lru
 tcp-keepalive 60
 timeout 300
-`,
+`, instance.Spec.Redis.MaxMemoryValue()),
 		}
 		return nil
 	})

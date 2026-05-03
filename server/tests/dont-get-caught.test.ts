@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DontGetCaughtGame from "../src/games/registry-14-dont-get-caught";
 import { seededRng } from "../src/utils/rng";
+import { generateMap, MAP_HEIGHT, MAP_WIDTH } from "../src/utils/tilemap";
 
 function createPlayer(id: string, name: string) {
   return {
@@ -109,5 +110,46 @@ describe("DontGetCaughtGame round timing", () => {
     expect(new Set(runtimes.map((rt: { patrolStride: number }) => rt.patrolStride)).size).toBeGreaterThan(1);
     expect(new Set(guards.map((guard: { patrolIndex: number }) => guard.patrolIndex)).size).toBeGreaterThan(4);
     expect(new Set(guards.map((guard: { x: number; y: number }) => `${guard.x},${guard.y}`)).size).toBeGreaterThan(4);
+  });
+
+  it("adds interior patrol waypoints to reduce blind interior pockets", () => {
+    const { patrolPath, tiles } = generateMap(42);
+    const walkableTiles: Array<{ x: number; y: number }> = [];
+
+    for (let y = 0; y < MAP_HEIGHT; y++) {
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        if (tiles[y * MAP_WIDTH + x] === 0) {
+          walkableTiles.push({ x, y });
+        }
+      }
+    }
+
+    expect(patrolPath).toEqual(expect.arrayContaining([
+      { x: 3, y: 5 },
+      { x: 6, y: 13 },
+      { x: 15, y: 3 },
+      { x: 18, y: 7 },
+      { x: 27, y: 7 },
+      { x: 15, y: 22 },
+    ]));
+
+    const farthestWalkableTile = walkableTiles.reduce((best, tile) => {
+      const nearestPatrolDistance = patrolPath.reduce((nearest, waypoint) => {
+        const distance = Math.abs(waypoint.x - tile.x) + Math.abs(waypoint.y - tile.y);
+        return Math.min(nearest, distance);
+      }, Number.POSITIVE_INFINITY);
+
+      return nearestPatrolDistance > best ? nearestPatrolDistance : best;
+    }, 0);
+
+    expect(farthestWalkableTile).toBeLessThanOrEqual(5);
+  });
+
+  it("lets guards squeeze into a narrow corridor corner after patrol reroutes", () => {
+    const room = createRoomStub(["p1"]);
+    const game = new DontGetCaughtGame(room) as any;
+
+    expect(game._guardPositionWalkable(4.25, 2.559)).toBe(true);
+    expect(game._guardPositionWalkable(4.25, 2.561)).toBe(false);
   });
 });

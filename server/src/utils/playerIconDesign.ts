@@ -41,6 +41,18 @@ interface IconDesign {
   text: IconTextOverlay | null;
 }
 
+type CompactSerializedStroke = [color: string, size: number, points: string];
+type CompactSerializedSticker = [emoji: string, x: number, y: number, size: number];
+type CompactSerializedText = [value: string, color: string, size: number, x: number, y: number];
+
+interface CompactSerializedIconDesign {
+  v: 2;
+  b: string;
+  s: CompactSerializedStroke[];
+  k?: CompactSerializedSticker[];
+  t?: CompactSerializedText | null;
+}
+
 const DEFAULT_ICON_BG = "#6366f1";
 const DEFAULT_BRUSH_COLOR = "#ffffff";
 const DEFAULT_TEXT_COLOR = "#ffffff";
@@ -49,6 +61,11 @@ const DEFAULT_TEXT_SIZE = 24;
 const MAX_ICON_STICKERS = 20;
 const MAX_ICON_STROKES = 256;
 const MAX_POINTS_PER_STROKE = 2048;
+const SERIALIZED_ICON_FORMAT_VERSION = 2;
+const ICON_VIEWBOX_SIZE = 100;
+const ICON_POINT_SCALE = 4;
+const ICON_POINT_GRID_MAX = ICON_VIEWBOX_SIZE * ICON_POINT_SCALE;
+const ICON_POINT_GRID_WIDTH = ICON_POINT_GRID_MAX + 1;
 
 /**
  * Accept detailed user-drawn icons, but keep replicated room state bounded.
@@ -61,8 +78,12 @@ export function sanitizeIconDesignForStorage(raw: string): string | null {
   if (raw.length > MAX_ICON_DESIGN_INPUT_LENGTH) return null;
 
   try {
-    const parsed = JSON.parse(raw) as Partial<IconDesign>;
-    const sanitized = sanitizeIconDesign(parsed);
+    const parsed = JSON.parse(raw) as unknown;
+    const sanitized = sanitizeIconDesign(
+      isCompactSerializedIconDesign(parsed)
+        ? expandCompactSerializedIconDesign(parsed)
+        : parsed as Partial<IconDesign>,
+    );
     const serialized = JSON.stringify(sanitized);
     return serialized.length <= MAX_ICON_DESIGN_STORED_LENGTH ? serialized : null;
   } catch {
@@ -132,6 +153,73 @@ function sanitizeIconDesign(input: Partial<IconDesign> | null | undefined): Icon
   }
 
   return design;
+}
+
+function isCompactSerializedIconDesign(value: unknown): value is Partial<CompactSerializedIconDesign> {
+  return !!value && typeof value === "object" && !Array.isArray(value) && (
+    "b" in value ||
+    "s" in value ||
+    "k" in value ||
+    "t" in value ||
+    ("v" in value && (value as { v?: unknown }).v === SERIALIZED_ICON_FORMAT_VERSION)
+  );
+}
+
+function expandCompactSerializedIconDesign(input: Partial<CompactSerializedIconDesign>): Partial<IconDesign> {
+  return {
+    version: 1,
+    bgColor: typeof input.b === "string" ? input.b : DEFAULT_ICON_BG,
+    strokes: Array.isArray(input.s)
+      ? input.s.map((stroke) => ({
+          color: typeof stroke?.[0] === "string" ? stroke[0] : DEFAULT_BRUSH_COLOR,
+          size: typeof stroke?.[1] === "number" ? stroke[1] : 6,
+          points: decodeCompactStrokePoints(stroke?.[2]),
+        }))
+      : [],
+    stickers: Array.isArray(input.k)
+      ? input.k.map((sticker) => ({
+          emoji: typeof sticker?.[0] === "string" ? sticker[0] : "",
+          x: typeof sticker?.[1] === "number" ? sticker[1] : 50,
+          y: typeof sticker?.[2] === "number" ? sticker[2] : 50,
+          size: typeof sticker?.[3] === "number" ? sticker[3] : DEFAULT_STICKER_SIZE,
+        }))
+      : [],
+    text: Array.isArray(input.t) && typeof input.t[0] === "string"
+      ? {
+          value: input.t[0],
+          color: typeof input.t[1] === "string" ? input.t[1] : DEFAULT_TEXT_COLOR,
+          size: typeof input.t[2] === "number" ? input.t[2] : DEFAULT_TEXT_SIZE,
+          x: typeof input.t[3] === "number" ? input.t[3] : 50,
+          y: typeof input.t[4] === "number" ? input.t[4] : 58,
+        }
+      : null,
+  };
+}
+
+function decodeCompactStrokePoints(raw: unknown): IconPoint[] {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return [];
+  }
+
+  const points: IconPoint[] = [];
+
+  for (const encodedPoint of raw.split(".")) {
+    if (!encodedPoint) continue;
+
+    const compactValue = Number.parseInt(encodedPoint, 36);
+    if (!Number.isFinite(compactValue) || compactValue < 0) {
+      continue;
+    }
+
+    const x = Math.floor(compactValue / ICON_POINT_GRID_WIDTH);
+    const y = compactValue % ICON_POINT_GRID_WIDTH;
+    points.push({
+      x: clamp(x / ICON_POINT_SCALE, 0, ICON_VIEWBOX_SIZE),
+      y: clamp(y / ICON_POINT_SCALE, 0, ICON_VIEWBOX_SIZE),
+    });
+  }
+
+  return points;
 }
 
 function clamp(value: number, min: number, max: number): number {

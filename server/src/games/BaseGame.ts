@@ -30,8 +30,7 @@ import { Room, Client } from "@colyseus/core";
 import { RoomState, Phase } from "../schema/RoomState";
 import { PlayerState } from "../schema/PlayerState";
 import { meter, tracer } from "../telemetry";
-
-const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60) * 1000;
+import { RECONNECT_GRACE_MS, ACTIVE_WAIT_TOLERANCE_MS } from "../config";
 
 // ── OTEL metrics (shared across all game plugin instances) ────────────────────
 const phaseTransitions = meter.createCounter("gamma.game.phase_transitions", {
@@ -177,6 +176,15 @@ export abstract class BaseGame {
    */
   onPlayerReconnected?(oldId: string, newId: string, client: Client): void;
 
+  /**
+   * Called when a disconnected player's slot is permanently removed
+   * (reconnect grace expired without reclaim). Override in game plugins
+   * that maintain internal maps keyed by sessionId to clean up stale data.
+   *
+   * @param sessionId The sessionId of the dropped player
+   */
+  onPlayerDropped?(sessionId: string): void;
+
   // ── Round loop ────────────────────────────────────────────────────────────
 
   protected async runRounds(): Promise<void> {
@@ -293,6 +301,50 @@ export abstract class BaseGame {
     return player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < RECONNECT_GRACE_MS;
   }
 
+  /**
+   * Returns true if the player can still reclaim their slot
+   * (connected or within reconnect grace window).
+   * Used for determining who counts toward round participation.
+   */
+  protected isPlayerReconnectEligible(player: PlayerState | null | undefined): boolean {
+    return this.isPlayerActive(player);
+  }
+
+  /**
+   * Returns true if the room should currently wait for this player
+   * (connected or disconnected for less than the wait tolerance).
+   * Used by waitForAllReady and similar blocking waits.
+   */
+  protected isPlayerBlockingWait(player: PlayerState | null | undefined): boolean {
+    if (!player || player.isEliminated) return false;
+    if (player.isConnected) return true;
+    return player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < ACTIVE_WAIT_TOLERANCE_MS;
+  }
+
+  /**
+   * Returns all players who should block a wait (connected or within
+   * wait tolerance). Excludes eliminated players.
+   */
+  protected getWaitBlockingPlayers(): PlayerState[] {
+    const result: PlayerState[] = [];
+    for (const p of this.room.state.players.values()) {
+      if (this.isPlayerBlockingWait(p)) result.push(p);
+    }
+    return result;
+  }
+
+  /**
+   * Returns all players who are still eligible to participate
+   * in the current round (connected or within reconnect grace).
+   */
+  protected getReconnectEligiblePlayers(): PlayerState[] {
+    const result: PlayerState[] = [];
+    for (const p of this.room.state.players.values()) {
+      if (this.isPlayerReconnectEligible(p)) result.push(p);
+    }
+    return result;
+  }
+
   protected hasMicPermission(player: PlayerState | null | undefined): boolean {
     return player?.micPermission === "granted";
   }
@@ -302,18 +354,20 @@ export abstract class BaseGame {
   }
 
   /**
-   * Resolves when every connected, non-eliminated player has isReady = true.
-   * Includes a 30-second timeout to prevent indefinite stalling.
+   * Resolves when every wait-blocking player has isReady = true.
+   * Uses the wait-tolerance window (not the full reconnect grace) so
+   * disconnected players stop blocking after ACTIVE_WAIT_TOLERANCE_SECONDS.
+   * Includes a timeout to prevent indefinite stalling.
    */
-  protected waitForAllReady(timeoutMs: number = Math.max(30_000, RECONNECT_GRACE_MS)): Promise<void> {
+  protected waitForAllReady(timeoutMs: number = Math.max(30_000, ACTIVE_WAIT_TOLERANCE_MS)): Promise<void> {
     return new Promise((resolve) => {
       const check = (): boolean => {
         for (const p of this.room.state.players.values()) {
-          if (this.isPlayerActive(p) && !p.isReady) return false;
+          if (this.isPlayerBlockingWait(p) && !p.isReady) return false;
         }
-        // Ensure at least one active player exists
+        // Ensure at least one wait-blocking player exists
         for (const p of this.room.state.players.values()) {
-          if (this.isPlayerActive(p)) return true;
+          if (this.isPlayerBlockingWait(p)) return true;
         }
         return false;
       };

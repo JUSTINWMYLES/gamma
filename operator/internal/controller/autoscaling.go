@@ -32,9 +32,17 @@ func (r *GammaInstanceReconciler) reconcileHPA(ctx context.Context, instance *ga
 		if minReplicas < 1 {
 			minReplicas = 1
 		}
-		maxReplicas := as.MaxReplicas
-		if maxReplicas < 1 {
-			maxReplicas = 10
+		// Colyseus rooms are pod-local; scaling beyond 1 breaks room routing.
+		// Hard cap both min and max replicas at 1 unless a @colyseus/proxy is deployed.
+		var maxReplicas int32
+		if hasColyseusProxy(instance) {
+			maxReplicas = as.MaxReplicas
+			if maxReplicas <= 0 {
+				maxReplicas = 5
+			}
+		} else {
+			minReplicas = 1
+			maxReplicas = 1
 		}
 		cpuTarget := as.TargetCPUUtilizationPercentage
 		if cpuTarget <= 0 {

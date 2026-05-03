@@ -9,7 +9,7 @@
    *
    * Server messages listened:
    *   potato_round_start, potato_show_target, potato_accepted,
-   *   potato_timer, potato_exploded, potato_play_sound,
+   *   potato_exploded, potato_play_sound,
    *   potato_vote_start, potato_vote_confirmed, potato_vote_update,
    *   potato_result, round_skipped
    *
@@ -48,10 +48,6 @@
   let targetId = "";
   let passNumber = 0;
   let lastAcceptorName = "";
-
-  // ── Timer (broadcast to all, but display varies) ──────────────
-
-  let timeRemaining = 0;
 
   // ── Explosion state ────────────────────────────────────────────
 
@@ -124,7 +120,6 @@
     passNumber = 0;
     myVote = null;
     voteConfirmed = false;
-    timeRemaining = data.timerDurationMs;
 
     iAmPotatoDevice = data.potatoDeviceId === me?.id;
     potatoDeviceName = data.potatoDeviceName;
@@ -158,10 +153,6 @@
     passNumber = data.passNumber;
   }
 
-  function onPotatoTimer(data: { timeRemaining: number }) {
-    timeRemaining = data.timeRemaining;
-  }
-
   function onPotatoExploded(data: {
     holderId: string;
     holderName: string;
@@ -176,7 +167,6 @@
     explodedTargetId = data.targetId;
     explodedTargetName = data.targetName;
     explodedPassCount = data.passCount;
-    timeRemaining = 0;
 
     // Vibrate on explosion
     if (navigator.vibrate) navigator.vibrate([500, 200, 500]);
@@ -259,7 +249,6 @@
     room.onMessage("potato_round_start", onPotatoRoundStart);
     room.onMessage("potato_show_target", onPotatoShowTarget);
     room.onMessage("potato_accepted", onPotatoAccepted);
-    room.onMessage("potato_timer", onPotatoTimer);
     room.onMessage("potato_exploded", onPotatoExploded);
     room.onMessage("potato_play_sound", onPotatoPlaySound);
     room.onMessage("potato_vote_start", onPotatoVoteStart);
@@ -277,9 +266,6 @@
 
   $: myScore = resultScores[me?.id ?? ""] ?? 0;
   $: iWasLoser = resultLoserId === me?.id;
-  $: timerSeconds = Math.max(0, timeRemaining / 1000);
-  $: timerUrgent = timerSeconds < 4;
-  $: timerDisplay = timerSeconds.toFixed(1);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-6 p-6" data-testid="hot-potato">

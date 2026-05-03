@@ -52,11 +52,11 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if instance.Spec.Server.ServerReplicas() > 1 {
-		logger.Info(
-			"WARNING: spec.server.replicas > 1. Colyseus rooms live in local memory; "+
-			"players joining existing rooms may land on a pod that does not host the room, "+
-			"causing 'seat reservation expired' errors. Keep replicas=1 unless you deploy a proxy layer.",
-			"replicas", instance.Spec.Server.ServerReplicas())
+		return r.setFailedStatus(ctx, instance, "ServerReplicas", fmt.Errorf(
+			"spec.server.replicas must be 1; Colyseus rooms live in local memory and "+
+				"multiple replicas cause 'seat reservation expired' errors. "+
+				"Deploy a @colyseus/proxy layer before scaling (got %d)",
+			instance.Spec.Server.ServerReplicas()))
 	}
 
 	if instance.Status.Phase == "" || instance.Status.Phase == "Pending" {
@@ -96,7 +96,7 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Step 2: Reconcile News Broadcast TTS stack.
-	if instance.Spec.TTS.IsTTSEnabled() {
+	if usesSharedObjectStore(instance) {
 		if err := r.reconcileObjectStorePVC(ctx, instance); err != nil {
 			return r.setFailedStatus(ctx, instance, "TTSObjectStorePVC", err)
 		}
@@ -106,7 +106,13 @@ func (r *GammaInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.reconcileObjectStoreDeployment(ctx, instance); err != nil {
 			return r.setFailedStatus(ctx, instance, "TTSObjectStoreDeployment", err)
 		}
+	} else {
+		if err := r.cleanupSharedObjectStore(ctx, instance); err != nil {
+			logger.Error(err, "failed to cleanup shared object store resources")
+		}
+	}
 
+	if instance.Spec.TTS.IsTTSEnabled() {
 		// Gate API and worker creation on object store readiness.
 		objectStoreDeploy := &appsv1.Deployment{}
 		objectStoreErr := r.Get(ctx, types.NamespacedName{Name: ttsObjectStoreName(instance), Namespace: instance.Namespace}, objectStoreDeploy)
@@ -334,17 +340,50 @@ func (r *GammaInstanceReconciler) updateRedisStatus(ctx context.Context, instanc
 }
 
 func (r *GammaInstanceReconciler) updateTTSStatus(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	if usesSharedObjectStore(instance) {
+		objectStoreDeploy := &appsv1.Deployment{}
+		objectStoreName := ttsObjectStoreName(instance)
+		objectStoreErr := r.Get(ctx, types.NamespacedName{Name: objectStoreName, Namespace: instance.Namespace}, objectStoreDeploy)
+		if objectStoreErr != nil {
+			if !errors.IsNotFound(objectStoreErr) {
+				return objectStoreErr
+			}
+			instance.Status.TTSObjectStoreReady = false
+			instance.Status.TTSObjectStoreEndpoint = ""
+			instance.Status.TTSObjectStoreConsoleEndpoint = ""
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:               "TTSObjectStoreReady",
+				Status:             metav1.ConditionFalse,
+				Reason:             "DeploymentMissing",
+				Message:            "tts object store deployment not found",
+				LastTransitionTime: metav1.Now(),
+			})
+		} else {
+			instance.Status.TTSObjectStoreReady = objectStoreDeploy.Status.ReadyReplicas > 0
+			instance.Status.TTSObjectStoreEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.APIPort())
+			instance.Status.TTSObjectStoreConsoleEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.ConsolePort())
+			meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
+				Type:               "TTSObjectStoreReady",
+				Status:             conditionStatus(objectStoreDeploy.Status.ReadyReplicas > 0),
+				Reason:             "DeploymentStatus",
+				Message:            fmt.Sprintf("%d/1 replicas ready", objectStoreDeploy.Status.ReadyReplicas),
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+	} else {
+		instance.Status.TTSObjectStoreReady = false
+		instance.Status.TTSObjectStoreEndpoint = ""
+		instance.Status.TTSObjectStoreConsoleEndpoint = ""
+		removeCondition(&instance.Status.Conditions, "TTSObjectStoreReady")
+	}
+
 	if !instance.Spec.TTS.IsTTSEnabled() {
 		instance.Status.TTSReady = false
 		instance.Status.TTSAPIReadyReplicas = 0
 		instance.Status.TTSWorkerReadyReplicas = 0
-		instance.Status.TTSObjectStoreReady = false
 		instance.Status.TTSAPIEndpoint = ""
-		instance.Status.TTSObjectStoreEndpoint = ""
-		instance.Status.TTSObjectStoreConsoleEndpoint = ""
 		removeCondition(&instance.Status.Conditions, "TTSAPIReady")
 		removeCondition(&instance.Status.Conditions, "TTSWorkerReady")
-		removeCondition(&instance.Status.Conditions, "TTSObjectStoreReady")
 		removeCondition(&instance.Status.Conditions, "TTSReady")
 		return nil
 	}
@@ -403,36 +442,6 @@ func (r *GammaInstanceReconciler) updateTTSStatus(ctx context.Context, instance 
 		})
 	}
 
-	objectStoreDeploy := &appsv1.Deployment{}
-	objectStoreName := ttsObjectStoreName(instance)
-	objectStoreErr := r.Get(ctx, types.NamespacedName{Name: objectStoreName, Namespace: instance.Namespace}, objectStoreDeploy)
-	if objectStoreErr != nil {
-		if !errors.IsNotFound(objectStoreErr) {
-			return objectStoreErr
-		}
-		instance.Status.TTSObjectStoreReady = false
-		instance.Status.TTSObjectStoreEndpoint = ""
-		instance.Status.TTSObjectStoreConsoleEndpoint = ""
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:               "TTSObjectStoreReady",
-			Status:             metav1.ConditionFalse,
-			Reason:             "DeploymentMissing",
-			Message:            "tts object store deployment not found",
-			LastTransitionTime: metav1.Now(),
-		})
-	} else {
-		instance.Status.TTSObjectStoreReady = objectStoreDeploy.Status.ReadyReplicas > 0
-		instance.Status.TTSObjectStoreEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.APIPort())
-		instance.Status.TTSObjectStoreConsoleEndpoint = serviceEndpoint(instance, objectStoreName, instance.Spec.TTS.ObjectStore.Ports.ConsolePort())
-		meta.SetStatusCondition(&instance.Status.Conditions, metav1.Condition{
-			Type:               "TTSObjectStoreReady",
-			Status:             conditionStatus(objectStoreDeploy.Status.ReadyReplicas > 0),
-			Reason:             "DeploymentStatus",
-			Message:            fmt.Sprintf("%d/1 replicas ready", objectStoreDeploy.Status.ReadyReplicas),
-			LastTransitionTime: metav1.Now(),
-		})
-	}
-
 	instance.Status.TTSReady = instance.Status.TTSAPIReadyReplicas >= instance.Spec.TTS.API.APIReplicas() &&
 		instance.Status.TTSWorkerReadyReplicas >= instance.Spec.TTS.Worker.WorkerReplicas() &&
 		instance.Status.TTSObjectStoreReady
@@ -454,15 +463,17 @@ func computePhase(instance *gammav1alpha1.GammaInstance) string {
 	clientReady := instance.Status.ClientReadyReplicas >= instance.Spec.Client.ClientReplicas()
 	redisReady := !instance.Spec.Redis.IsRedisEnabled() || instance.Status.RedisReady
 	ttsReady := !instance.Spec.TTS.IsTTSEnabled() || instance.Status.TTSReady
+	audioOverlayStoreReady := !instance.Spec.AudioOverlay.UsesObjectStore() || instance.Status.TTSObjectStoreReady
 
-	if serverReady && clientReady && redisReady && ttsReady {
+	if serverReady && clientReady && redisReady && ttsReady && audioOverlayStoreReady {
 		return "Running"
 	}
 
 	if instance.Status.ServerReadyReplicas > 0 ||
 		instance.Status.ClientReadyReplicas > 0 ||
 		(instance.Spec.Redis.IsRedisEnabled() && instance.Status.RedisReady) ||
-		(instance.Spec.TTS.IsTTSEnabled() && (instance.Status.TTSAPIReadyReplicas > 0 || instance.Status.TTSWorkerReadyReplicas > 0 || instance.Status.TTSObjectStoreReady)) {
+		(instance.Spec.TTS.IsTTSEnabled() && (instance.Status.TTSAPIReadyReplicas > 0 || instance.Status.TTSWorkerReadyReplicas > 0 || instance.Status.TTSObjectStoreReady)) ||
+		(instance.Spec.AudioOverlay.UsesObjectStore() && instance.Status.TTSObjectStoreReady) {
 		return "Degraded"
 	}
 
@@ -555,6 +566,10 @@ func ttsAPIServiceURL(instance *gammav1alpha1.GammaInstance) string {
 
 func objectStoreServiceEndpoint(instance *gammav1alpha1.GammaInstance) string {
 	return serviceEndpoint(instance, ttsObjectStoreName(instance), instance.Spec.TTS.ObjectStore.Ports.APIPort())
+}
+
+func usesSharedObjectStore(instance *gammav1alpha1.GammaInstance) bool {
+	return instance.Spec.TTS.IsTTSEnabled() || instance.Spec.AudioOverlay.UsesObjectStore()
 }
 
 // createOrUpdate is a helper that wraps controllerutil.CreateOrUpdate with owner references.

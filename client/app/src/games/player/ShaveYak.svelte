@@ -28,6 +28,10 @@
   const YAK_W = 300;
   const YAK_H = 280;
   const SHAVE_RADIUS = 8;
+  const MIN_SWIPE_SEGMENT_SQ = 9;
+  const PARTICLES_PER_SWIPE = 4;
+  const MAX_PARTICLES = 48;
+  const PARTICLE_MAX_AGE = 30;
 
   // ── Reactive state ────────────────────────────────────────────────────
   let shavedPercent = 0;
@@ -56,12 +60,28 @@
   let headFurTexture: THREE.CanvasTexture;
   let raycaster: THREE.Raycaster;
   let animFrameId: number;
+  let containerRect: DOMRect | null = null;
+
+  const pointerNdc = new THREE.Vector2();
+  const raycastTargets: THREE.Object3D[] = [];
+  const raycastHits: THREE.Intersection[] = [];
 
   // Swipe tracking
   let swiping = false;
   let swipingHead = false; // tracks whether the current swipe is on the head
   let lastUV: { u: number; v: number } | null = null;
   let lastPt: { x: number; y: number } | null = null; // in YAK_W/YAK_H space for server
+
+  interface PendingSwipeSegment {
+    u: number;
+    v: number;
+    x: number;
+    y: number;
+    pointX: number;
+    pointY: number;
+    pointZ: number;
+  }
+  let pendingSwipe: PendingSwipeSegment | null = null;
 
   // ── Fur canvas initialization ─────────────────────────────────────────
   function createFurCanvas(): HTMLCanvasElement {
@@ -104,6 +124,10 @@
     ctx.globalAlpha = 1.0;
 
     return c;
+  }
+
+  function updateContainerRect() {
+    containerRect = containerEl?.getBoundingClientRect() ?? null;
   }
 
   /** Erase circles along a line on a fur canvas (UV space mapped to pixels). */
@@ -312,61 +336,104 @@
     tuft.position.set(0.1, 1.2, -1.15);
     group.add(tuft);
 
+    raycastTargets.length = 0;
+    raycastTargets.push(...group.children);
+
     return group;
   }
 
   // ── 3D Particles ──────────────────────────────────────────────────────
-  let particleMeshes: { mesh: THREE.Mesh; velocity: THREE.Vector3; age: number }[] = [];
-  const particleMat = new THREE.MeshBasicMaterial({ color: 0xf5e6d3, transparent: true });
+  interface ParticleState {
+    mesh: THREE.Mesh;
+    material: THREE.MeshBasicMaterial;
+    velocity: THREE.Vector3;
+    age: number;
+    active: boolean;
+  }
 
-  function spawn3DParticles(point: THREE.Vector3) {
-    for (let i = 0; i < 5; i++) {
-      const geom = new THREE.SphereGeometry(0.02 + Math.random() * 0.03, 6, 4);
-      const mesh = new THREE.Mesh(geom, particleMat.clone());
-      mesh.position.copy(point);
+  let particleGeometry: THREE.SphereGeometry | null = null;
+  const particlePool: ParticleState[] = [];
+  let nextParticleIndex = 0;
+
+  function initParticlePool() {
+    if (!scene || particlePool.length > 0) return;
+
+    particleGeometry = new THREE.SphereGeometry(1, 6, 4);
+
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      const material = new THREE.MeshBasicMaterial({
+        color: 0xf5e6d3,
+        transparent: true,
+        opacity: 0,
+      });
+      const mesh = new THREE.Mesh(particleGeometry, material);
+      mesh.visible = false;
       scene.add(mesh);
-      particleMeshes.push({
+      particlePool.push({
         mesh,
-        velocity: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.08,
-          Math.random() * 0.06 + 0.02,
-          (Math.random() - 0.5) * 0.08,
-        ),
+        material,
+        velocity: new THREE.Vector3(),
         age: 0,
+        active: false,
       });
     }
   }
 
+  function spawn3DParticles(pointX: number, pointY: number, pointZ: number) {
+    if (particlePool.length === 0) return;
+
+    for (let i = 0; i < PARTICLES_PER_SWIPE; i++) {
+      const particle = particlePool[nextParticleIndex];
+      nextParticleIndex = (nextParticleIndex + 1) % particlePool.length;
+
+      const size = 0.02 + Math.random() * 0.03;
+      particle.active = true;
+      particle.age = 0;
+      particle.mesh.visible = true;
+      particle.mesh.position.set(pointX, pointY, pointZ);
+      particle.mesh.scale.setScalar(size);
+      particle.velocity.set(
+        (Math.random() - 0.5) * 0.08,
+        Math.random() * 0.06 + 0.02,
+        (Math.random() - 0.5) * 0.08,
+      );
+      particle.material.opacity = 1;
+    }
+  }
+
   function updateParticles() {
-    particleMeshes = particleMeshes.filter((p) => {
-      p.age++;
-      p.mesh.position.add(p.velocity);
-      p.velocity.y -= 0.001; // gravity
-      const mat = p.mesh.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0, 1 - p.age / 30);
-      if (p.age > 30) {
-        scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        mat.dispose();
-        return false;
+    for (const particle of particlePool) {
+      if (!particle.active) continue;
+
+      particle.age++;
+      particle.mesh.position.add(particle.velocity);
+      particle.velocity.y -= 0.001; // gravity
+      particle.material.opacity = Math.max(0, 1 - particle.age / PARTICLE_MAX_AGE);
+
+      if (particle.age > PARTICLE_MAX_AGE) {
+        particle.active = false;
+        particle.mesh.visible = false;
+        particle.material.opacity = 0;
       }
-      return true;
-    });
+    }
   }
 
   // ── Hit-test / raycast ────────────────────────────────────────────────
   function getUVFromPointer(clientX: number, clientY: number): { uv: THREE.Vector2; point: THREE.Vector3; isHead: boolean } | null {
-    if (!containerEl || !furMesh) return null;
-    const rect = containerEl.getBoundingClientRect();
-    const mouse = new THREE.Vector2(
+    if (!containerEl || !furMesh || !headFurMesh || raycastTargets.length === 0) return null;
+    if (!containerRect) updateContainerRect();
+    const rect = containerRect;
+    if (!rect || rect.width === 0 || rect.height === 0) return null;
+
+    pointerNdc.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
-    raycaster.setFromCamera(mouse, camera);
+    raycaster.setFromCamera(pointerNdc, camera);
 
-    // Check intersection with the fur mesh (body) and head fur
-    const intersects = raycaster.intersectObjects(yakGroup.children, false);
-    for (const hit of intersects) {
+    raycastHits.length = 0;
+    raycaster.intersectObjects(raycastTargets, false, raycastHits);
+    for (const hit of raycastHits) {
       if (hit.uv) {
         const isHead = hit.object === headFurMesh;
         return { uv: hit.uv, point: hit.point, isHead };
@@ -385,60 +452,87 @@
   // ── Touch / pointer handlers ──────────────────────────────────────────
   function onPointerDown(e: PointerEvent) {
     if (e.pointerType === "touch" && e.isPrimary === false) return; // multi-touch = orbit
+    updateContainerRect();
     const hit = getUVFromPointer(e.clientX, e.clientY);
     if (hit) {
       swiping = true;
       swipingHead = hit.isHead;
       lastUV = { u: hit.uv.x, v: hit.uv.y };
       lastPt = uvToYakCoords(hit.uv);
+      pendingSwipe = null;
       controls.enabled = false; // disable orbit while shaving
     }
   }
 
-  function onPointerMove(e: PointerEvent) {
-    if (!swiping || !lastUV || !lastPt) return;
-    const hit = getUVFromPointer(e.clientX, e.clientY);
-    if (!hit) return;
-
-    const currentPt = uvToYakCoords(hit.uv);
-    const onTarget = true; // we already hit the mesh via raycast
+  function flushPendingSwipe() {
+    if (!pendingSwipe || !lastUV || !lastPt) return;
 
     room.send("game_input", {
       action: "swipe",
       x1: lastPt.x,
       y1: lastPt.y,
-      x2: currentPt.x,
-      y2: currentPt.y,
-      onTarget,
+      x2: pendingSwipe.x,
+      y2: pendingSwipe.y,
+      onTarget: true,
     });
 
-    // Erase fur on the correct texture (body or head)
     const ctx = swipingHead ? headFurCtx : furCtx;
     const tex = swipingHead ? headFurTexture : furTexture;
-    eraseSwipeLine(lastUV.u, lastUV.v, hit.uv.x, hit.uv.y, ctx, tex);
-    spawn3DParticles(hit.point);
+    eraseSwipeLine(lastUV.u, lastUV.v, pendingSwipe.u, pendingSwipe.v, ctx, tex);
+    spawn3DParticles(pendingSwipe.pointX, pendingSwipe.pointY, pendingSwipe.pointZ);
 
-    lastUV = { u: hit.uv.x, v: hit.uv.y };
-    lastPt = currentPt;
+    lastUV = { u: pendingSwipe.u, v: pendingSwipe.v };
+    lastPt = { x: pendingSwipe.x, y: pendingSwipe.y };
+    pendingSwipe = null;
+  }
+
+  function onPointerMove(
+    e: PointerEvent,
+    hit: ReturnType<typeof getUVFromPointer> | null = getUVFromPointer(e.clientX, e.clientY),
+  ) {
+    if (!swiping || !lastUV || !lastPt) return;
+    if (!hit) return;
+
+    const currentPt = uvToYakCoords(hit.uv);
+    const dx = currentPt.x - lastPt.x;
+    const dy = currentPt.y - lastPt.y;
+    if (dx * dx + dy * dy < MIN_SWIPE_SEGMENT_SQ) return;
+
+    pendingSwipe = {
+      u: hit.uv.x,
+      v: hit.uv.y,
+      x: currentPt.x,
+      y: currentPt.y,
+      pointX: hit.point.x,
+      pointY: hit.point.y,
+      pointZ: hit.point.z,
+    };
   }
 
   function onPointerUp(_e: PointerEvent) {
     if (swiping) {
+      flushPendingSwipe();
       swiping = false;
       swipingHead = false;
       lastUV = null;
       lastPt = null;
+      pendingSwipe = null;
       controls.enabled = true; // re-enable orbit
     }
   }
 
   // Handle off-target swipes (touches that don't hit the yak mesh)
-  function onMissSwipe(e: PointerEvent) {
+  function onMissSwipe(
+    e: PointerEvent,
+    hit: ReturnType<typeof getUVFromPointer> | null = getUVFromPointer(e.clientX, e.clientY),
+  ) {
     if (e.pointerType === "touch" && e.isPrimary === false) return;
-    const hit = getUVFromPointer(e.clientX, e.clientY);
     if (!hit && swiping && lastPt) {
+      flushPendingSwipe();
       // Swipe went off the yak — send as off-target
-      const rect = containerEl.getBoundingClientRect();
+      if (!containerRect) updateContainerRect();
+      const rect = containerRect;
+      if (!rect) return;
       const nx = ((e.clientX - rect.left) / rect.width) * YAK_W;
       const ny = ((e.clientY - rect.top) / rect.height) * YAK_H;
       room.send("game_input", {
@@ -453,6 +547,7 @@
       swipingHead = false;
       lastUV = null;
       lastPt = null;
+      pendingSwipe = null;
       controls.enabled = true;
     }
   }
@@ -493,6 +588,7 @@
   // ── Animation loop ────────────────────────────────────────────────────
   function animate() {
     animFrameId = requestAnimationFrame(animate);
+    flushPendingSwipe();
     controls.update();
     updateParticles();
     renderer.render(scene, camera);
@@ -548,6 +644,8 @@
     // Build yak
     yakGroup = buildYak();
     scene.add(yakGroup);
+    initParticlePool();
+    updateContainerRect();
 
     // Ground plane
     const groundGeom = new THREE.CircleGeometry(3, 32);
@@ -563,8 +661,9 @@
     // Pointer events
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", (e) => {
-      onPointerMove(e);
-      onMissSwipe(e);
+      const hit = getUVFromPointer(e.clientX, e.clientY);
+      onPointerMove(e, hit);
+      onMissSwipe(e, hit);
     });
     renderer.domElement.addEventListener("pointerup", onPointerUp);
     renderer.domElement.style.touchAction = "none"; // prevent browser scroll
@@ -589,6 +688,7 @@
       camera.aspect = nw / nh;
       camera.updateProjectionMatrix();
       renderer.setSize(nw, nh);
+      updateContainerRect();
     };
     window.addEventListener("resize", onResize);
 
@@ -605,13 +705,14 @@
     if (renderer) {
       renderer.dispose();
     }
-    // Clean up particles
-    for (const p of particleMeshes) {
-      scene?.remove(p.mesh);
-      p.mesh.geometry.dispose();
-      (p.mesh.material as THREE.MeshBasicMaterial).dispose();
+    for (const particle of particlePool) {
+      scene?.remove(particle.mesh);
+      particle.material.dispose();
+      particle.active = false;
     }
-    particleMeshes = [];
+    particlePool.length = 0;
+    particleGeometry?.dispose();
+    particleGeometry = null;
   });
 
   // ── Derived values ────────────────────────────────────────────────────

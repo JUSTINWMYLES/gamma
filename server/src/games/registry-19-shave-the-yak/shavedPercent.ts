@@ -47,6 +47,10 @@ const POINTS_PER_PERCENT = 10;
 /** Bonus multiplier added to the final score per combo-max level. */
 const COMBO_BONUS_PER_LEVEL = 0.05;
 
+function roundPercent(rawPercent: number): number {
+  return Math.round(Math.min(100, Math.max(0, rawPercent)) * 100) / 100;
+}
+
 // ── Mask creation ────────────────────────────────────────────────────────────
 
 /**
@@ -89,7 +93,10 @@ export function createYakMask(width: number, height: number, shapeRle?: string):
     }
   }
 
-  const totalFurCells = cells.reduce((s, v) => s + v, 0);
+  let totalFurCells = 0;
+  for (let i = 0; i < cells.length; i++) {
+    totalFurCells += cells[i];
+  }
   return { width, height, cells, totalFurCells };
 }
 
@@ -155,6 +162,12 @@ export function applySwipe(mask: YakMask, from: Point, to: Point, radius = SHAVE
 
 // ── Percentage calculation ───────────────────────────────────────────────────
 
+export function computeShavedPercentFromCounts(totalFurCells: number, shavedCells: number): number {
+  if (totalFurCells <= 0) return 0;
+  const clampedShavedCells = Math.min(totalFurCells, Math.max(0, shavedCells));
+  return roundPercent((clampedShavedCells / totalFurCells) * 100);
+}
+
 /**
  * Compute the current shaved percentage of the mask.
  *
@@ -166,11 +179,12 @@ export function applySwipe(mask: YakMask, from: Point, to: Point, radius = SHAVE
 export function computeShavedPercent(mask: YakMask): number {
   if (mask.totalFurCells === 0) return 0;
 
-  const remaining = mask.cells.reduce((s, v) => s + v, 0);
-  const shaved = mask.totalFurCells - remaining;
-  const raw = (shaved / mask.totalFurCells) * 100;
-  // Clamp and round to 2 dp
-  return Math.round(Math.min(100, Math.max(0, raw)) * 100) / 100;
+  let remainingFurCells = 0;
+  for (let i = 0; i < mask.cells.length; i++) {
+    remainingFurCells += mask.cells[i];
+  }
+
+  return computeShavedPercentFromCounts(mask.totalFurCells, mask.totalFurCells - remainingFurCells);
 }
 
 // ── Rank assignment ──────────────────────────────────────────────────────────

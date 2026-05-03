@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -17,6 +19,9 @@ type GammaInstanceSpec struct {
 	// TTS provisions News Broadcast speech synthesis infrastructure.
 	// +optional
 	TTS TTSSpec `json:"tts,omitempty"`
+	// AudioOverlay configures infrastructure for the Audio Overlay game.
+	// +optional
+	AudioOverlay AudioOverlaySpec `json:"audioOverlay,omitempty"`
 	// Networking configuration (ingress).
 	// +optional
 	Networking NetworkingSpec `json:"networking,omitempty"`
@@ -62,6 +67,12 @@ type ServerSpec struct {
 	// service API key) that must not be stored in plain text in the CR spec.
 	// +optional
 	SecretEnvVars []SecretEnvVar `json:"secretEnvVars,omitempty"`
+	// Annotations applied to the server Deployment.
+	// Special annotations:
+	//   "gamma.io/colyseus-proxy" — when present, indicates a @colyseus/proxy
+	//   layer is deployed, enabling multi-replica room-aware routing.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // SecretEnvVar describes a single environment variable whose value is sourced
@@ -112,6 +123,10 @@ type RedisSpec struct {
 	// Persistent storage configuration.
 	// +optional
 	Storage RedisStorageSpec `json:"storage,omitempty"`
+	// MaxMemory sets the Redis maxmemory limit (e.g. "256mb", "1gb").
+	// When empty, defaults to "200mb".
+	// +optional
+	MaxMemory string `json:"maxMemory,omitempty"`
 }
 
 // RedisStorageSpec defines Redis persistent storage settings.
@@ -184,6 +199,12 @@ type TTSWorkerSpec struct {
 	// Resource requirements for worker pods.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+	// Port the worker health HTTP server listens on.
+	// +kubebuilder:default=8091
+	// +kubebuilder:validation:Minimum=1024
+	// +kubebuilder:validation:Maximum=65535
+	// +optional
+	HealthPort int32 `json:"healthPort,omitempty"`
 }
 
 // TTSObjectStoreSpec defines the desired state for the S3-compatible object store (SeaweedFS).
@@ -263,6 +284,33 @@ type TTSConfigSpec struct {
 	// +kubebuilder:default=false
 	// +optional
 	RequireCustomVoicePack *bool `json:"requireCustomVoicePack,omitempty"`
+}
+
+// AudioOverlaySpec defines infrastructure options for the Audio Overlay game.
+type AudioOverlaySpec struct {
+	// ObjectStore enables storage of recorded Audio Overlay clips in the shared
+	// SeaweedFS/S3-compatible object store. Browsers still fetch clips through the
+	// Gamma server proxy, never directly from the object store.
+	// +optional
+	ObjectStore AudioOverlayObjectStoreSpec `json:"objectStore,omitempty"`
+}
+
+// AudioOverlayObjectStoreSpec defines how Audio Overlay uses the shared object store.
+type AudioOverlayObjectStoreSpec struct {
+	// Enabled stores Audio Overlay clips in the shared S3-compatible object store
+	// instead of sending base64 payloads during playback whenever the store is
+	// available. When false, Audio Overlay keeps the inline/base64 behavior.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// BucketName is the bucket used for recorded Audio Overlay clips.
+	// +kubebuilder:default="gamma-audio-overlay-clips"
+	// +optional
+	BucketName string `json:"bucketName,omitempty"`
+	// Prefix namespaces Audio Overlay clip objects within the bucket.
+	// +kubebuilder:default="audio-overlay-clips"
+	// +optional
+	Prefix string `json:"prefix,omitempty"`
 }
 
 // NetworkingSpec defines networking settings.
@@ -482,9 +530,22 @@ func (s *RedisStorageSpec) RedisStorageSize() string {
 	return "1Gi"
 }
 
+// MaxMemoryValue returns the Redis maxmemory setting, defaulting to 200mb.
+func (r *RedisSpec) MaxMemoryValue() string {
+	if r.MaxMemory != "" {
+		return r.MaxMemory
+	}
+	return "200mb"
+}
+
 // IsTTSEnabled returns whether the News Broadcast TTS stack is enabled.
 func (t *TTSSpec) IsTTSEnabled() bool {
 	return t.Enabled
+}
+
+// UsesObjectStore returns whether Audio Overlay clip storage is enabled.
+func (s *AudioOverlaySpec) UsesObjectStore() bool {
+	return s.ObjectStore.Enabled
 }
 
 // APIImage returns the TTS API container image.
@@ -525,6 +586,14 @@ func (s *TTSWorkerSpec) WorkerReplicas() int32 {
 		return *s.Replicas
 	}
 	return 1
+}
+
+// WorkerHealthPort returns the worker health server port.
+func (s *TTSWorkerSpec) WorkerHealthPort() int32 {
+	if s.HealthPort != 0 {
+		return s.HealthPort
+	}
+	return 8091
 }
 
 // ObjectStoreImage returns the object store container image.
@@ -629,4 +698,23 @@ func (s *TTSConfigSpec) RequireCustomVoicePackEnabled() bool {
 		return *s.RequireCustomVoicePack
 	}
 	return false
+}
+
+// BucketNameValue returns the object-store bucket used for Audio Overlay clips.
+func (s *AudioOverlayObjectStoreSpec) BucketNameValue() string {
+	if s.BucketName != "" {
+		return s.BucketName
+	}
+	return "gamma-audio-overlay-clips"
+}
+
+// PrefixValue returns the object prefix used for Audio Overlay clips.
+func (s *AudioOverlayObjectStoreSpec) PrefixValue() string {
+	if s.Prefix != "" {
+		trimmed := strings.Trim(s.Prefix, "/")
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return "audio-overlay-clips"
 }

@@ -5,8 +5,8 @@
    * Displays the bracket visualization, live match counts, and results.
    *
    * Server messages listened:
-   *   tap_bracket_init, tap_match_start, tap_go,
-   *   tap_counts, tap_timer, tap_match_timer_start,
+   *   tap_bracket_init, tap_match_start,
+   *   tap_counts, tap_match_timer_start,
    *   tap_match_end, tap_match_result,
    *   tap_bracket_round_advance, tap_tournament_complete, round_skipped
    */
@@ -14,6 +14,8 @@
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
+  import { getTapSpeedTimeRemainingSecs } from "../tapSpeedRealtime";
+  import type { TapSpeedCountsPayload } from "../tapSpeedRealtime";
 
   export let room: Room;
   export let state: RoomState;
@@ -93,7 +95,7 @@
   function startTimer() {
     clearTimer();
     timerInterval = setInterval(() => {
-      timeRemaining = Math.max(0, (matchEndsAt - Date.now()) / 1000);
+      timeRemaining = getTapSpeedTimeRemainingSecs(matchEndsAt);
     }, 50);
   }
 
@@ -144,24 +146,7 @@
     startTimer();
   }
 
-  function onTapCounts(data: {
-    matchId: string;
-    player1Id: string;
-    player1Taps: number;
-    player2Id: string;
-    player2Taps: number;
-  }) {
-    if (data.matchId !== matchId) return;
-    player1Taps = data.player1Taps;
-    player2Taps = data.player2Taps;
-  }
-
-  function onTapTimer(data: {
-    matchId: string;
-    timeRemaining: number;
-    player1Taps: number;
-    player2Taps: number;
-  }) {
+  function onTapCounts(data: TapSpeedCountsPayload) {
     if (data.matchId !== matchId) return;
     player1Taps = data.player1Taps;
     player2Taps = data.player2Taps;
@@ -251,7 +236,6 @@
     room.onMessage("tap_countdown", onCountdown);
     room.onMessage("tap_match_timer_start", onMatchTimerStart);
     room.onMessage("tap_counts", onTapCounts);
-    room.onMessage("tap_timer", onTapTimer);
     room.onMessage("tap_match_end", onMatchEnd);
     room.onMessage("tap_match_result", onMatchResult);
     room.onMessage("tap_bracket_round_advance", onBracketAdvance);
@@ -377,7 +361,10 @@
     <div class="w-full max-w-4xl space-y-6">
       <!-- Timer -->
       <div class="text-center">
-        <p class="text-8xl font-mono font-black {timeRemaining < 3 ? 'text-red-400 animate-pulse' : 'text-white'}">
+        <p
+          class="text-8xl font-mono font-black {timeRemaining < 3 ? 'text-red-400 animate-pulse' : 'text-white'}"
+          data-testid="tap-speed-tv-timer"
+        >
           {timerDisplay}
         </p>
         <div class="w-full h-3 bg-gray-700 rounded-full overflow-hidden mt-4">
@@ -398,11 +385,12 @@
             <div
               class="absolute bottom-0 left-0 right-0 rounded-t-lg transition-all duration-150
                 {p1Leading ? 'bg-gradient-to-t from-cyan-600 to-cyan-400' : 'bg-gradient-to-t from-gray-600 to-gray-500'}"
-              style="height:{(player1Taps / maxTaps) * 100}%"
-            ></div>
+               style="height:{(player1Taps / maxTaps) * 100}%"
+               data-testid="tap-speed-tv-player1-bar"
+             ></div>
             <div class="absolute inset-0 flex items-center justify-center">
-              <span class="text-5xl font-black text-white drop-shadow-lg">{player1Taps}</span>
-            </div>
+               <span class="text-5xl font-black text-white drop-shadow-lg" data-testid="tap-speed-tv-player1-count">{player1Taps}</span>
+             </div>
           </div>
         </div>
 
@@ -418,11 +406,12 @@
             <div
               class="absolute bottom-0 left-0 right-0 rounded-t-lg transition-all duration-150
                 {p2Leading ? 'bg-gradient-to-t from-orange-600 to-orange-400' : 'bg-gradient-to-t from-gray-600 to-gray-500'}"
-              style="height:{(player2Taps / maxTaps) * 100}%"
-            ></div>
+               style="height:{(player2Taps / maxTaps) * 100}%"
+               data-testid="tap-speed-tv-player2-bar"
+             ></div>
             <div class="absolute inset-0 flex items-center justify-center">
-              <span class="text-5xl font-black text-white drop-shadow-lg">{player2Taps}</span>
-            </div>
+               <span class="text-5xl font-black text-white drop-shadow-lg" data-testid="tap-speed-tv-player2-count">{player2Taps}</span>
+             </div>
           </div>
         </div>
       </div>

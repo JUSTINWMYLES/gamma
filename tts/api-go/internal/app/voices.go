@@ -14,6 +14,9 @@ type VoiceRegistry struct {
 	manifestPath string
 	manifestDir  string
 	mu           sync.RWMutex
+	manifestSize int64
+	manifestTime int64
+	rawVoices    []VoicePreset
 	voices       map[string]VoicePreset
 	ordered      []VoicePreset
 }
@@ -30,6 +33,11 @@ func NewVoiceRegistry(manifestPath string) (*VoiceRegistry, error) {
 }
 
 func (r *VoiceRegistry) Refresh() error {
+	manifestInfo, err := os.Stat(r.manifestPath)
+	if err != nil {
+		return fmt.Errorf("stat voice manifest: %w", err)
+	}
+
 	data, err := os.ReadFile(r.manifestPath)
 	if err != nil {
 		return fmt.Errorf("read voice manifest: %w", err)
@@ -40,9 +48,54 @@ func (r *VoiceRegistry) Refresh() error {
 		return fmt.Errorf("decode voice manifest: %w", err)
 	}
 
-	voices := make(map[string]VoicePreset, len(manifest.Voices))
-	ordered := make([]VoicePreset, 0, len(manifest.Voices))
-	for _, voice := range manifest.Voices {
+	r.mu.Lock()
+	r.manifestSize = manifestInfo.Size()
+	r.manifestTime = manifestInfo.ModTime().UnixNano()
+	r.rawVoices = append([]VoicePreset(nil), manifest.Voices...)
+	r.rebuildLocked()
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *VoiceRegistry) RefreshIfChanged() error {
+	manifestInfo, err := os.Stat(r.manifestPath)
+	if err != nil {
+		return fmt.Errorf("stat voice manifest: %w", err)
+	}
+
+	r.mu.RLock()
+	unchanged := len(r.rawVoices) > 0 && manifestInfo.Size() == r.manifestSize && manifestInfo.ModTime().UnixNano() == r.manifestTime
+	r.mu.RUnlock()
+	if !unchanged {
+		data, err := os.ReadFile(r.manifestPath)
+		if err != nil {
+			return fmt.Errorf("read voice manifest: %w", err)
+		}
+
+		var manifest VoiceManifestFile
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return fmt.Errorf("decode voice manifest: %w", err)
+		}
+
+		r.mu.Lock()
+		r.manifestSize = manifestInfo.Size()
+		r.manifestTime = manifestInfo.ModTime().UnixNano()
+		r.rawVoices = append([]VoicePreset(nil), manifest.Voices...)
+		r.rebuildLocked()
+		r.mu.Unlock()
+		return nil
+	}
+
+	r.mu.Lock()
+	r.rebuildLocked()
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *VoiceRegistry) rebuildLocked() {
+	voices := make(map[string]VoicePreset, len(r.rawVoices))
+	ordered := make([]VoicePreset, 0, len(r.rawVoices))
+	for _, voice := range r.rawVoices {
 		resolved := voice
 		switch voice.Source {
 		case "builtin":
@@ -75,11 +128,8 @@ func (r *VoiceRegistry) Refresh() error {
 		return ordered[i].Label < ordered[j].Label
 	})
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.voices = voices
 	r.ordered = ordered
-	return nil
 }
 
 func (r *VoiceRegistry) List() []VoicePreset {

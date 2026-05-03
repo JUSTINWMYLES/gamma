@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createEmptyIconDesign, serializeIconDesign } from "../../client/shared/playerIconDesign";
 import { GammaRoom } from "../src/rooms/GammaRoom";
 
 function createRoomHarness() {
@@ -51,6 +52,83 @@ function createLargeDesignJson(pointCount: number): string {
 }
 
 describe("GammaRoom player icon customization", () => {
+  it("accepts compact v2 icon JSON from the client and stores legacy sanitized JSON", () => {
+    const { player, handlers, client } = createRoomHarness();
+    const customizePlayer = handlers.get("customize_player");
+    const compactDesign = createEmptyIconDesign("#abcdef");
+
+    compactDesign.strokes = [
+      {
+        color: "#112233",
+        size: 8,
+        points: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 },
+        ],
+      },
+    ];
+    compactDesign.stickers = [
+      {
+        emoji: "🔥",
+        x: 12,
+        y: 34,
+        size: 30,
+      },
+    ];
+    compactDesign.text = {
+      value: "NEWS",
+      color: "#445566",
+      size: 24,
+      x: 60,
+      y: 70,
+    };
+
+    expect(customizePlayer).toBeTypeOf("function");
+
+    customizePlayer?.(client, {
+      iconBgColor: "#abcdef",
+      iconDesign: serializeIconDesign(compactDesign),
+    });
+
+    const saved = JSON.parse(player.iconDesign);
+
+    expect(player.iconBgColor).toBe("#abcdef");
+    expect(saved).toMatchObject({
+      version: 1,
+      bgColor: "#abcdef",
+      strokes: [
+        {
+          color: "#112233",
+          size: 8,
+          points: [
+            { x: 10, y: 20 },
+            { x: 30, y: 40 },
+          ],
+        },
+      ],
+      stickers: [
+        {
+          emoji: "🔥",
+          x: 12,
+          y: 34,
+          size: 30,
+        },
+      ],
+      text: {
+        value: "NEWS",
+        color: "#445566",
+        size: 24,
+        x: 60,
+        y: 70,
+      },
+    });
+    expect(saved).not.toHaveProperty("v");
+    expect(saved).not.toHaveProperty("b");
+    expect(saved).not.toHaveProperty("s");
+    expect(saved).not.toHaveProperty("k");
+    expect(saved).not.toHaveProperty("t");
+  });
+
   it("stores large valid icon JSON without truncating it into invalid JSON", () => {
     const { player, handlers, client } = createRoomHarness();
     const customizePlayer = handlers.get("customize_player");

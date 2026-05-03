@@ -81,6 +81,60 @@ func TestVoiceRegistryResolveAvailableAndReadiness(t *testing.T) {
 	}
 }
 
+func TestVoiceRegistryRefreshIfChangedRebuildsAvailabilityWithoutReloadingManifest(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	promptDir := filepath.Join(tempDir, "prompts")
+	if err := os.MkdirAll(promptDir, 0o755); err != nil {
+		t.Fatalf("create prompt directory: %v", err)
+	}
+
+	manifestPath := filepath.Join(tempDir, "manifest.json")
+	manifest := `{
+		"version": 1,
+		"description": "test voices",
+		"voices": [
+			{
+				"id": "pack-ok",
+				"label": "Pack OK",
+				"source": "voice_pack",
+				"packPromptAudio": "prompts/anchor.wav",
+				"placeholder": true
+			}
+		]
+	}`
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	registry, err := NewVoiceRegistry(manifestPath)
+	if err != nil {
+		t.Fatalf("create registry: %v", err)
+	}
+
+	if _, err := registry.ResolveAvailable("pack-ok"); err == nil || err.Error() != "packaged prompt audio not found" {
+		t.Fatalf("expected missing prompt error before file exists, got %v", err)
+	}
+
+	promptPath := filepath.Join(promptDir, "anchor.wav")
+	if err := os.WriteFile(promptPath, []byte("wav"), 0o644); err != nil {
+		t.Fatalf("write prompt file: %v", err)
+	}
+
+	if err := registry.RefreshIfChanged(); err != nil {
+		t.Fatalf("refresh registry after prompt creation: %v", err)
+	}
+
+	availableVoice, err := registry.ResolveAvailable("pack-ok")
+	if err != nil {
+		t.Fatalf("resolve available voice after prompt creation: %v", err)
+	}
+	if !availableVoice.Available {
+		t.Fatal("expected pack-ok to become available after prompt creation")
+	}
+}
+
 func TestNormalizeTTSInputAndBuildArtifactKey(t *testing.T) {
 	t.Parallel()
 

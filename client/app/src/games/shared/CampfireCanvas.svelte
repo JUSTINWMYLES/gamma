@@ -22,6 +22,7 @@
   $: canvasH = height + PAD * 2;
 
   let canvas: HTMLCanvasElement;
+  let ctx: CanvasRenderingContext2D | null = null;
   let animFrame: number;
 
   interface Particle {
@@ -32,6 +33,7 @@
     life: number;
     maxLife: number;
     size: number;
+    wobbleOffset: number;
   }
 
   const particles: Particle[] = [];
@@ -46,6 +48,8 @@
     life: number;
     maxLife: number;
     size: number;
+    wobbleOffset: number;
+    glowGreen: number;
   }
   const embers: Ember[] = [];
   const MAX_EMBERS = 40;
@@ -61,6 +65,7 @@
       life: 0,
       maxLife: 25 + Math.random() * 35,
       size: 5 + Math.random() * 8 * heightScale,
+      wobbleOffset: Math.random() * Math.PI * 2,
     });
   }
 
@@ -73,6 +78,8 @@
       life: 0,
       maxLife: 40 + Math.random() * 40,
       size: 1.5 + Math.random() * 2,
+      wobbleOffset: Math.random() * Math.PI * 2,
+      glowGreen: Math.round(100 + Math.random() * 80),
     });
   }
 
@@ -139,15 +146,13 @@
   }
 
   function render() {
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    if (!canvas || !ctx) return;
 
     const w = width;
     const h = height;
     const cx = w / 2 + PAD;
     const baseY = h * 0.72 + PAD; // where fire sits
-    const t = Date.now() / 1000;
+    const t = performance.now() * 0.001;
 
     // Clamp intensity
     const inten = Math.max(0, Math.min(1, intensity));
@@ -185,17 +190,17 @@
     }
 
     // Update & draw particles
-    for (let i = particles.length - 1; i >= 0; i--) {
+    let nextParticleCount = 0;
+    for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
       p.life++;
-      p.x += p.vx + Math.sin(t * 3 + i) * 0.3;
+      p.x += p.vx + Math.sin(t * 3 + p.wobbleOffset) * 0.3;
       p.y += p.vy;
       p.vy *= 0.97;
       p.vx *= 0.98;
 
       const lifeRatio = p.life / p.maxLife;
       if (lifeRatio >= 1) {
-        particles.splice(i, 1);
         continue;
       }
 
@@ -225,27 +230,33 @@
       ctx.arc(p.x, p.y, Math.max(1, size), 0, Math.PI * 2);
       ctx.fillStyle = `rgba(${Math.max(0, Math.round(r))},${Math.max(0, Math.round(g))},${Math.max(0, Math.round(b))},${alpha * 0.85})`;
       ctx.fill();
+
+      particles[nextParticleCount++] = p;
     }
+    particles.length = nextParticleCount;
 
     // Update & draw embers
-    for (let i = embers.length - 1; i >= 0; i--) {
+    let nextEmberCount = 0;
+    for (let i = 0; i < embers.length; i++) {
       const e = embers[i];
       e.life++;
-      e.x += e.vx + Math.sin(t * 2 + i * 1.7) * 0.2;
+      e.x += e.vx + Math.sin(t * 2 + e.wobbleOffset) * 0.2;
       e.y += e.vy;
 
       const lifeRatio = e.life / e.maxLife;
       if (lifeRatio >= 1) {
-        embers.splice(i, 1);
         continue;
       }
 
       const alpha = (1 - lifeRatio) * 0.9;
       ctx.beginPath();
       ctx.arc(e.x, e.y, e.size * (1 - lifeRatio * 0.3), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,${Math.round(100 + Math.random() * 80)},0,${alpha})`;
+      ctx.fillStyle = `rgba(255,${e.glowGreen},0,${alpha})`;
       ctx.fill();
+
+      embers[nextEmberCount++] = e;
     }
+    embers.length = nextEmberCount;
 
     // Smoke
     drawSmoke(ctx, cx, baseY, t, inten);
@@ -264,11 +275,13 @@
   }
 
   onMount(() => {
+    ctx = canvas.getContext("2d");
     animFrame = requestAnimationFrame(render);
   });
 
   onDestroy(() => {
     if (animFrame) cancelAnimationFrame(animFrame);
+    ctx = null;
     particles.length = 0;
     embers.length = 0;
   });

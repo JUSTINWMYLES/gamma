@@ -17,6 +17,7 @@
   import { onMount, onDestroy, createEventDispatcher } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState } from "../../../../shared/types";
+  import { getServerHttpBaseUrl } from "../../../../shared/colyseusClient";
   import PlayerIcon from "../../components/PlayerIcon.svelte";
 
   export let room: Room;
@@ -25,6 +26,7 @@
   const dispatch = createEventDispatcher<{
     musictrackchange: { trackId: "two_finger_johnny" | null };
   }>();
+  const SERVER_HTTP_BASE_URL = getServerHttpBaseUrl();
 
   // ── Sub-phase state ──────────────────────────────────────────────
 
@@ -130,13 +132,24 @@
 
   // ── Audio playback ──────────────────────────────────────────────
 
-  function playAudio(base64: string) {
+  function buildClipUrl(path: string): string {
+    return `${SERVER_HTTP_BASE_URL}${path}`;
+  }
+
+  function playAudioSource(source: string) {
     stopAudio();
-    const dataUrl = `data:audio/webm;base64,${base64}`;
-    audioEl = new Audio(dataUrl);
+    audioEl = new Audio(source);
     audioEl.play().catch(() => {
       // Autoplay might be blocked
     });
+  }
+
+  function playAudio(base64: string) {
+    playAudioSource(`data:audio/webm;base64,${base64}`);
+  }
+
+  function playAudioClip(path: string) {
+    playAudioSource(buildClipUrl(path));
   }
 
   function stopAudio() {
@@ -242,6 +255,11 @@
   }
 
   function onRecordingSubmitted(_data: { playerId: string }) {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
+    recordingTimeLeft = 0;
     recorderSubmitted = true;
   }
 
@@ -250,7 +268,8 @@
     playerName: string;
     gifUrl: string;
     gifLabel: string;
-    audioBase64: string;
+    audioBase64?: string;
+    audioClipPath?: string;
     audioDurationMs: number;
     introDurationMs: number;
     postDurationMs: number;
@@ -265,7 +284,14 @@
     if (playbackStageTimer) clearTimeout(playbackStageTimer);
     playbackStageTimer = setTimeout(() => {
       playbackIntroOnly = false;
-      playAudio(data.audioBase64);
+      if (data.audioClipPath) {
+        playAudioClip(data.audioClipPath);
+        return;
+      }
+
+      if (data.audioBase64) {
+        playAudio(data.audioBase64);
+      }
     }, data.introDurationMs);
   }
 

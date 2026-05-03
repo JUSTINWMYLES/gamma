@@ -5,3 +5,4 @@ redis>=5.2
 minio>=7.2
 huggingface_hub>=0.27
 soundfile>=0.12
+lameenc>=1.8

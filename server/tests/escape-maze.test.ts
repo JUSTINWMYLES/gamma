@@ -49,6 +49,38 @@ function getBroadcastPayload(room: ReturnType<typeof createRoomStub>, type: stri
   return room.broadcast.mock.calls.find(([messageType]: [string]) => messageType === type)?.[1];
 }
 
+function getBroadcastPayloads(room: ReturnType<typeof createRoomStub>, type: string) {
+  return room.broadcast.mock.calls
+    .filter(([messageType]: [string]) => messageType === type)
+    .map(([, payload]: [string, unknown]) => payload);
+}
+
+function getLastBroadcastPayload(room: ReturnType<typeof createRoomStub>, type: string) {
+  return getBroadcastPayloads(room, type).at(-1);
+}
+
+function countBroadcasts(room: ReturnType<typeof createRoomStub>, type: string) {
+  return getBroadcastPayloads(room, type).length;
+}
+
+function getClient(room: ReturnType<typeof createRoomStub>, sessionId: string) {
+  return room.clients.find((client: { sessionId: string }) => client.sessionId === sessionId);
+}
+
+function getFirstWalkableMove(game: any) {
+  const path = game._findMazePath(game.startPos, game.exitPos) as Array<{ x: number; y: number }>;
+  const next = path[1];
+
+  if (!next) {
+    throw new Error("Expected generated maze path to have a next step");
+  }
+
+  if (next.x > game.startPos.x) return { direction: "right", x: next.x, y: next.y };
+  if (next.x < game.startPos.x) return { direction: "left", x: next.x, y: next.y };
+  if (next.y > game.startPos.y) return { direction: "down", x: next.x, y: next.y };
+  return { direction: "up", x: next.x, y: next.y };
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -128,5 +160,135 @@ describe("EscapeMazeGame round lifecycle", () => {
 
     expect(teamsA).toBeDefined();
     expect(teamsA).toEqual(teamsB);
+  });
+});
+
+describe("EscapeMazeGame position sync", () => {
+  it("does not rebroadcast unchanged maze_positions on every 200ms idle sync tick", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T00:00:00.000Z"));
+
+    const room = createRoomStub(["p1"]);
+    const game = new EscapeMazeGame(room) as any;
+    game.mazeSeed = 4_242;
+
+    const roundPromise = game.runRound(1);
+    await Promise.resolve();
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(800);
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(1);
+
+    game._endRound();
+    await roundPromise;
+  });
+
+  it("rebroadcasts unchanged maze_positions on the heartbeat", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T00:00:00.000Z"));
+
+    const room = createRoomStub(["p1"]);
+    const game = new EscapeMazeGame(room) as any;
+    game.mazeSeed = 4_242;
+
+    const roundPromise = game.runRound(1);
+    await Promise.resolve();
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(2);
+
+    game._endRound();
+    await roundPromise;
+  });
+
+  it("broadcasts updated positions on the next sync tick after a successful move", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T00:00:00.000Z"));
+
+    const room = createRoomStub(["p1"]);
+    const game = new EscapeMazeGame(room) as any;
+    game.mazeSeed = 4_242;
+
+    const roundPromise = game.runRound(1);
+    await Promise.resolve();
+
+    const client = getClient(room, "p1");
+    const nextMove = getFirstWalkableMove(game);
+
+    game.handleInput(client, {
+      action: "move",
+      direction: nextMove.direction,
+    });
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(2);
+    expect(getLastBroadcastPayload(room, "maze_positions")).toEqual({
+      positions: [expect.objectContaining({
+        id: "p1",
+        x: nextMove.x,
+        y: nextMove.y,
+        escaped: false,
+      })],
+    });
+
+    game._endRound();
+    await roundPromise;
+  });
+
+  it("forces a final maze_positions broadcast with escaped state before teardown", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T00:00:00.000Z"));
+
+    const room = createRoomStub(["p1"]);
+    const game = new EscapeMazeGame(room) as any;
+    game.mazeSeed = 4_242;
+
+    const roundPromise = game.runRound(1);
+    await Promise.resolve();
+
+    game._playerEscaped("p1");
+    await roundPromise;
+
+    expect(countBroadcasts(room, "maze_positions")).toBe(2);
+    expect(getLastBroadcastPayload(room, "maze_positions")).toEqual({
+      positions: [expect.objectContaining({
+        id: "p1",
+        escaped: true,
+      })],
+    });
+  });
+
+  it("forces a final maze_team_positions broadcast with escaped state before teardown", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-28T00:00:00.000Z"));
+
+    const room = createRoomStub(["p1", "p2", "p3", "p4"], "team");
+    const game = new EscapeMazeGame(room) as any;
+    game.gameMode = "team";
+    game.mazeSeed = 4_242;
+
+    const roundPromise = game.runRound(1);
+    await Promise.resolve();
+
+    expect(countBroadcasts(room, "maze_team_positions")).toBe(1);
+
+    game._teamEscaped(game.teams[0]);
+    await roundPromise;
+
+    expect(countBroadcasts(room, "maze_team_positions")).toBe(2);
+    expect(getLastBroadcastPayload(room, "maze_team_positions")).toEqual({
+      teams: [expect.objectContaining({
+        teamId: 0,
+        escaped: true,
+      })],
+    });
   });
 });

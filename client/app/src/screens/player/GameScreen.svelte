@@ -1,33 +1,16 @@
 <script lang="ts">
   /**
    * Phone in-game screen — routes to the correct game component
-   * based on state.selectedGame.
+   * based on state.selectedGame via the player game registry (M2).
    *
-   * Currently supported:
-   *   • registry-14-dont-get-caught  → inline joystick/tilt UI
-   *   • registry-19-shave-the-yak    → ShaveYak component
+   * Games without a dedicated component fall through to the default
+   * Don't Get Caught joystick/tilt UI.
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
   import { isMotionPermissionGrantedThisSession } from "../../lib/permissions";
-  import ShaveYak from "../../games/player/ShaveYak.svelte";
-  import OddOneOut from "../../games/player/OddOneOut.svelte";
-  import AudioOverlay from "../../games/player/AudioOverlay.svelte";
-  import LowballMarketplace from "../../games/player/LowballMarketplace.svelte";
-  import FireMatchBlowShake from "../../games/player/FireMatchBlowShake.svelte";
-  import HotPotato from "../../games/player/HotPotato.svelte";
-  import TapSpeed from "../../games/player/TapSpeed.svelte";
-  import SoundReplication from "../../games/player/SoundReplication.svelte";
-  import EscapeMaze from "../../games/player/EscapeMaze.svelte";
-  import PaintMatch from "../../games/player/PaintMatch.svelte";
-  import GridTapColors from "../../games/player/GridTapColors.svelte";
-  import WordBuild from "../../games/player/WordBuild.svelte";
-  import TierRanking from "../../games/player/TierRanking.svelte";
-  import MedicalStory from "../../games/player/MedicalStory.svelte";
-  import WantedAd from "../../games/player/WantedAd.svelte";
-  import WesternStandoff from "../../games/player/WesternStandoff.svelte";
-  import NewsBroadcast from "../../games/player/NewsBroadcast.svelte";
+  import { getPlayerGameComponent, hasPlayerGameComponent } from "../../games/player/registry";
 
   export let room: Room;
   export let state: RoomState;
@@ -41,28 +24,13 @@
   $: permissionPlayer = me as PermissionAwarePlayer | undefined;
   $: tiltAllowed = permissionPlayer?.motionPermission === "granted";
 
-  // ── Game routing ──────────────────────────────────────────────────
-  $: isShaveYak = state.selectedGame === "registry-19-shave-the-yak";
-  $: isOddOneOut = state.selectedGame === "registry-20-odd-one-out";
-  $: isAudioOverlay = state.selectedGame === "registry-26-audio-overlay";
-  $: isLowball = state.selectedGame === "registry-25-lowball-marketplace";
-  $: isFireMatch = state.selectedGame === "registry-17-fire-match-blow-shake";
-  $: isHotPotato = state.selectedGame === "registry-07-hot-potato";
-  $: isTapSpeed = state.selectedGame === "registry-03-tap-speed";
-  $: isSoundReplication = state.selectedGame === "registry-06-sound-replication";
-  $: isEscapeMaze = state.selectedGame === "registry-04-escape-maze";
-  $: isPaintMatch = state.selectedGame === "registry-40-paint-match";
-  $: isGridTapColors = state.selectedGame === "registry-10-grid-tap-colors";
-  $: isWordBuild = state.selectedGame === "registry-27-word-build";
-  $: isWantedAd = state.selectedGame === "registry-28-wanted-ad";
-  $: isTierRanking = state.selectedGame === "registry-11-tier-ranking";
-  $: isMedicalStory = state.selectedGame === "registry-43-medical-story";
-  $: isWesternStandoff = state.selectedGame === "registry-44-western-standoff";
-  $: isNewsBroadcast = state.selectedGame === "registry-45-news-broadcast";
+  // ── Game routing via registry ─────────────────────────────────────
+  $: GameComponent = getPlayerGameComponent(state.selectedGame);
+  $: hasComponent = hasPlayerGameComponent(state.selectedGame);
 
   // ═══════════════════════════════════════════════════════════════════
   // Everything below is the original registry-14 joystick/tilt UI.
-  // Only mounted when isShaveYak is false.
+  // Only mounted when hasComponent is false.
   // ═══════════════════════════════════════════════════════════════════
 
   // Control mode — persisted in localStorage per device
@@ -148,14 +116,9 @@
   let tiltEnabled = false;
   let tiltDx = 0;
   let tiltDy = 0;
-  /** True when iOS requires a tap to grant DeviceOrientation permission. */
   let tiltNeedsPermission = false;
   let tiltError = "";
 
-  /**
-   * Check whether tilt requires an explicit user-gesture permission request
-   * (iOS 13+). On Android/desktop, permission is implicit.
-   */
   function startTilt() {
     if (!tiltAllowed) {
       tiltError = "Enable motion in the lobby before using tilt controls.";
@@ -198,7 +161,7 @@
   let sendInterval: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
-    if (isShaveYak || isOddOneOut || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory || isWesternStandoff || isNewsBroadcast) return; // These games handle their own listeners
+    if (hasComponent) return;
 
     document.addEventListener("touchmove", onGlobalTouchMove, { passive: true });
     document.addEventListener("mousemove", onGlobalMouseMove);
@@ -247,71 +210,16 @@
     document.removeEventListener("mouseup", onGlobalRelease);
   });
 
-  // Time remaining
-  let timeLeft = 0;
-  let timerInterval: ReturnType<typeof setInterval>;
-  onMount(() => {
-    timerInterval = setInterval(() => {
-      const elapsed = (Date.now() - state.phaseStartedAt) / 1000;
-      timeLeft = Math.max(0, state.roundDurationSecs - elapsed);
-    }, 200);
-    return () => clearInterval(timerInterval);
-  });
-
+  // Time remaining — only needed for the default (Don't Get Caught) fallback UI.
+  $: isDefaultGame = !hasComponent;
+  $: timeLeft = isDefaultGame
+    ? Math.max(0, state.roundDurationSecs - (Date.now() - state.phaseStartedAt) / 1000)
+    : 0;
   $: isLastRound = state.currentRound >= state.gameConfig.roundCount;
 </script>
 
-{#if isMedicalStory}
-  <!-- ── Registry-43: Medical Story ──────────────────────────────── -->
-  <MedicalStory {room} {state} {me} />
-{:else if isNewsBroadcast}
-  <!-- ── Registry-45: News Broadcast ─────────────────────────────── -->
-  <NewsBroadcast {room} {state} {me} />
-{:else if isWesternStandoff}
-  <!-- ── Registry-44: Western Standoff ───────────────────────────── -->
-  <WesternStandoff {room} {state} {me} />
-{:else if isWantedAd}
-  <!-- ── Registry-28: Wanted Ad ─────────────────────────────────── -->
-  <WantedAd {room} {state} {me} />
-{:else if isWordBuild}
-  <!-- ── Registry-27: Word Build ─────────────────────────────────── -->
-  <WordBuild {room} {state} {me} />
-{:else if isTierRanking}
-  <!-- ── Registry-11: S-Tier Ranking ───────────────────────────────── -->
-  <TierRanking {room} {state} {me} />
-{:else if isGridTapColors}
-  <!-- ── Registry-10: Grid Tap Colors ────────────────────────────── -->
-  <GridTapColors {room} {state} {me} />
-{:else if isPaintMatch}
-  <!-- ── Registry-40: Paint Match ────────────────────────────────── -->
-  <PaintMatch {room} {state} {me} />
-{:else if isTapSpeed}
-  <!-- ── Registry-03: Tap Speed ──────────────────────────────────── -->
-  <TapSpeed {room} {state} {me} />
-{:else if isSoundReplication}
-  <!-- ── Registry-06: Sound Replication ──────────────────────────── -->
-  <SoundReplication {room} {state} {me} />
-{:else if isEscapeMaze}
-  <!-- ── Registry-04: Escape Maze ────────────────────────────────── -->
-  <EscapeMaze {room} {state} {me} />
-{:else if isOddOneOut}
-  <!-- ── Registry-20: Odd One Out ──────────────────────────────────── -->
-  <OddOneOut {room} {state} {me} />
-{:else if isAudioOverlay}
-  <!-- ── Registry-26: Audio Overlay ──────────────────────────────── -->
-  <AudioOverlay {room} {state} {me} />
-{:else if isLowball}
-  <!-- ── Registry-25: Lowball Marketplace ─────────────────────────── -->
-  <LowballMarketplace {room} {state} {me} />
-{:else if isFireMatch}
-  <!-- ── Registry-17: Fire Match Blow Shake ─────────────────────── -->
-  <FireMatchBlowShake {room} {state} {me} />
-{:else if isHotPotato}
-  <!-- ── Registry-07: Hot Potato ─────────────────────────────────── -->
-  <HotPotato {room} {state} {me} />
-{:else if isShaveYak}
-  <!-- ── Registry-19: Shave The Yak ──────────────────────────────── -->
-  <ShaveYak {room} {state} {me} />
+{#if GameComponent && !isDefaultGame}
+  <svelte:component this={GameComponent} {room} {state} {me} />
 {:else}
   <!-- ── Registry-14: Don't Get Caught (default) ─────────────────── -->
   <div class="flex-1 flex flex-col select-none" data-testid="phone-game">

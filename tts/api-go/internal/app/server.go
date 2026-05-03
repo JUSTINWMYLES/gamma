@@ -110,7 +110,7 @@ func (s *Server) handleHealthz(c *gin.Context) {
 }
 
 func (s *Server) handleReadyz(c *gin.Context) {
-	if err := s.voices.Refresh(); err != nil {
+	if err := s.voices.RefreshIfChanged(); err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"ready": false, "error": err.Error()})
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) handleReadyz(c *gin.Context) {
 }
 
 func (s *Server) handleListVoices(c *gin.Context) {
-	if err := s.voices.Refresh(); err != nil {
+	if err := s.voices.RefreshIfChanged(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -156,7 +156,7 @@ func (s *Server) handleListVoices(c *gin.Context) {
 }
 
 func (s *Server) handleCreateJob(c *gin.Context) {
-	if err := s.voices.Refresh(); err != nil {
+	if err := s.voices.RefreshIfChanged(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -275,7 +275,7 @@ func (s *Server) handleGetArtifact(c *gin.Context) {
 	defer object.Close()
 	c.Header("Content-Type", firstNonEmpty(info.ContentType, job.MimeType, "audio/mpeg"))
 	c.Header("Content-Length", fmt.Sprintf("%d", info.Size))
-	c.Header("Cache-Control", "private, max-age=30")
+	c.Header("Cache-Control", "private, max-age=7200, immutable")
 	c.Status(http.StatusOK)
 	_, _ = io.Copy(c.Writer, object)
 }

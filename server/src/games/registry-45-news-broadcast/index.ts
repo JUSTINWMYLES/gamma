@@ -13,7 +13,9 @@ import {
   type BroadcastSubmission,
   type HeadlineSubmission,
   type NormalizedMediaEntry,
+  type TTSJobPriority,
   type VoiceOption,
+  estimateSpeechMsFromNormalizedText,
   haveAllExpectedPlayersResponded,
   HEADLINE_SUBMISSION_DURATION_MS,
   MIN_PLAYERS,
@@ -34,7 +36,6 @@ import {
   VOTING_DURATION_MS,
   RESULTS_DISPLAY_MS,
   ASSIGNMENT_REVEAL_DURATION_MS,
-  estimateSpeechMs,
   pickFallbackHeadline,
   isAllowedMediaSelection,
   MAX_SPOKEN_DURATION_MS,
@@ -103,6 +104,10 @@ interface NewsBroadcastInput {
   logoDesign?: string;
 }
 
+const INITIAL_TTS_READY_POLL_MS = 500;
+const PRESENTATION_TTS_READY_POLL_MS = 500;
+const TERMINAL_TTS_STATUSES = new Set<string>(["ready", "failed_final", "expired", "unavailable"]);
+
 export default class NewsBroadcastGame extends BaseGame {
   static override requiresTV = true;
   static override supportsBracket = false;
@@ -137,6 +142,7 @@ export default class NewsBroadcastGame extends BaseGame {
     const roundSeed = Date.now();
     const voices = await this._resolveVoices();
     const roundId = `round-${round}`;
+    const playerIds = players.map((player) => player.id);
 
     this.session = {
       seed: roundSeed,
@@ -156,12 +162,10 @@ export default class NewsBroadcastGame extends BaseGame {
       submittedPlayers: new Set(),
       votedPlayers: new Set(),
       votes: new Map(),
-      presentationOrder: [],
+      presentationOrder: createPresentationOrder(playerIds, roundSeed + 2),
       currentPresentationIndex: -1,
       cleanupRequested: false,
     };
-
-    const playerIds = players.map((player) => player.id);
 
     this.broadcast("headline_submission_start", {
       durationMs: HEADLINE_SUBMISSION_DURATION_MS,
@@ -217,7 +221,6 @@ export default class NewsBroadcastGame extends BaseGame {
     await this._finalizeBroadcastSubmissions(players);
     if (this.isCancelled() || !this.session) return;
 
-    this.session.presentationOrder = createPresentationOrder([...this.session.broadcastSubmissions.keys()], this.session.seed + 2);
     this.session.stage = "buffering";
     await this._refreshAllTTSStatuses();
     await this._promoteUpcomingJobs(0);
@@ -554,44 +557,19 @@ export default class NewsBroadcastGame extends BaseGame {
     const player = this.room.state.players.get(sessionId);
     if (!player) return;
 
-    const spokenText = normalizeSpokenText(script);
-    const submission: BroadcastSubmission = {
+    const submission = this._buildScriptVoiceSubmission({
       playerId: sessionId,
       playerName: player.name,
       assignedHeadline,
       script,
-      spokenText,
       voicePresetId: resolvedVoice.id,
       voiceLabel: resolvedVoice.label,
       selectedMedia: draft?.media ?? FALLBACK_MEDIA_ENTRY,
       logoDesign: draft?.logoDesign ?? "",
-      estimatedSpeechMs: estimateSpeechMs(spokenText),
-      submittedAt: Date.now(),
-      ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
-    };
+    });
 
     this.session.broadcastSubmissions.set(sessionId, submission);
-
-    if (isTTSEnabled()) {
-      const job = await createTTSJob({
-        roomId: this.room.roomId,
-        roundId: this.session.roundId,
-        playerId: submission.playerId,
-        locale: "en",
-        voicePresetId: submission.voicePresetId,
-        text: normalizeSpokenText(submission.spokenText),
-        priority: "background",
-        estimatedSpeechMs: submission.estimatedSpeechMs,
-      });
-      if (job) {
-        submission.ttsJobId = job.id;
-        submission.ttsStatus = job.status;
-        submission.audioDurationMs = job.durationMs;
-        submission.audioMimeType = job.mimeType;
-      } else {
-        submission.ttsStatus = "failed_final";
-      }
-    }
+    await this._createTTSJobForSubmission(submission);
 
     this.send(sessionId, "script_voice_confirmed", {
       accepted: true,
@@ -678,6 +656,7 @@ export default class NewsBroadcastGame extends BaseGame {
 
   private async _finalizeScriptVoiceSubmissions(players: ReturnType<NewsBroadcastGame["_activePlayers"]>): Promise<void> {
     if (!this.session) return;
+    const pendingJobCreations: Promise<void>[] = [];
     for (const player of players) {
       if (this.session.scriptVoiceSubmitted.has(player.id)) continue;
       const draft = this.session.broadcastDrafts.get(player.id);
@@ -697,45 +676,24 @@ export default class NewsBroadcastGame extends BaseGame {
 
       // Create partial submission with fallback script
       const assignedHeadline = this.session.assignedHeadlines.get(player.id) ?? "Breaking update incoming.";
-      const spokenText = normalizeSpokenText(script);
-      const submission: BroadcastSubmission = {
+      const submission = this._buildScriptVoiceSubmission({
         playerId: player.id,
         playerName: player.name,
         assignedHeadline,
         script,
-        spokenText,
         voicePresetId: resolvedVoice.id,
         voiceLabel: resolvedVoice.label,
         selectedMedia: draft?.media ?? FALLBACK_MEDIA_ENTRY,
         logoDesign: draft?.logoDesign ?? "",
-        estimatedSpeechMs: estimateSpeechMs(spokenText),
-        submittedAt: Date.now(),
-        ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
-      };
+      });
 
       this.session.broadcastSubmissions.set(player.id, submission);
 
-      if (isTTSEnabled()) {
-        const job = await createTTSJob({
-          roomId: this.room.roomId,
-          roundId: this.session.roundId,
-          playerId: submission.playerId,
-          locale: "en",
-          voicePresetId: submission.voicePresetId,
-          text: normalizeSpokenText(submission.spokenText),
-          priority: "background",
-          estimatedSpeechMs: submission.estimatedSpeechMs,
-        });
-        if (job) {
-          submission.ttsJobId = job.id;
-          submission.ttsStatus = job.status;
-          submission.audioDurationMs = job.durationMs;
-          submission.audioMimeType = job.mimeType;
-        } else {
-          submission.ttsStatus = "failed_final";
-        }
-      }
+      pendingJobCreations.push(this._createTTSJobForSubmission(submission));
     }
+
+    if (pendingJobCreations.length === 0) return;
+    await Promise.allSettled(pendingJobCreations);
   }
 
   private async _finalizeBroadcastSubmissions(players: ReturnType<NewsBroadcastGame["_activePlayers"]>): Promise<void> {
@@ -819,7 +777,7 @@ export default class NewsBroadcastGame extends BaseGame {
       voiceLabel: resolvedVoice.label,
       selectedMedia: media,
       logoDesign,
-      estimatedSpeechMs: estimateSpeechMs(spokenText),
+      estimatedSpeechMs: estimateSpeechMsFromNormalizedText(spokenText),
       submittedAt: Date.now(),
       ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
     };
@@ -830,26 +788,7 @@ export default class NewsBroadcastGame extends BaseGame {
     this.session.broadcastSubmissions.set(sessionId, submission);
     this.session.submittedPlayers.add(sessionId);
 
-    if (isTTSEnabled()) {
-      const job = await createTTSJob({
-        roomId: this.room.roomId,
-        roundId: this.session.roundId,
-        playerId: submission.playerId,
-        locale: "en",
-        voicePresetId: submission.voicePresetId,
-        text: normalizeSpokenText(submission.spokenText),
-        priority: "background",
-        estimatedSpeechMs: submission.estimatedSpeechMs,
-      });
-      if (job) {
-        submission.ttsJobId = job.id;
-        submission.ttsStatus = job.status;
-        submission.audioDurationMs = job.durationMs;
-        submission.audioMimeType = job.mimeType;
-      } else {
-        submission.ttsStatus = "failed_final";
-      }
-    }
+    await this._createTTSJobForSubmission(submission);
 
     this.send(sessionId, "broadcast_submission_confirmed", {
       accepted: true,
@@ -873,15 +812,80 @@ export default class NewsBroadcastGame extends BaseGame {
       ?? FALLBACK_VOICE_OPTIONS[0];
   }
 
+  private _priorityForPresentationPlayer(playerId: string): "blocker" | "next" | "background" {
+    if (!this.session) return "background";
+    const presentationIndex = this.session.presentationOrder.indexOf(playerId);
+    if (presentationIndex === 0) return "blocker";
+    if (presentationIndex === 1) return "next";
+    return "background";
+  }
+
+  private _buildScriptVoiceSubmission(params: {
+    playerId: string;
+    playerName: string;
+    assignedHeadline: string;
+    script: string;
+    voicePresetId: string;
+    voiceLabel: string;
+    selectedMedia: NormalizedMediaEntry;
+    logoDesign: string;
+  }): BroadcastSubmission {
+    const spokenText = normalizeSpokenText(params.script);
+    return {
+      ...params,
+      spokenText,
+      estimatedSpeechMs: estimateSpeechMsFromNormalizedText(spokenText),
+      submittedAt: Date.now(),
+      ttsStatus: isTTSEnabled() ? "queued" : "unavailable",
+    };
+  }
+
+  private _isTerminalTTSStatus(status: string | undefined): boolean {
+    return status ? TERMINAL_TTS_STATUSES.has(status) : false;
+  }
+
+  private async _createTTSJobForSubmission(submission: BroadcastSubmission): Promise<void> {
+    if (!isTTSEnabled() || !this.session) {
+      submission.ttsPriority = undefined;
+      return;
+    }
+
+    const priority = this._priorityForPresentationPlayer(submission.playerId);
+    submission.ttsPriority = priority;
+
+    const job = await createTTSJob({
+      roomId: this.room.roomId,
+      roundId: this.session.roundId,
+      playerId: submission.playerId,
+      locale: "en",
+      voicePresetId: submission.voicePresetId,
+      text: submission.spokenText,
+      priority,
+      estimatedSpeechMs: submission.estimatedSpeechMs,
+    });
+
+    if (job) {
+      submission.ttsJobId = job.id;
+      submission.ttsStatus = job.status;
+      submission.audioDurationMs = job.durationMs;
+      submission.audioMimeType = job.mimeType;
+      return;
+    }
+
+    submission.ttsStatus = "failed_final";
+  }
+
   private async _refreshAllTTSStatuses(): Promise<void> {
     if (!this.session) return;
-    for (const submission of this.session.broadcastSubmissions.values()) {
-      await this._refreshEntryTTSStatus(submission);
-    }
+    const pendingSubmissions = [...this.session.broadcastSubmissions.values()]
+      .filter((submission) => submission.ttsJobId && !this._isTerminalTTSStatus(submission.ttsStatus));
+    if (pendingSubmissions.length === 0) return;
+
+    await Promise.allSettled(pendingSubmissions.map((submission) => this._refreshEntryTTSStatus(submission)));
   }
 
   private async _refreshEntryTTSStatus(submission: BroadcastSubmission): Promise<void> {
-    if (!submission.ttsJobId) return;
+    if (!submission.ttsJobId || this._isTerminalTTSStatus(submission.ttsStatus)) return;
     const status = await getTTSJob(submission.ttsJobId);
     if (!status) return;
     submission.ttsStatus = status.status;
@@ -891,21 +895,29 @@ export default class NewsBroadcastGame extends BaseGame {
 
   private async _promoteUpcomingJobs(startIndex: number): Promise<void> {
     if (!this.session) return;
-    const queueTargets: Array<{ index: number; priority: "blocker" | "next" | "background" }> = [];
-    for (let index = startIndex; index < this.session.presentationOrder.length; index++) {
-      const priority = index === startIndex
-        ? "blocker"
-        : index === startIndex + 1
-        ? "next"
-        : "background";
-      queueTargets.push({ index, priority });
-    }
-    for (const target of queueTargets) {
-      const playerId = this.session.presentationOrder[target.index];
+
+    const queueTargets: Array<{ submission: BroadcastSubmission; priority: TTSJobPriority }> = [];
+    const upcomingPriorities: readonly TTSJobPriority[] = ["blocker", "next"];
+    for (const [offset, priority] of upcomingPriorities.entries()) {
+      const playerId = this.session.presentationOrder[startIndex + offset];
+      if (!playerId) continue;
+
       const submission = this.session.broadcastSubmissions.get(playerId);
-      if (!submission?.ttsJobId) continue;
-      await updateTTSJobPriority(submission.ttsJobId, target.priority);
+      if (!submission?.ttsJobId || this._isTerminalTTSStatus(submission.ttsStatus) || submission.ttsPriority === priority) {
+        continue;
+      }
+
+      queueTargets.push({ submission, priority });
     }
+
+    if (queueTargets.length === 0) return;
+
+    await Promise.allSettled(
+      queueTargets.map(async ({ submission, priority }) => {
+        const updated = await updateTTSJobPriority(submission.ttsJobId!, priority);
+        if (updated) submission.ttsPriority = priority;
+      }),
+    );
   }
 
   private _submittedEntryCountWithJobs(): number {
@@ -920,19 +932,24 @@ export default class NewsBroadcastGame extends BaseGame {
     const deadline = Date.now() + BUFFERING_MAX_WAIT_MS;
     while (!this.isCancelled() && Date.now() < deadline) {
       await this._refreshAllTTSStatuses();
-      const readyCount = [...this.session.broadcastSubmissions.values()].filter((entry) => entry.ttsStatus === "ready").length;
+      const entriesWithJobs = [...this.session.broadcastSubmissions.values()].filter((entry) => !!entry.ttsJobId);
+      const readyCount = entriesWithJobs.filter((entry) => entry.ttsStatus === "ready").length;
       if (readyCount >= targetReadyCount) return;
-      await this.delay(1_000);
+
+      const pendingCount = entriesWithJobs.filter((entry) => !this._isTerminalTTSStatus(entry.ttsStatus)).length;
+      if (readyCount + pendingCount < targetReadyCount) return;
+
+      await this.delay(INITIAL_TTS_READY_POLL_MS);
     }
   }
 
   private async _waitForPresentationReady(entry: BroadcastSubmission): Promise<void> {
-    if (!entry.ttsJobId || entry.ttsStatus === "ready") return;
+    if (!entry.ttsJobId || this._isTerminalTTSStatus(entry.ttsStatus)) return;
     const deadline = Date.now() + PRESENTATION_EXTRA_WAIT_MS;
     while (!this.isCancelled() && Date.now() < deadline) {
       await this._refreshEntryTTSStatus(entry);
-      if (entry.ttsStatus === "ready" || entry.ttsStatus === "failed_final") return;
-      await this.delay(750);
+      if (this._isTerminalTTSStatus(entry.ttsStatus)) return;
+      await this.delay(PRESENTATION_TTS_READY_POLL_MS);
     }
   }
 

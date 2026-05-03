@@ -50,8 +50,11 @@ const MAX_MATCH_DURATION_MS = 20_000;
 /** Minimum interval between accepted taps from one player (ms). */
 const TAP_DEBOUNCE_MS = 50;
 
-/** How often to broadcast timer updates during a match (ms). */
-const TIMER_TICK_MS = 250;
+/** How often to check match state during a live duel (ms). */
+const MATCH_MONITOR_TICK_MS = 250;
+
+/** Maximum cadence for broadcasting live tap counts (ms). */
+const LIVE_COUNT_BROADCAST_INTERVAL_MS = 100;
 
 /** Delay between matches within the same bracket round (ms). */
 const INTER_MATCH_DELAY_MS = 3_000;
@@ -123,8 +126,14 @@ export default class TapSpeedGame extends BaseGame {
   /** Current active match state (null when no match is in progress). */
   private currentMatch: MatchState | null = null;
 
-  /** Timer interval for broadcasting countdown ticks. */
-  private timerInterval: ReturnType<typeof setInterval> | null = null;
+  /** Interval for disconnect / timeout checks during a live match. */
+  private matchMonitorInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Interval for coalesced live tap-count broadcasts. */
+  private liveCountInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** Whether the latest tap counts still need broadcasting. */
+  private liveCountsDirty = false;
 
   /** Resolve function for the current match promise. */
   private matchResolve: (() => void) | null = null;
@@ -390,19 +399,15 @@ export default class TapSpeedGame extends BaseGame {
       tapCount: sessionId === cm.player1Id ? cm.player1Taps : cm.player2Taps,
     });
 
-    // Broadcast live tap counts to all clients (for TV display)
-    this.broadcast("tap_counts", {
-      matchId: cm.matchId,
-      player1Id: cm.player1Id,
-      player1Taps: cm.player1Taps,
-      player2Id: cm.player2Id,
-      player2Taps: cm.player2Taps,
-    });
+    // Coalesce live tap-count updates — the tapping player already has an
+    // immediate private confirmation, so everyone else only needs a short,
+    // human-visible live cadence rather than a broadcast on every tap.
+    this.liveCountsDirty = true;
   }
 
   override teardown(): void {
     super.teardown();
-    this._clearTimerInterval();
+    this._clearMatchIntervals();
     for (const t of this._extraTimers) clearTimeout(t);
     this._extraTimers = [];
     this.currentMatch = null;
@@ -429,6 +434,7 @@ export default class TapSpeedGame extends BaseGame {
     }
 
     this._replaceBracketPlayerId(oldId, newId);
+    this._syncCurrentMatchToPlayer(newId);
   }
 
   // ── Match runner ──────────────────────────────────────────────────────────
@@ -448,6 +454,7 @@ export default class TapSpeedGame extends BaseGame {
       Math.floor(Math.random() * (MAX_MATCH_DURATION_MS - MIN_MATCH_DURATION_MS + 1));
 
     const now = Date.now();
+    const endsAt = now + durationMs;
     this.currentMatch = {
       matchId,
       player1Id,
@@ -467,18 +474,25 @@ export default class TapSpeedGame extends BaseGame {
     this.room.state.roundDurationSecs = Math.ceil(durationMs / 1000);
 
     // Notify both players that tapping begins
-    this.send(player1Id, "tap_go", { durationMs });
-    this.send(player2Id, "tap_go", { durationMs });
+    this.send(player1Id, "tap_go", { durationMs, endsAt });
+    this.send(player2Id, "tap_go", { durationMs, endsAt });
 
     // Broadcast match timer info to all (for TV)
     this.broadcast("tap_match_timer_start", {
       matchId,
       durationMs,
-      endsAt: now + durationMs,
+      endsAt,
     });
 
-    // Start timer tick broadcast
-    this.timerInterval = setInterval(() => this._matchTimerTick(), TIMER_TICK_MS);
+    // Use one light-weight monitor for disconnect / timeout checks and one
+    // coalesced score broadcaster so we keep live visibility without sending
+    // a room-wide websocket message on every accepted tap.
+    this.liveCountsDirty = false;
+    this.matchMonitorInterval = setInterval(() => this._matchTimerTick(), MATCH_MONITOR_TICK_MS);
+    this.liveCountInterval = setInterval(
+      () => this._flushLiveCountBroadcast(),
+      LIVE_COUNT_BROADCAST_INTERVAL_MS,
+    );
 
     // Wait for match to end (timer or disconnect)
     await new Promise<void>((resolve) => {
@@ -492,20 +506,10 @@ export default class TapSpeedGame extends BaseGame {
     });
   }
 
-  /** Periodic timer tick — broadcasts remaining time and checks for disconnects. */
+  /** Periodic monitor tick — checks for disconnect forfeits and time expiry. */
   private _matchTimerTick(): void {
     const cm = this.currentMatch;
     if (!cm || cm.ended) return;
-
-    const elapsed = Date.now() - cm.startedAt;
-    const remaining = Math.max(0, cm.durationMs - elapsed);
-
-    this.broadcast("tap_timer", {
-      matchId: cm.matchId,
-      timeRemaining: remaining,
-      player1Taps: cm.player1Taps,
-      player2Taps: cm.player2Taps,
-    });
 
     // Check for disconnected player — auto-win for opponent
     const p1 = this.room.state.players.get(cm.player1Id);
@@ -534,6 +538,10 @@ export default class TapSpeedGame extends BaseGame {
       this._endMatch();
       return;
     }
+
+    if (Date.now() >= cm.startedAt + cm.durationMs) {
+      this._endMatch();
+    }
   }
 
   /** End the current match and resolve the promise. */
@@ -542,16 +550,10 @@ export default class TapSpeedGame extends BaseGame {
     if (!cm || cm.ended) return;
 
     cm.ended = true;
-    this._clearTimerInterval();
+    this._clearMatchIntervals();
 
     // Broadcast final state
-    this.broadcast("tap_match_end", {
-      matchId: cm.matchId,
-      player1Id: cm.player1Id,
-      player1Taps: cm.player1Taps,
-      player2Id: cm.player2Id,
-      player2Taps: cm.player2Taps,
-    });
+    this.broadcast("tap_match_end", this._tapCountPayload(cm));
 
     if (this.matchResolve) {
       this.matchResolve();
@@ -735,11 +737,65 @@ export default class TapSpeedGame extends BaseGame {
     return Math.ceil(Math.log2(playerCount));
   }
 
-  /** Clear the timer broadcast interval. */
-  private _clearTimerInterval(): void {
-    if (this.timerInterval) {
-      clearInterval(this.timerInterval);
-      this.timerInterval = null;
+  private _tapCountPayload(cm: MatchState) {
+    return {
+      matchId: cm.matchId,
+      player1Id: cm.player1Id,
+      player1Taps: cm.player1Taps,
+      player2Id: cm.player2Id,
+      player2Taps: cm.player2Taps,
+    };
+  }
+
+  private _flushLiveCountBroadcast(): void {
+    const cm = this.currentMatch;
+    if (!cm || cm.ended) {
+      this.liveCountsDirty = false;
+      return;
     }
+    if (!this.liveCountsDirty) return;
+
+    this.liveCountsDirty = false;
+    this.broadcast("tap_counts", this._tapCountPayload(cm));
+  }
+
+  private _syncCurrentMatchToPlayer(sessionId: string): void {
+    const cm = this.currentMatch;
+    if (!cm || cm.ended) return;
+    if (sessionId !== cm.player1Id && sessionId !== cm.player2Id) return;
+
+    const player1 = this.room.state.players.get(cm.player1Id);
+    const player2 = this.room.state.players.get(cm.player2Id);
+    const endsAt = cm.startedAt + cm.durationMs;
+
+    this.send(sessionId, "tap_match_start", {
+      matchId: cm.matchId,
+      player1Id: cm.player1Id,
+      player1Name: player1?.name ?? "Unknown",
+      player2Id: cm.player2Id,
+      player2Name: player2?.name ?? "Unknown",
+      bracketRound: this.room.state.currentRound,
+    });
+    this.send(sessionId, "tap_go", {
+      durationMs: cm.durationMs,
+      endsAt,
+    });
+    this.send(sessionId, "tap_confirmed", {
+      tapCount: sessionId === cm.player1Id ? cm.player1Taps : cm.player2Taps,
+    });
+    this.send(sessionId, "tap_counts", this._tapCountPayload(cm));
+  }
+
+  /** Clear all live-match intervals. */
+  private _clearMatchIntervals(): void {
+    if (this.matchMonitorInterval) {
+      clearInterval(this.matchMonitorInterval);
+      this.matchMonitorInterval = null;
+    }
+    if (this.liveCountInterval) {
+      clearInterval(this.liveCountInterval);
+      this.liveCountInterval = null;
+    }
+    this.liveCountsDirty = false;
   }
 }

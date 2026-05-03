@@ -303,12 +303,14 @@ class OrtCpuRuntime:
         self,
         model_dir: str | Path,
         thread_count: int = 4,
+        inter_op_thread_count: int = 1,
         max_new_frames: int | None = None,
         do_sample: bool | None = None,
         sample_mode: str | None = None,
     ) -> None:
         self.model_dir = Path(model_dir).expanduser().resolve()
         self.thread_count = max(1, int(thread_count))
+        self.inter_op_thread_count = max(1, int(inter_op_thread_count))
         self.manifest_path = self._resolve_manifest_path(self.model_dir)
         self.manifest_dir = self.manifest_path.parent
         manifest = json.loads(self.manifest_path.read_text(encoding="utf-8"))
@@ -366,7 +368,7 @@ class OrtCpuRuntime:
         options = ort.SessionOptions()
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         options.intra_op_num_threads = self.thread_count
-        options.inter_op_num_threads = 1
+        options.inter_op_num_threads = self.inter_op_thread_count
         return ort.InferenceSession(str(path_value), sess_options=options, providers=["CPUExecutionProvider"])
 
     def _create_sessions(self) -> dict[str, ort.InferenceSession]:

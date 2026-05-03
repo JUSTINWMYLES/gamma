@@ -60,6 +60,35 @@ spec:
           spec:
             description: GammaInstanceSpec defines the desired state of a Gamma deployment.
             properties:
+              audioOverlay:
+                description: AudioOverlay configures infrastructure for the Audio
+                  Overlay game.
+                properties:
+                  objectStore:
+                    description: |-
+                      ObjectStore enables storage of recorded Audio Overlay clips in the shared
+                      SeaweedFS/S3-compatible object store. Browsers still fetch clips through the
+                      Gamma server proxy, never directly from the object store.
+                    properties:
+                      bucketName:
+                        default: gamma-audio-overlay-clips
+                        description: BucketName is the bucket used for recorded Audio
+                          Overlay clips.
+                        type: string
+                      enabled:
+                        default: false
+                        description: |-
+                          Enabled stores Audio Overlay clips in the shared S3-compatible object store
+                          instead of sending base64 payloads during playback whenever the store is
+                          available. When false, Audio Overlay keeps the inline/base64 behavior.
+                        type: boolean
+                      prefix:
+                        default: audio-overlay-clips
+                        description: Prefix namespaces Audio Overlay clip objects
+                          within the bucket.
+                        type: string
+                    type: object
+                type: object
               autoscaling:
                 description: Autoscaling configuration for the server deployment.
                 properties:
@@ -488,7 +517,12 @@ spec:
                     type: integer
                   replicas:
                     default: 1
-                    description: Number of server pod replicas.
+                    description: |-
+                      Number of server pod replicas.
+                      IMPORTANT: Colyseus rooms live in local memory. With >1 replica,
+                      WebSocket connections may land on a pod that does not host the room,
+                      causing "seat reservation expired" errors. Use 1 replica unless you
+                      deploy a @colyseus/proxy layer for room-aware routing.
                     format: int32
                     maximum: 100
                     minimum: 1

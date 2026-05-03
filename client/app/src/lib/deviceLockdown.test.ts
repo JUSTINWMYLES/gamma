@@ -35,6 +35,61 @@ function fireTouchMove(touchCount: number): { prevented: boolean } {
   return { prevented: evt.defaultPrevented };
 }
 
+function fireTouchStart(clientY: number, target: EventTarget = document.body): { prevented: boolean } {
+  const evt = new TouchEvent("touchstart", {
+    bubbles: true,
+    cancelable: true,
+    touches: [
+      {
+        identifier: 0,
+        clientX: 0,
+        clientY,
+        pageX: 0,
+        pageY: clientY,
+        screenX: 0,
+        screenY: clientY,
+        radiusX: 0,
+        radiusY: 0,
+        rotationAngle: 0,
+        force: 0,
+        target,
+      } as unknown as Touch,
+    ],
+  });
+  (target as { dispatchEvent: (event: Event) => boolean }).dispatchEvent(evt);
+  return { prevented: evt.defaultPrevented };
+}
+
+function fireSingleTouchMove(clientY: number, target: EventTarget = document.body): { prevented: boolean } {
+  const evt = new TouchEvent("touchmove", {
+    bubbles: true,
+    cancelable: true,
+    touches: [
+      {
+        identifier: 0,
+        clientX: 0,
+        clientY,
+        pageX: 0,
+        pageY: clientY,
+        screenX: 0,
+        screenY: clientY,
+        radiusX: 0,
+        radiusY: 0,
+        rotationAngle: 0,
+        force: 0,
+        target,
+      } as unknown as Touch,
+    ],
+  });
+  (target as { dispatchEvent: (event: Event) => boolean }).dispatchEvent(evt);
+  return { prevented: evt.defaultPrevented };
+}
+
+function fireTouchEnd(): void {
+  const evt = new TouchEvent("touchend", { cancelable: true, touches: [] });
+  document.dispatchEvent(evt);
+}
+
 function fireGestureStart(): { prevented: boolean } {
   const evt = new Event("gesturestart", { cancelable: true });
   document.dispatchEvent(evt);
@@ -94,6 +149,49 @@ describe("deviceLockdown", () => {
     installDeviceLockdown();
     const { prevented } = fireTouchMove(1);
     expect(prevented).toBe(false);
+  });
+
+  it("should prevent downward single-touch pull at the top of the page", () => {
+    installDeviceLockdown();
+
+    const scrollingElement = document.scrollingElement ?? document.documentElement;
+    scrollingElement.scrollTop = 0;
+
+    fireTouchStart(100);
+    const { prevented } = fireSingleTouchMove(125);
+
+    expect(prevented).toBe(true);
+    fireTouchEnd();
+  });
+
+  it("should NOT prevent upward single-touch movement at the top of the page", () => {
+    installDeviceLockdown();
+
+    const scrollingElement = document.scrollingElement ?? document.documentElement;
+    scrollingElement.scrollTop = 0;
+
+    fireTouchStart(125);
+    const { prevented } = fireSingleTouchMove(100);
+
+    expect(prevented).toBe(false);
+    fireTouchEnd();
+  });
+
+  it("should NOT prevent downward pull inside a scrolled container", () => {
+    installDeviceLockdown();
+
+    const container = document.createElement("div");
+    container.style.overflowY = "auto";
+    Object.defineProperty(container, "scrollHeight", { value: 400, configurable: true });
+    Object.defineProperty(container, "clientHeight", { value: 200, configurable: true });
+    Object.defineProperty(container, "scrollTop", { value: 24, writable: true, configurable: true });
+    document.body.appendChild(container);
+
+    fireTouchStart(100, container);
+    const { prevented } = fireSingleTouchMove(125, container);
+
+    expect(prevented).toBe(false);
+    fireTouchEnd();
   });
 
   it("should prevent gesturestart events", () => {

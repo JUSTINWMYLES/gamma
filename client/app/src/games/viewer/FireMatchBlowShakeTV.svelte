@@ -31,6 +31,7 @@
     finished: boolean;
   }
   let players: PlayerDisplay[] = [];
+  const playersById = new Map<string, PlayerDisplay>();
 
   // Round-end results.
   interface RoundResult {
@@ -89,6 +90,114 @@
     if (timer) { clearInterval(timer); timer = null; }
   }
 
+  function resetPlayers(nextPlayers: {
+    playerId: string;
+    playerName: string;
+    stageIndex: number;
+    stage: string | null;
+    current: number;
+    target: number;
+    totalContribution?: number;
+    finished: boolean;
+  }[]) {
+    playersById.clear();
+    players = nextPlayers.map((p) => {
+      const player: PlayerDisplay = {
+        playerId: p.playerId,
+        playerName: p.playerName,
+        stageIndex: p.stageIndex,
+        stage: p.stage as FireStage | null,
+        current: p.current,
+        target: p.target,
+        totalContribution: p.totalContribution ?? 0,
+        finished: p.finished,
+      };
+      playersById.set(player.playerId, player);
+      return player;
+    });
+  }
+
+  function applyPlayerUpdate(nextPlayers: {
+    playerId: string;
+    playerName: string;
+    stageIndex: number;
+    stage: string | null;
+    current: number;
+    target: number;
+    totalContribution: number;
+    finished: boolean;
+  }[]) {
+    const seenIds = new Set<string>();
+    const canReusePlayerOrder =
+      players.length === nextPlayers.length &&
+      players.every((player, index) => player.playerId === nextPlayers[index]?.playerId);
+
+    if (canReusePlayerOrder) {
+      for (let i = 0; i < nextPlayers.length; i++) {
+        const next = nextPlayers[i];
+        seenIds.add(next.playerId);
+        const player = players[i];
+        playersById.set(next.playerId, player);
+        player.playerName = next.playerName;
+        player.stageIndex = next.stageIndex;
+        player.stage = next.stage as FireStage | null;
+        player.current = next.current;
+        player.target = next.target;
+        player.totalContribution = next.totalContribution;
+        player.finished = next.finished;
+      }
+
+      for (const id of [...playersById.keys()]) {
+        if (!seenIds.has(id)) {
+          playersById.delete(id);
+        }
+      }
+
+      players = players;
+      return;
+    }
+
+    const nextList: PlayerDisplay[] = new Array(nextPlayers.length);
+
+    for (let i = 0; i < nextPlayers.length; i++) {
+      const next = nextPlayers[i];
+      seenIds.add(next.playerId);
+      let player = playersById.get(next.playerId);
+
+      if (!player) {
+        player = {
+          playerId: next.playerId,
+          playerName: next.playerName,
+          stageIndex: next.stageIndex,
+          stage: next.stage as FireStage | null,
+          current: next.current,
+          target: next.target,
+          totalContribution: next.totalContribution,
+          finished: next.finished,
+        };
+        playersById.set(next.playerId, player);
+      } else {
+        player.playerName = next.playerName;
+        player.stageIndex = next.stageIndex;
+        player.stage = next.stage as FireStage | null;
+        player.current = next.current;
+        player.target = next.target;
+        player.totalContribution = next.totalContribution;
+        player.finished = next.finished;
+      }
+
+      nextList[i] = player;
+    }
+
+    for (const id of [...playersById.keys()]) {
+      if (!seenIds.has(id)) {
+        playersById.delete(id);
+      }
+    }
+
+    players = nextList;
+  }
+
   const stageNames: FireStage[] = ["strike", "blow", "shake", "extinguish"];
 
   onMount(() => {
@@ -103,16 +212,7 @@
       roundResults = [];
       allFinished = false;
 
-      players = d.players.map((p) => ({
-        playerId: p.playerId,
-        playerName: p.playerName,
-        stageIndex: p.stageIndex,
-        stage: p.stage as FireStage,
-        current: p.current,
-        target: p.target,
-        totalContribution: 0,
-        finished: p.finished,
-      }));
+      resetPlayers(d.players);
 
       startTimer(d.totalDurationMs, d.serverTimestamp);
     });
@@ -122,16 +222,7 @@
       players: { playerId: string; playerName: string; stageIndex: number; stage: string | null; current: number; target: number; totalContribution: number; finished: boolean }[];
     }) => {
       timeLeft = Math.max(0, d.timeLeftMs / 1000);
-      players = d.players.map((p) => ({
-        playerId: p.playerId,
-        playerName: p.playerName,
-        stageIndex: p.stageIndex,
-        stage: p.stage as FireStage | null,
-        current: p.current,
-        target: p.target,
-        totalContribution: p.totalContribution,
-        finished: p.finished,
-      }));
+      applyPlayerUpdate(d.players);
     });
 
     room.onMessage("fire_round_end", (d: {
@@ -163,8 +254,8 @@
     </p>
 
     <!-- Individual campfires for each player -->
-    <div class="flex flex-wrap items-start justify-center gap-6 w-full max-w-6xl">
-      {#each players as p}
+      <div class="flex flex-wrap items-start justify-center gap-6 w-full max-w-6xl">
+        {#each players as p (p.playerId)}
         <div class="flex flex-col items-center gap-2 {p.finished ? 'opacity-60' : ''}">
           <!-- Player campfire -->
           <CampfireCanvas intensity={playerIntensity(p)} width={campfireSize} height={Math.round(campfireSize * 1.15)} />
@@ -228,7 +319,7 @@
 
         <div class="bg-gray-800 border border-gray-700 rounded-xl p-5 space-y-3">
           <p class="text-xs uppercase tracking-widest text-gray-400 mb-3">Results</p>
-          {#each roundResults as r, rank}
+          {#each roundResults as r, rank (r.playerId)}
             {@const player = state.players.get(r.playerId)}
             <div class="flex items-center gap-3">
               <span class="w-6 text-right font-mono text-gray-500 text-sm">{rank + 1}.</span>

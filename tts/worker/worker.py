@@ -10,6 +10,7 @@ from datetime import timedelta
 try:  # pragma: no cover - import path compatibility
     from .audio import encode_mp3, waveform_duration_ms
     from .errors import FatalJobError, RetryableJobError
+    from .health_server import HealthServer
     from .models import (
         Job,
         PRIORITY_ORDER,
@@ -25,6 +26,7 @@ try:  # pragma: no cover - import path compatibility
 except ImportError:  # pragma: no cover - direct script execution
     from audio import encode_mp3, waveform_duration_ms
     from errors import FatalJobError, RetryableJobError
+    from health_server import HealthServer
     from models import (
         Job,
         PRIORITY_ORDER,
@@ -89,6 +91,7 @@ class WorkerService:
         self.runtime = MossTTSNanoRuntime(
             model_dir=config.model_dir,
             thread_count=config.cpu_threads,
+            inter_op_thread_count=config.ort_inter_op_threads,
             max_new_frames=config.max_new_frames,
             do_sample=config.do_sample,
             sample_mode=config.sample_mode,
@@ -98,6 +101,7 @@ class WorkerService:
             for item in self.runtime.list_builtin_voices()
             if str(item.get("voice", "")).strip()
         }
+        self._health_server: HealthServer | None = None
 
     def start(self) -> None:
         self._touch_health_file()
@@ -109,12 +113,19 @@ class WorkerService:
             self.runtime.warmup()
         self.store.write_heartbeat(self.config.worker_id, self.config.heartbeat_ttl)
         self._touch_health_file()
+        self._health_server = HealthServer(
+            port=self.config.health_server_port,
+            redis_store=self.store,
+            health_file=str(self.config.health_file),
+        )
+        self._health_server.start()
         threading.Thread(target=self._heartbeat_loop, name="tts-heartbeat", daemon=True).start()
         LOGGER.info(
-            "worker ready worker_id=%s model_dir=%s cpu_threads=%s sample_mode=%s do_sample=%s",
+            "worker ready worker_id=%s model_dir=%s cpu_threads=%s ort_inter_op_threads=%s sample_mode=%s do_sample=%s",
             self.config.worker_id,
             self.config.model_dir,
             self.config.cpu_threads,
+            self.config.ort_inter_op_threads,
             self.config.sample_mode,
             self.config.do_sample,
         )
@@ -128,13 +139,14 @@ class WorkerService:
                     self.stop_event.wait(self.config.poll_interval.total_seconds())
                     continue
                 self._process_job(job)
-                self.stop_event.wait(self.config.busy_poll_interval.total_seconds())
             except Exception:
                 LOGGER.exception("worker loop iteration failed")
                 self.stop_event.wait(self.config.poll_interval.total_seconds())
 
     def shutdown(self) -> None:
         self.stop_event.set()
+        if self._health_server:
+            self._health_server.stop()
 
     def _heartbeat_loop(self) -> None:
         while not self.stop_event.is_set():

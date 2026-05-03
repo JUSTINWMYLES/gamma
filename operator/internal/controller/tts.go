@@ -118,6 +118,7 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 	selectorLabels := selectorLabelsForComponent(instance, "tts-worker")
 	replicas := instance.Spec.TTS.Worker.WorkerReplicas()
 	env := buildTTSEnv(instance, false)
+	healthPort := instance.Spec.TTS.Worker.WorkerHealthPort()
 
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -136,13 +137,19 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:      "tts-worker",
-							Image:     instance.Spec.TTS.Worker.WorkerImage(),
-							Env:       env,
+							Name:  "tts-worker",
+							Image: instance.Spec.TTS.Worker.WorkerImage(),
+							Env:   env,
+							Ports: []corev1.ContainerPort{
+								{Name: "health", ContainerPort: healthPort, Protocol: corev1.ProtocolTCP},
+							},
 							Resources: instance.Spec.TTS.Worker.Resources,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{Command: []string{"python", "-c", "import os, sys, redis; redis.Redis.from_url(os.environ['REDIS_URL']).ping(); path = os.environ.get('TTS_WORKER_HEALTH_FILE'); sys.exit(0 if path and os.path.exists(path) else 1)"}},
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/healthz",
+										Port: intstr.FromInt32(healthPort),
+									},
 								},
 								InitialDelaySeconds: 10,
 								PeriodSeconds:       20,
@@ -150,7 +157,10 @@ func (r *GammaInstanceReconciler) reconcileTTSWorkerDeployment(ctx context.Conte
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
-									Exec: &corev1.ExecAction{Command: []string{"python", "-c", "import os, sys, time; path = os.environ.get('TTS_WORKER_HEALTH_FILE'); max_age = float(os.environ.get('TTS_WORKER_HEALTH_MAX_AGE_SECONDS', '120')); healthy = path and os.path.exists(path) and (time.time() - os.path.getmtime(path)) <= max_age; sys.exit(0 if healthy else 1)"}},
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/healthz",
+										Port: intstr.FromInt32(healthPort),
+									},
 								},
 								InitialDelaySeconds: 60,
 								PeriodSeconds:       30,
@@ -199,6 +209,7 @@ func buildTTSEnv(instance *gammav1alpha1.GammaInstance, isAPI bool) []corev1.Env
 		env = append(env,
 			corev1.EnvVar{Name: "TTS_LOG_LEVEL", Value: "INFO"},
 			corev1.EnvVar{Name: "TTS_WORKER_HEALTH_FILE", Value: defaultTTSWorkerHealthFile},
+			corev1.EnvVar{Name: "TTS_WORKER_HEALTH_PORT", Value: fmt.Sprintf("%d", instance.Spec.TTS.Worker.WorkerHealthPort())},
 			corev1.EnvVar{Name: "TTS_WORKER_HEALTH_MAX_AGE_SECONDS", Value: defaultTTSWorkerHealthMaxAgeSeconds},
 			corev1.EnvVar{Name: "TTS_WARMUP_ENABLED", Value: "true"},
 			corev1.EnvVar{Name: "TTS_WORKER_LEASE_DURATION", Value: "300s"},
@@ -221,6 +232,19 @@ func (r *GammaInstanceReconciler) cleanupTTS(ctx context.Context, instance *gamm
 		{name: ttsWorkerName(instance), object: &appsv1.Deployment{}},
 		{name: ttsAPIName(instance), object: &appsv1.Deployment{}},
 		{name: ttsAPIName(instance), object: &corev1.Service{}},
+	}
+
+	for _, item := range objects {
+		if err := r.getAndDelete(ctx, instance.Namespace, item); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *GammaInstanceReconciler) cleanupSharedObjectStore(ctx context.Context, instance *gammav1alpha1.GammaInstance) error {
+	objects := []clientObjectKey{
 		{name: ttsObjectStoreName(instance), object: &appsv1.Deployment{}},
 		{name: ttsObjectStoreName(instance), object: &corev1.Service{}},
 		{name: ttsObjectStorePVCName(instance), object: &corev1.PersistentVolumeClaim{}},

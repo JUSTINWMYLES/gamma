@@ -22,6 +22,77 @@ describe("getIconStrokeRenderWidth", () => {
 });
 
 describe("player icon serialization", () => {
+  it("emits compact v2 JSON and parses it back", () => {
+    const design = createEmptyIconDesign("#abcdef");
+    design.strokes = [
+      {
+        color: "#112233",
+        size: 8,
+        points: [
+          { x: 10, y: 20 },
+          { x: 30, y: 40 },
+        ],
+      },
+    ];
+    design.stickers = [
+      {
+        emoji: "🔥",
+        x: 12,
+        y: 34,
+        size: 30,
+      },
+    ];
+    design.text = {
+      value: "NEWS",
+      color: "#445566",
+      size: 24,
+      x: 60,
+      y: 70,
+    };
+
+    const serialized = serializeIconDesign(design);
+    const compact = JSON.parse(serialized);
+    const parsed = parseIconDesign(serialized);
+
+    expect(compact).toMatchObject({
+      v: 2,
+      b: "#abcdef",
+    });
+    expect(compact.s).toHaveLength(1);
+    expect(compact.k).toEqual([["🔥", 12, 34, 30]]);
+    expect(compact.t).toEqual(["NEWS", "#445566", 24, 60, 70]);
+
+    expect(parsed).toMatchObject({
+      version: 1,
+      bgColor: "#abcdef",
+      strokes: [
+        {
+          color: "#112233",
+          size: 8,
+          points: [
+            { x: 10, y: 20 },
+            { x: 30, y: 40 },
+          ],
+        },
+      ],
+      stickers: [
+        {
+          emoji: "🔥",
+          x: 12,
+          y: 34,
+          size: 30,
+        },
+      ],
+      text: {
+        value: "NEWS",
+        color: "#445566",
+        size: 24,
+        x: 60,
+        y: 70,
+      },
+    });
+  });
+
   it("keeps dense drawings under the serialized length limit", () => {
     const denseDesign = createEmptyIconDesign("#123456");
     denseDesign.strokes = [

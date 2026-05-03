@@ -6,12 +6,18 @@
    *
    * Server messages listened:
    *   tap_bracket_init, tap_match_start, tap_go, tap_confirmed,
-   *   tap_counts, tap_timer, tap_match_end, tap_match_result,
+   *   tap_counts, tap_match_end, tap_match_result,
    *   tap_bracket_round_advance, tap_tournament_complete, round_skipped
    */
   import { onMount, onDestroy } from "svelte";
   import type { Room } from "colyseus.js";
   import type { RoomState, PlayerState } from "../../../../shared/types";
+  import {
+    getTapSpeedPerspectiveCounts,
+    getTapSpeedTimeRemainingSecs,
+    resolveTapSpeedEndsAt,
+  } from "../tapSpeedRealtime";
+  import type { TapSpeedCountsPayload } from "../tapSpeedRealtime";
 
   export let room: Room;
   export let state: RoomState;
@@ -51,7 +57,7 @@
   let opponentTaps = 0;
   let timeRemaining = 0;
   let matchDurationMs = 0;
-  let matchStartedAt = 0;
+  let matchEndsAt = 0;
   let timerInterval: ReturnType<typeof setInterval> | null = null;
 
   // ── Match result ─────────────────────────────────────────────────
@@ -91,14 +97,13 @@
 
   // ── Timer ───────────────────────────────────────────────────────
 
-  function startTimer(durationMs: number) {
+  function startTimer(durationMs: number, endsAt: number = Date.now() + durationMs) {
     clearTimer();
     matchDurationMs = durationMs;
-    matchStartedAt = Date.now();
-    timeRemaining = durationMs / 1000;
+    matchEndsAt = resolveTapSpeedEndsAt(durationMs, endsAt);
+    timeRemaining = getTapSpeedTimeRemainingSecs(matchEndsAt);
     timerInterval = setInterval(() => {
-      const elapsed = Date.now() - matchStartedAt;
-      timeRemaining = Math.max(0, (durationMs - elapsed) / 1000);
+      timeRemaining = getTapSpeedTimeRemainingSecs(matchEndsAt);
     }, 50);
   }
 
@@ -148,12 +153,12 @@
     subPhase = "match_preview";
   }
 
-  function onTapGo(data: { durationMs: number }) {
+  function onTapGo(data: { durationMs: number; endsAt?: number }) {
     if (!isInMatch) return;
     subPhase = "tapping";
     myTaps = 0;
     opponentTaps = 0;
-    startTimer(data.durationMs);
+    startTimer(data.durationMs, data.endsAt);
   }
 
   function onTapConfirmed(data: { tapCount: number }) {
@@ -161,32 +166,11 @@
     myTaps = data.tapCount;
   }
 
-  function onTapCounts(data: {
-    matchId: string;
-    player1Id: string;
-    player1Taps: number;
-    player2Id: string;
-    player2Taps: number;
-  }) {
+  function onTapCounts(data: TapSpeedCountsPayload) {
     if (data.matchId !== currentMatchId) return;
-    const mySessionId = me?.id ?? "";
-    if (mySessionId === data.player1Id) {
-      opponentTaps = Math.max(0, data.player2Taps);
-    } else if (mySessionId === data.player2Id) {
-      opponentTaps = Math.max(0, data.player1Taps);
-    } else {
-      // Spectating — could show both
-    }
-  }
-
-  function onTapTimer(data: {
-    matchId: string;
-    timeRemaining: number;
-    player1Taps: number;
-    player2Taps: number;
-  }) {
-    if (data.matchId !== currentMatchId) return;
-    // Could sync timer from server if needed, but client timer is fine
+    const perspective = getTapSpeedPerspectiveCounts(me?.id, data);
+    if (!perspective) return;
+    opponentTaps = perspective.opponentTaps;
   }
 
   function onMatchEnd(data: {
@@ -292,7 +276,6 @@
     room.onMessage("tap_go", onTapGo);
     room.onMessage("tap_confirmed", onTapConfirmed);
     room.onMessage("tap_counts", onTapCounts);
-    room.onMessage("tap_timer", onTapTimer);
     room.onMessage("tap_match_end", onMatchEnd);
     room.onMessage("tap_match_result", onMatchResult);
     room.onMessage("tap_bracket_round_advance", onBracketAdvance);
@@ -377,7 +360,10 @@
           style="width:{100 - timerPct}%"
         ></div>
       </div>
-      <p class="text-4xl font-mono font-black {timeRemaining < 3 ? 'text-red-400' : 'text-white'}">
+      <p
+        class="text-4xl font-mono font-black {timeRemaining < 3 ? 'text-red-400' : 'text-white'}"
+        data-testid="tap-speed-timer"
+      >
         {timerDisplay}
       </p>
 
@@ -385,14 +371,17 @@
       <div class="flex justify-between items-center px-4">
         <div class="text-center">
           <p class="text-xs text-gray-500 uppercase">You</p>
-          <p class="text-3xl font-black {isWinning ? 'text-green-400' : isTied ? 'text-white' : 'text-red-400'}">
+          <p
+            class="text-3xl font-black {isWinning ? 'text-green-400' : isTied ? 'text-white' : 'text-red-400'}"
+            data-testid="tap-speed-my-count"
+          >
             {myTaps}
           </p>
         </div>
         <p class="text-lg text-gray-600">vs</p>
         <div class="text-center">
           <p class="text-xs text-gray-500 uppercase">{opponentName}</p>
-          <p class="text-3xl font-black text-gray-400">{opponentTaps}</p>
+          <p class="text-3xl font-black text-gray-400" data-testid="tap-speed-opponent-count">{opponentTaps}</p>
         </div>
       </div>
 

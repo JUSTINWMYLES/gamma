@@ -34,6 +34,7 @@ import {
   playerNamesMatch,
 } from "./playerNameUtils";
 import { sanitizeIconDesignForStorage } from "../utils/playerIconDesign";
+import { RECONNECT_GRACE_MS, RECONNECT_GRACE_SECONDS } from "../config";
 
 /** Options passed from clients at join time. */
 interface JoinOptions {
@@ -43,7 +44,14 @@ interface JoinOptions {
   reconnectToken?: string;
 }
 
-const RECONNECT_GRACE_MS = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60) * 1000;
+/** Tracks players currently in a Colyseus allowReconnection window.
+ * Key = sessionId, value = player name. Prevents duplicate-player claims
+ * when a page refresh triggers both a Colyseus reconnect and a client-side
+ * auto-rejoin via name-based reclaim. */
+interface PendingReconnect {
+  sessionId: string;
+  name: string;
+}
 
 function getDefaultGameMode(gameId: string): string {
   if (gameId === "registry-25-lowball-marketplace") return "classic";
@@ -64,6 +72,10 @@ export class GammaRoom extends Room<RoomState> {
 
   /** Monotonic token so stale game promises cannot complete a newer game session. */
   private activeGameRunId = 0;
+
+  /** Players currently in a Colyseus allowReconnection window.
+   * Guards against duplicate-player claims from page refresh (C1). */
+  private pendingReconnects = new Map<string, PendingReconnect>();
 
   // ── OTEL metrics ──────────────────────────────────────────────────────────
   private static roomsCreated = meter.createCounter("gamma.rooms.created", {
@@ -121,6 +133,15 @@ export class GammaRoom extends Room<RoomState> {
     if (options.role !== "player") return true;
 
     const incomingName = sanitizePlayerName(options.name);
+
+    // Check for duplicate-player claim (C1) — block new join if a reconnect is pending
+    if (this._findPendingReconnectByName(incomingName)) {
+      throw new ServerError(
+        4003,
+        `A player "${incomingName}" is reconnecting. Please wait a moment and try again.`,
+      );
+    }
+
     if (this._findConnectedPlayerByName(incomingName)) {
       throw new ServerError(4002, `The name "${incomingName}" is already taken in this lobby.`);
     }
@@ -140,16 +161,27 @@ export class GammaRoom extends Room<RoomState> {
       console.log(`[GammaRoom] player disconnected — id=${client.sessionId} consented=${consented}`);
 
       if (!consented) {
-        // Allow reconnect within grace window (default 60s)
-        const graceSecs = Number(process.env.RECONNECT_GRACE_SECONDS ?? 60);
+        // Allow reconnect within grace window
+        // Register pending reconnect BEFORE allowing reconnection so that
+        // name-based reclaim in _onPlayerJoin is blocked while we wait.
+        this.pendingReconnects.set(client.sessionId, {
+          sessionId: client.sessionId,
+          name: player.name,
+        });
         try {
-          await this.allowReconnection(client, graceSecs);
+          await this.allowReconnection(client, RECONNECT_GRACE_SECONDS);
           player.isConnected = true;
           player.disconnectedAt = 0;
           GammaRoom.playerReconnects.add(1, { roomCode: this.state.roomCode });
           console.log(`[GammaRoom] player reconnected — id=${client.sessionId}`);
         } catch {
           console.log(`[GammaRoom] player reconnect timed out — id=${client.sessionId}`);
+          // Reconnect failed — the player slot stays disconnected.
+          // Remove from pending map so a later name-based reclaim can succeed.
+          this.pendingReconnects.delete(client.sessionId);
+          // Schedule cleanup: if the player stays disconnected past grace,
+          // remove their slot from state.players.
+          this._schedulePlayerSlotCleanup(client.sessionId);
         }
       }
     }
@@ -195,7 +227,23 @@ export class GammaRoom extends Room<RoomState> {
     if (existing) {
       existing.isConnected = true;
       existing.disconnectedAt = 0;
+      // Reconnect via Colyseus path clears the pending entry.
+      this.pendingReconnects.delete(client.sessionId);
       return;
+    }
+
+    const incomingName = sanitizePlayerName(options.name);
+
+    // ── Duplicate-player prevention (C1) ────────────────────────────────────
+    // Before attempting name-based reclaim, check if any player with this name
+    // is currently in a Colyseus allowReconnection window. If so, reject the
+    // new join — the original session will reconnect.
+    const pendingReconnect = this._findPendingReconnectByName(incomingName);
+    if (pendingReconnect) {
+      throw new ServerError(
+        4003,
+        `A player "${incomingName}" is reconnecting. Please wait a moment and try again.`,
+      );
     }
 
     // ── Name-based reconnection ──────────────────────────────────────────────
@@ -203,7 +251,6 @@ export class GammaRoom extends Room<RoomState> {
     // sessionId-based check above won't match.  If there's a disconnected
     // player with the same name, reclaim that slot — preserving score and
     // all game-specific state.
-    const incomingName = sanitizePlayerName(options.name);
     const disconnected = this._findDisconnectedPlayerByName(incomingName);
 
     if (disconnected) {
@@ -242,6 +289,15 @@ export class GammaRoom extends Room<RoomState> {
     }
 
     // ── Fresh join ───────────────────────────────────────────────────────────
+    // Block fresh player joins after the room leaves lobby.
+    // Reconnects (same sessionId or name-based reclaim) are handled above.
+    if (this.state.phase !== "lobby") {
+      throw new ServerError(
+        4004,
+        "Game already in progress. Rejoin using your previous name or wait for the next lobby.",
+      );
+    }
+
     const player = new PlayerState();
     player.id = client.sessionId;
     player.name = incomingName;
@@ -273,6 +329,17 @@ export class GammaRoom extends Room<RoomState> {
     return null;
   }
 
+  /** Check if any pending reconnect matches the given name.
+   * Used to prevent duplicate-player claims (C1). */
+  private _findPendingReconnectByName(name: string): PendingReconnect | null {
+    for (const pending of this.pendingReconnects.values()) {
+      if (playerNamesMatch(pending.name, name)) {
+        return pending;
+      }
+    }
+    return null;
+  }
+
   private _findConnectedPlayerByName(name: string): PlayerState | null {
     for (const player of this.state.players.values()) {
       if (player.isConnected && playerNamesMatch(player.name, name)) {
@@ -286,11 +353,67 @@ export class GammaRoom extends Room<RoomState> {
     return player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < RECONNECT_GRACE_MS;
   }
 
+  /**
+   * Schedule removal of a disconnected player's slot if they don't
+   * reconnect within the grace window. This keeps state.players accurate
+   * and prevents stale entries from accumulating.
+   */
+  private _schedulePlayerSlotCleanup(sessionId: string): void {
+    setTimeout(() => {
+      this._cleanupExpiredPlayerSlot(sessionId);
+    }, RECONNECT_GRACE_MS);
+  }
+
+  /**
+   * Remove a player slot if they are still disconnected and past the
+   * reconnect grace window. Migrates host if needed and notifies the
+   * active game plugin.
+   */
+  private _cleanupExpiredPlayerSlot(sessionId: string): void {
+    const player = this.state.players.get(sessionId);
+    if (!player || player.isConnected) return;
+
+    // Double-check: still past grace?
+    if (player.disconnectedAt > 0 && Date.now() - player.disconnectedAt < RECONNECT_GRACE_MS) return;
+
+    console.log(`[GammaRoom] dropping expired player slot — id=${sessionId} name=${player.name}`);
+
+    // Migrate host if the dropped player was host
+    if (this.state.hostSessionId === sessionId) {
+      this._migrateHost(sessionId);
+    }
+
+    // Notify the active game plugin
+    if (this.game) {
+      this.game.onPlayerDropped?.(sessionId);
+    }
+
+    // Remove from state
+    this.state.players.delete(sessionId);
+  }
+
+  /**
+   * Migrate host to the first connected, non-eliminated player.
+   * If no eligible player exists, clears hostSessionId.
+   */
+  private _migrateHost(excludeSessionId: string): void {
+    for (const p of this.state.players.values()) {
+      if (p.id !== excludeSessionId && p.isConnected && !p.isEliminated) {
+        this.state.hostSessionId = p.id;
+        console.log(`[GammaRoom] host migrated to — id=${p.id} name=${p.name}`);
+        return;
+      }
+    }
+    this.state.hostSessionId = "";
+    console.log("[GammaRoom] host migrated — no eligible players");
+  }
+
   // ── Message registration ──────────────────────────────────────────────────
 
   private _registerMessages(): void {
     /** Player taps "Ready" in lobby or instructions phase. */
     this.onMessage("player_ready", (client, _data) => {
+      if (!this._requirePhase(client, ["lobby", "instructions"])) return;
       const p = this.state.players.get(client.sessionId);
       if (p) p.isReady = true;
     });
@@ -348,6 +471,7 @@ export class GammaRoom extends Room<RoomState> {
           motion: "unknown" | "granted" | "denied";
         }>,
       ) => {
+        if (!this._requirePhase(client, ["lobby", "instructions"])) return;
         const p = this.state.players.get(client.sessionId);
         if (!p) return;
 
@@ -389,6 +513,7 @@ export class GammaRoom extends Room<RoomState> {
     /** Host selects a game from the list. TV / first player only. */
     this.onMessage("select_game", async (client, data: { gameId: string }) => {
       if (!this._isHost(client)) return;
+      if (!this._requirePhase(client, ["lobby"])) return;
       this.state.selectedGame = data.gameId;
 
       try {
@@ -442,6 +567,7 @@ export class GammaRoom extends Room<RoomState> {
         }>,
       ) => {
         if (!this._isHost(client)) return;
+        if (!this._requirePhase(client, ["lobby"])) return;
         if (data.roundCount !== undefined) {
           this.state.gameConfig.roundCount = Math.max(1, Math.min(data.roundCount, 10));
         }
@@ -479,6 +605,7 @@ export class GammaRoom extends Room<RoomState> {
         setupStep: number;
       }>) => {
         if (!this._isHost(client)) return;
+        if (!this._requirePhase(client, ["lobby"])) return;
         if (data.locationMode === "same" || data.locationMode === "remote") {
           this.state.locationMode = data.locationMode;
         }
@@ -507,6 +634,8 @@ export class GammaRoom extends Room<RoomState> {
      * Routed to the active game plugin.
      */
     this.onMessage("game_input", (client, data: unknown) => {
+      if (!this._requirePlayer(client)) return;
+      if (!this._requirePhase(client, ["game_loading", "instructions", "countdown", "in_round", "round_end", "scoreboard"])) return;
       if (this.game) this.game.handleInput(client, data);
     });
 
@@ -763,5 +892,26 @@ export class GammaRoom extends Room<RoomState> {
 
   private _isHost(client: Client): boolean {
     return client.sessionId === this.state.hostSessionId;
+  }
+
+  /** Reject a message if the sender is not a connected player. */
+  private _requirePlayer(client: Client): PlayerState | null {
+    const p = this.state.players.get(client.sessionId);
+    if (!p || !p.isConnected) {
+      console.warn(`[GammaRoom] message rejected — non-player sessionId=${client.sessionId}`);
+      return null;
+    }
+    return p;
+  }
+
+  /** Reject a message if the room is not in one of the allowed phases. */
+  private _requirePhase(client: Client, allowed: string[]): boolean {
+    if (!allowed.includes(this.state.phase)) {
+      console.warn(
+        `[GammaRoom] message rejected — phase="${this.state.phase}" not in [${allowed.join(", ")}] sessionId=${client.sessionId}`,
+      );
+      return false;
+    }
+    return true;
   }
 }

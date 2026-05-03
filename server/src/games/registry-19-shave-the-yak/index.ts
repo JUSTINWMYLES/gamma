@@ -37,7 +37,7 @@ import { Heat } from "../../schema/BracketState";
 import {
   createYakMask,
   applySwipe,
-  computeShavedPercent,
+  computeShavedPercentFromCounts,
   computeScore,
   buildRoundResult,
   rankLeaderboard,
@@ -77,6 +77,7 @@ interface SwipeInput {
 
 interface PlayerRound {
   mask: YakMask;
+  shavedCells: number;
   hits: number;
   misses: number;
   combo: number;
@@ -108,6 +109,8 @@ export default class ShaveYakGame extends BaseGame {
   private roundTimer: ReturnType<typeof setTimeout> | null = null;
   /** Interval that broadcasts all-player progress to view_screen clients. */
   private progressInterval: ReturnType<typeof setInterval> | null = null;
+  /** True when the next progress snapshot differs from the last broadcast. */
+  private progressDirty = false;
 
   /** Seed for bracket randomization. */
   private bracketSeed = 0;
@@ -254,6 +257,8 @@ export default class ShaveYakGame extends BaseGame {
 
   protected override async runRound(_round: number): Promise<void> {
     this.playerRounds.clear();
+    this._clearProgressInterval();
+    this.progressDirty = true;
 
     // Initialise a fresh fur mask for each player
     for (const p of this.room.state.players.values()) {
@@ -261,6 +266,7 @@ export default class ShaveYakGame extends BaseGame {
       const mask = createYakMask(YAK_W, YAK_H);
       this.playerRounds.set(p.id, {
         mask,
+        shavedCells: 0,
         hits: 0,
         misses: 0,
         combo: 0,
@@ -351,13 +357,15 @@ export default class ShaveYakGame extends BaseGame {
         x2 >= 0 && x2 <= YAK_W && y2 >= 0 && y2 <= YAK_H;
 
       if (inBounds) {
-        applySwipe(pr.mask, { x: x1, y: y1 }, { x: x2, y: y2 });
+        const newlyShaved = applySwipe(pr.mask, { x: x1, y: y1 }, { x: x2, y: y2 });
+        pr.shavedCells = Math.min(pr.mask.totalFurCells, pr.shavedCells + newlyShaved);
         pr.hits++;
         pr.combo++;
         pr.comboMax = Math.min(COMBO_MAX_CAP, Math.max(pr.comboMax, pr.combo));
+        this.progressDirty = true;
 
         // Send live shave percentage update to the individual player
-        const pct = computeShavedPercent(pr.mask);
+        const pct = this._computeLiveShavedPercent(pr);
         const score = computeScore(pct, pr.comboMax);
         client.send("shave_update", {
           shavedPercent: pct,
@@ -370,10 +378,10 @@ export default class ShaveYakGame extends BaseGame {
         });
       } else {
         // Treat out-of-bounds claimed on-target as a miss
-        this._handleMiss(client.sessionId, pr, x1, y1, x2, y2);
+        this._handleMiss(client, pr, x1, y1, x2, y2);
       }
     } else {
-      this._handleMiss(client.sessionId, pr, x1, y1, x2, y2);
+      this._handleMiss(client, pr, x1, y1, x2, y2);
     }
   }
 
@@ -384,6 +392,7 @@ export default class ShaveYakGame extends BaseGame {
       clearTimeout(this.roundTimer);
       this.roundTimer = null;
     }
+    this.progressDirty = false;
     this.playerRounds.clear();
   }
 
@@ -398,7 +407,7 @@ export default class ShaveYakGame extends BaseGame {
   ): { playerId: string; rank: number }[] {
     const results = playerIds.map((pid) => {
       const pr = this.playerRounds.get(pid);
-      const pct = pr ? computeShavedPercent(pr.mask) : 0;
+      const pct = pr ? this._computeLiveShavedPercent(pr) : 0;
       return { playerId: pid, shavedPercent: pct };
     });
 
@@ -408,7 +417,7 @@ export default class ShaveYakGame extends BaseGame {
   }
 
   private _handleMiss(
-    sessionId: string,
+    client: Client,
     pr: PlayerRound,
     x1: number,
     y1: number,
@@ -417,6 +426,7 @@ export default class ShaveYakGame extends BaseGame {
   ): void {
     pr.misses++;
     pr.combo = 0; // reset combo on miss
+    this.progressDirty = true;
 
     // Compute nudge direction from swipe vector
     const sdx = x2 - x1;
@@ -445,23 +455,20 @@ export default class ShaveYakGame extends BaseGame {
     pr.yakRotation = Math.max(-0.5, Math.min(0.5, pr.yakRotation + rot));
 
     // Notify the player's client of the yak nudge
-    const client = [...(this.room.clients as Iterable<Client>)].find(
-      (c) => c.sessionId === sessionId,
-    );
-    if (client) {
-      client.send("yak_nudge", {
-        dx: ndx,
-        dy: ndy,
-        dRotation: rot,
-        yakOffsetX: pr.yakOffsetX,
-        yakOffsetY: pr.yakOffsetY,
-        yakRotation: pr.yakRotation,
-      });
-    }
+    client.send("yak_nudge", {
+      dx: ndx,
+      dy: ndy,
+      dRotation: rot,
+      yakOffsetX: pr.yakOffsetX,
+      yakOffsetY: pr.yakOffsetY,
+      yakRotation: pr.yakRotation,
+    });
   }
 
   /** Broadcast a snapshot of every player's shaving progress to all clients. */
-  private _broadcastProgress(): void {
+  private _broadcastProgress(force = false): void {
+    if (!force && !this.progressDirty) return;
+
     const playerProgress: {
       playerId: string;
       playerName: string;
@@ -473,7 +480,7 @@ export default class ShaveYakGame extends BaseGame {
 
     for (const [playerId, pr] of this.playerRounds) {
       const player = this.room.state.players.get(playerId);
-      const pct = computeShavedPercent(pr.mask);
+      const pct = this._computeLiveShavedPercent(pr);
       const score = computeScore(pct, pr.comboMax);
       playerProgress.push({
         playerId,
@@ -486,6 +493,11 @@ export default class ShaveYakGame extends BaseGame {
     }
 
     this.broadcast("shave_progress_all", { players: playerProgress });
+    this.progressDirty = false;
+  }
+
+  private _computeLiveShavedPercent(pr: PlayerRound): number {
+    return computeShavedPercentFromCounts(pr.mask.totalFurCells, pr.shavedCells);
   }
 
   private _clearProgressInterval(): void {
@@ -498,7 +510,7 @@ export default class ShaveYakGame extends BaseGame {
   private _endRound(): void {
     this._clearProgressInterval();
     // Send one final progress snapshot before resolving
-    this._broadcastProgress();
+    this._broadcastProgress(true);
 
     if (this.roundResolve) {
       this.roundResolve();

@@ -8,7 +8,7 @@
    *   - Voting status + results
    *
    * Server messages listened:
-   *   potato_round_start, potato_accepted, potato_timer,
+   *   potato_round_start, potato_accepted,
    *   potato_exploded, potato_vote_start, potato_vote_update,
    *   potato_result, round_skipped
    */
@@ -37,8 +37,6 @@
   let potatoDeviceName = "";
   let passCount = 0;
   let lastAcceptorName = "";
-  let timeRemaining = 0;
-
   // ── Explosion state ─────────────────────────────────────────────
 
   let explodedHolderName = "";
@@ -90,7 +88,6 @@
     potatoDeviceName = data.potatoDeviceName;
     passCount = 0;
     lastAcceptorName = "";
-    timeRemaining = data.timerDurationMs;
   }
 
   function onPotatoAccepted(data: {
@@ -99,10 +96,6 @@
   }) {
     lastAcceptorName = data.acceptorName;
     passCount = data.passNumber;
-  }
-
-  function onPotatoTimer(data: { timeRemaining: number }) {
-    timeRemaining = data.timeRemaining;
   }
 
   function onPotatoExploded(data: {
@@ -117,7 +110,6 @@
     explodedHolderName = data.holderName;
     explodedTargetName = data.targetName;
     explodedPassCount = data.passCount;
-    timeRemaining = 0;
   }
 
   function onPotatoVoteStart(data: {
@@ -182,7 +174,6 @@
   onMount(() => {
     room.onMessage("potato_round_start", onPotatoRoundStart);
     room.onMessage("potato_accepted", onPotatoAccepted);
-    room.onMessage("potato_timer", onPotatoTimer);
     room.onMessage("potato_exploded", onPotatoExploded);
     room.onMessage("potato_vote_start", onPotatoVoteStart);
     room.onMessage("potato_vote_update", onPotatoVoteUpdate);
@@ -197,9 +188,6 @@
   // ── Derived values ──────────────────────────────────────────────
 
   $: sortedPlayers = [...state.players.values()].sort((a, b) => b.score - a.score);
-  $: timerSeconds = Math.max(0, timeRemaining / 1000);
-  $: timerUrgent = timerSeconds < 4;
-  $: timerDisplay = timerSeconds.toFixed(1);
 </script>
 
 <div class="flex-1 flex flex-col items-center justify-center gap-8 p-10" data-testid="hot-potato-tv">

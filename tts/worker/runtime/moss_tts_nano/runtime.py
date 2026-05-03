@@ -265,6 +265,7 @@ class MossTTSNanoRuntime(OrtCpuRuntime):
         model_dir: str | Path | None = None,
         *,
         thread_count: int = 4,
+        inter_op_thread_count: int = 1,
         max_new_frames: int | None = None,
         do_sample: bool | None = None,
         sample_mode: str | None = None,
@@ -273,6 +274,7 @@ class MossTTSNanoRuntime(OrtCpuRuntime):
         super().__init__(
             model_dir=resolved_model_dir,
             thread_count=thread_count,
+            inter_op_thread_count=inter_op_thread_count,
             max_new_frames=max_new_frames,
             do_sample=do_sample,
             sample_mode=sample_mode,

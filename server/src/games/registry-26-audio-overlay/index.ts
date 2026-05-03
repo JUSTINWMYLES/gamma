@@ -34,7 +34,7 @@
  *   "recording_prepare"        { playerId, playerName, durationMs, serverTimestamp }
  *   "recording_turn"           { playerId, playerName, durationMs, serverTimestamp, maxClipDurationMs, mode }
  *   "recording_submitted"      { playerId }
- *   "playback_entry"           { playerId, playerName, gifUrl, gifLabel, audioBase64, audioDurationMs, introDurationMs, postDurationMs }
+ *   "playback_entry"           { playerId, playerName, gifUrl, gifLabel, audioBase64?, audioClipPath?, audioDurationMs, introDurationMs, postDurationMs }
  *   "playback_done"            {}
  *   "voting_start"             { durationMs, entries, serverTimestamp, totalVoters }
  *   "vote_confirmed"           { targetId }
@@ -51,6 +51,13 @@
 
 import { Client } from "@colyseus/core";
 import { BaseGame } from "../BaseGame";
+import { seededRng } from "../../utils/rng";
+import {
+  buildAudioOverlayClipProxyPath,
+  deleteAudioOverlayClips,
+  isAudioOverlayObjectStoreEnabled,
+  storeAudioOverlayClip,
+} from "../../utils/audioOverlayObjectStore";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -265,8 +272,16 @@ interface GifAssignment {
   originalPicker: string;
   /** Recorded audio as base64 (filled during recording phase). */
   audioBase64: string;
+  /** Object-store clip id when the recording was offloaded. */
+  audioClipId: string | null;
   /** Client-reported audio duration in seconds, clamped server-side. */
   audioDurationSecs: number;
+}
+
+interface RecordingWaitState {
+  playerId: string;
+  turnToken: number;
+  resolve: (() => void) | null;
 }
 
 interface SessionData {
@@ -288,8 +303,14 @@ interface SessionData {
   recordingOrder: string[];
   /** Index of the player currently recording. */
   currentRecorderIndex: number;
-  /** Resolve function to unblock the current recording wait. */
-  recordingResolve: (() => void) | null;
+  /** Guarded state for the current recording wait. */
+  recordingWait: RecordingWaitState | null;
+  /** Monotonic token for recording waits so stale async work cannot resolve a newer turn. */
+  nextRecordingTurnToken: number;
+  /** Snapshot of who can vote during the current voting phase. */
+  votingEligibleVoterIds: Set<string>;
+  /** Session-scoped RNG for all random choices. */
+  rng: () => number;
 }
 
 // ── Game class ────────────────────────────────────────────────────────────────
@@ -308,6 +329,7 @@ export default class AudioOverlayGame extends BaseGame {
   static override requiresSecondaryDisplay = false;
 
   private session: SessionData | null = null;
+  private readonly storedClipIds = new Set<string>();
 
   private currentMode(): AudioOverlayMode {
     return this.room.state.gameConfig.gameMode === "record_own" ? "record_own" : "randomized";
@@ -335,8 +357,10 @@ export default class AudioOverlayGame extends BaseGame {
       return;
     }
 
+    const rng = this._createSessionRng(_round, players.map((player) => player.id));
+
     // Pick a random player to choose the category
-    const chooser = players[Math.floor(Math.random() * players.length)];
+    const chooser = players[this._randomIndex(players.length, rng)];
 
     this.session = {
       categoryChooserId: chooser.id,
@@ -348,7 +372,10 @@ export default class AudioOverlayGame extends BaseGame {
       votes: new Map(),
       recordingOrder: [],
       currentRecorderIndex: -1,
-      recordingResolve: null,
+      recordingWait: null,
+      nextRecordingTurnToken: 0,
+      votingEligibleVoterIds: new Set(),
+      rng,
     };
 
     // ── Phase 0: Category Selection ─────────────────────────────────────
@@ -367,7 +394,7 @@ export default class AudioOverlayGame extends BaseGame {
     if (!this.session.chosenCategory) {
       // Pick a random non-"any" category for variety
       const pickable = CATEGORIES.filter((c) => c.id !== "any");
-      const auto = pickable[Math.floor(Math.random() * pickable.length)];
+      const auto = pickable[this._randomIndex(pickable.length, this.session.rng)];
       this.session.chosenCategory = auto.id;
     }
 
@@ -416,7 +443,7 @@ export default class AudioOverlayGame extends BaseGame {
     for (const p of players) {
       if (!this.session.selections.has(p.id)) {
         if (allAllowed.length > 0) {
-          const randomUrl = allAllowed[Math.floor(Math.random() * allAllowed.length)];
+          const randomUrl = allAllowed[this._randomIndex(allAllowed.length, this.session.rng)];
           this.session.selections.set(p.id, {
             playerId: p.id,
             playerName: p.name,
@@ -478,9 +505,7 @@ export default class AudioOverlayGame extends BaseGame {
     if (!this.session) return; // Room disposed during recordings
 
     // ── Phase 4: TV Playback ────────────────────────────────────────────
-    const assignments = [...this.session.assignments.values()].filter(
-      (a) => a.audioBase64.length > 0,
-    );
+    const assignments = this._playableAssignments();
 
     for (const entry of assignments) {
       if (!this.session) return;
@@ -494,7 +519,10 @@ export default class AudioOverlayGame extends BaseGame {
         playerName: entry.playerName,
         gifUrl: entry.gifUrl,
         gifLabel: entry.gifLabel,
-        audioBase64: entry.audioBase64,
+        audioBase64: entry.audioBase64 || undefined,
+        audioClipPath: entry.audioClipId
+          ? buildAudioOverlayClipProxyPath(entry.audioClipId)
+          : undefined,
         audioDurationMs,
         introDurationMs: PLAYBACK_INTRO_MS,
         postDurationMs: PLAYBACK_POST_ENTRY_MS,
@@ -505,11 +533,16 @@ export default class AudioOverlayGame extends BaseGame {
     this.broadcast("playback_done", {});
 
     // ── Phase 5: Voting ─────────────────────────────────────────────────
-    if (assignments.length >= 2) {
+    const eligibleVoters = this._eligibleVotersForEntries(assignments);
+    this.session.votingEligibleVoterIds = new Set(
+      eligibleVoters.map((player) => player.id),
+    );
+
+    if (assignments.length >= 2 && eligibleVoters.length > 0) {
       this.broadcast("voting_start", {
         durationMs: VOTING_DURATION_MS,
         serverTimestamp: Date.now(),
-        totalVoters: this._recordingEligiblePlayers().length,
+        totalVoters: eligibleVoters.length,
         entries: assignments.map((a) => ({
           playerId: a.playerId,
           playerName: a.playerName,
@@ -522,6 +555,7 @@ export default class AudioOverlayGame extends BaseGame {
     }
 
     if (!this.session) return;
+    this.session.votingEligibleVoterIds.clear();
 
     // ── Phase 6: Results ────────────────────────────────────────────────
     const results = this._computeResults();
@@ -564,7 +598,7 @@ export default class AudioOverlayGame extends BaseGame {
         this._handleGifSearch(client, input.query);
         break;
       case "submit_recording":
-        this._handleRecordingSubmission(client, input.audioBase64, input.durationSecs);
+        void this._handleRecordingSubmission(client, input.audioBase64, input.durationSecs);
         break;
       case "vote":
         this._handleVote(client, input.targetId);
@@ -575,13 +609,69 @@ export default class AudioOverlayGame extends BaseGame {
   override teardown(): void {
     super.teardown();
     // Resolve any pending waits
-    if (this.session?.recordingResolve) {
-      this.session.recordingResolve();
+    if (this.session?.recordingWait?.resolve) {
+      this.session.recordingWait.resolve();
+      this.session.recordingWait = null;
     }
     if (this.session?.categoryResolve) {
       this.session.categoryResolve();
     }
     this.session = null;
+    const clipIds = [...this.storedClipIds];
+    this.storedClipIds.clear();
+    void deleteAudioOverlayClips(clipIds);
+  }
+
+  override onPlayerReconnected(oldId: string, newId: string, _client: Client): void {
+    if (!this.session) return;
+
+    if (this.session.categoryChooserId === oldId) {
+      this.session.categoryChooserId = newId;
+    }
+
+    const currentName = this.room.state.players.get(newId)?.name;
+
+    this._moveMapValue(this.session.selections, oldId, newId, (selection) => {
+      selection.playerId = newId;
+      if (currentName) selection.playerName = currentName;
+    });
+
+    this._moveMapValue(this.session.assignments, oldId, newId, (assignment) => {
+      assignment.playerId = newId;
+      if (currentName) assignment.playerName = currentName;
+    });
+
+    if (this.session.votes.has(oldId)) {
+      const targetId = this.session.votes.get(oldId) ?? "";
+      this.session.votes.delete(oldId);
+      this.session.votes.set(newId, targetId === oldId ? newId : targetId);
+    }
+    for (const [voterId, targetId] of [...this.session.votes.entries()]) {
+      if (targetId === oldId) {
+        this.session.votes.set(voterId, newId);
+      }
+    }
+
+    this.session.recordingOrder = this.session.recordingOrder.map((playerId) =>
+      playerId === oldId ? newId : playerId,
+    );
+
+    if (this.session.recordingWait?.playerId === oldId) {
+      this.session.recordingWait.playerId = newId;
+    }
+
+    this._moveSetValue(this.session.votingEligibleVoterIds, oldId, newId);
+
+    const assignment = this.session.assignments.get(newId);
+    if (assignment && !this._assignmentHasPlayableAudio(assignment)) {
+      this.send(newId, "gif_assigned", {
+        gifUrl: assignment.gifUrl,
+        gifLabel: assignment.gifLabel,
+        originalPicker: assignment.originalPicker,
+        maxClipDurationMs: MAX_RECORDING_CLIP_MS,
+        mode: this.currentMode(),
+      });
+    }
   }
 
   // ── Input handlers ────────────────────────────────────────────────────────
@@ -655,17 +745,20 @@ export default class AudioOverlayGame extends BaseGame {
     this.send(client.sessionId, "gif_search_results", { gifs: results, query: q });
   }
 
-  private _handleRecordingSubmission(
+  private async _handleRecordingSubmission(
     client: Client,
     audioBase64?: string,
     durationSecs?: number,
-  ): void {
+  ): Promise<void> {
     if (!this.session || !audioBase64) return;
     const player = this.room.state.players.get(client.sessionId);
     if (!this.hasMicPermission(player)) return;
 
+    const recordingWait = this.session.recordingWait;
+    if (!recordingWait || recordingWait.playerId !== client.sessionId) return;
+
     // Only accept from the current recorder
-    const currentId = this.session.recordingOrder[this.session.currentRecorderIndex];
+    const currentId = this._currentRecorderId();
     if (client.sessionId !== currentId) return;
 
     // Size cap (~2MB encoded)
@@ -673,8 +766,18 @@ export default class AudioOverlayGame extends BaseGame {
 
     const assignment = this.session.assignments.get(client.sessionId);
     if (!assignment) return;
+    if (this._assignmentHasPlayableAudio(assignment)) return;
+
+    let clipBytes: Buffer | null = null;
+    try {
+      clipBytes = Buffer.from(audioBase64, "base64");
+    } catch {
+      return;
+    }
+    if (clipBytes.byteLength === 0) return;
 
     assignment.audioBase64 = audioBase64;
+    assignment.audioClipId = null;
     assignment.audioDurationSecs =
       Number.isFinite(durationSecs) && (durationSecs as number) > 0
         ? Math.min(MAX_RECORDING_CLIP_MS / 1000, durationSecs as number)
@@ -682,10 +785,10 @@ export default class AudioOverlayGame extends BaseGame {
 
     this.broadcast("recording_submitted", { playerId: client.sessionId });
 
-    // Unblock the recording wait
-    if (this.session.recordingResolve) {
-      this.session.recordingResolve();
-      this.session.recordingResolve = null;
+    this._resolveRecordingWait(client.sessionId, recordingWait.turnToken);
+
+    if (isAudioOverlayObjectStoreEnabled()) {
+      void this._offloadRecordingAssignment(assignment, clipBytes);
     }
   }
 
@@ -693,21 +796,51 @@ export default class AudioOverlayGame extends BaseGame {
     if (!this.session || !targetId) return;
     const player = this.room.state.players.get(client.sessionId);
     if (!this.hasMicPermission(player)) return;
+    const eligibleVoterIds = new Set(this._currentVotingEligibleVoterIds());
+    if (eligibleVoterIds.size === 0 || !eligibleVoterIds.has(client.sessionId)) return;
     if (targetId === client.sessionId) return; // can't vote for self
     if (this.session.votes.has(client.sessionId)) return; // already voted
-    if (!this.session.assignments.has(targetId)) return; // target must exist
-
-    // Verify target actually submitted audio
-    const targetAssignment = this.session.assignments.get(targetId);
-    if (!targetAssignment || !targetAssignment.audioBase64) return;
+    const targetAssignment = this._playableAssignments().find(
+      (assignment) => assignment.playerId === targetId,
+    );
+    if (!targetAssignment) return;
 
     this.session.votes.set(client.sessionId, targetId);
     this.send(client.sessionId, "vote_confirmed", { targetId });
 
     this.broadcast("vote_count_update", {
-      votesIn: this.session.votes.size,
-      totalVoters: this._recordingEligiblePlayers().length,
+      votesIn: this._votesInCount(),
+      totalVoters: eligibleVoterIds.size,
     });
+  }
+
+  private async _offloadRecordingAssignment(
+    assignment: GifAssignment,
+    clipBytes: Buffer,
+  ): Promise<void> {
+    try {
+      const stored = await storeAudioOverlayClip(clipBytes, "audio/webm");
+      if (!stored) return;
+
+      if (!this.session || this.isCancelled()) {
+        await deleteAudioOverlayClips([stored.clipId]);
+        return;
+      }
+
+      const assignmentStillPresent = [...this.session.assignments.values()].some(
+        (candidate) => candidate === assignment,
+      );
+      if (!assignmentStillPresent) {
+        await deleteAudioOverlayClips([stored.clipId]);
+        return;
+      }
+
+      assignment.audioClipId = stored.clipId;
+      assignment.audioBase64 = "";
+      this.storedClipIds.add(stored.clipId);
+    } catch (error) {
+      console.warn(`[AudioOverlay] Failed to offload recording for ${assignment.playerId}:`, error);
+    }
   }
 
   // ── Redistribution ────────────────────────────────────────────────────────
@@ -744,6 +877,7 @@ export default class AudioOverlayGame extends BaseGame {
         gifLabel: source.gifLabel,
         originalPicker: source.playerName,
         audioBase64: "",
+        audioClipId: null,
         audioDurationSecs: 0,
       });
 
@@ -751,10 +885,7 @@ export default class AudioOverlayGame extends BaseGame {
     }
 
     // Shuffle recording order
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
+    this._shuffleInPlace(order, this.session.rng);
 
     this.session.recordingOrder = order;
   }
@@ -765,16 +896,15 @@ export default class AudioOverlayGame extends BaseGame {
    */
   private _derangement(n: number): number[] {
     if (n <= 1) return [0]; // Edge case: can't derange a single element
+    const rng = this.session?.rng;
+    if (!rng) return Array.from({ length: n }, (_, i) => i);
 
     // Simple rejection method — expected ~e attempts
     const original = Array.from({ length: n }, (_, i) => i);
     let perm: number[];
     do {
       perm = [...original];
-      for (let i = perm.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [perm[i], perm[j]] = [perm[j], perm[i]];
-      }
+      this._shuffleInPlace(perm, rng);
     } while (perm.some((val, idx) => val === idx));
 
     return perm;
@@ -836,18 +966,31 @@ export default class AudioOverlayGame extends BaseGame {
     return new Promise<void>((resolve) => {
       // If player already submitted (shouldn't happen, but safety)
       const assignment = this.session?.assignments.get(playerId);
-      if (assignment && assignment.audioBase64) {
+      if (assignment && this._assignmentHasPlayableAudio(assignment)) {
         resolve();
         return;
       }
 
+      let turnToken = -1;
       if (this.session) {
-        this.session.recordingResolve = resolve;
+        turnToken = this.session.nextRecordingTurnToken + 1;
+        this.session.nextRecordingTurnToken = turnToken;
+        this.session.recordingWait = {
+          playerId,
+          turnToken,
+          resolve,
+        };
       }
 
       setTimeout(() => {
-        if (this.session) {
-          this.session.recordingResolve = null;
+        const recordingWait = this.session?.recordingWait;
+        if (
+          this.session &&
+          recordingWait &&
+          recordingWait.turnToken === turnToken &&
+          recordingWait.resolve === resolve
+        ) {
+          this.session.recordingWait = null;
         }
         resolve();
       }, timeoutMs + 6000); // +6s grace for encoding/network jitter on slower phones
@@ -856,9 +999,17 @@ export default class AudioOverlayGame extends BaseGame {
 
   private async _waitForAllVotesOrTimeout(timeoutMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
+      const hasVotingRoster = this._currentVotingEligibleVoterIds().length > 0;
+      if (!hasVotingRoster) {
+        resolve();
+        return;
+      }
+
       const check = setInterval(() => {
-        const active = this._recordingEligiblePlayers();
-        const allVoted = active.every((p) => this.session?.votes.has(p.id));
+        const eligibleVoterIds = this._currentVotingEligibleVoterIds();
+        const allVoted = eligibleVoterIds.every((playerId) =>
+          this.session?.votes.has(playerId),
+        );
         if (allVoted) {
           clearInterval(check);
           resolve();
@@ -898,7 +1049,7 @@ export default class AudioOverlayGame extends BaseGame {
     let winner: string | null = null;
 
     const entries = [...this.session.assignments.values()]
-      .filter((a) => a.audioBase64.length > 0)
+      .filter((a) => this._assignmentHasPlayableAudio(a))
       .map((a) => {
         const vc = voteCounts.get(a.playerId) ?? 0;
         scores[a.playerId] = PARTICIPATION_POINTS + vc * POINTS_PER_VOTE;
@@ -933,5 +1084,106 @@ export default class AudioOverlayGame extends BaseGame {
       category: this.session.chosenCategory ?? "any",
       entries,
     };
+  }
+
+  private _assignmentHasPlayableAudio(assignment: GifAssignment): boolean {
+    return assignment.audioBase64.length > 0 || assignment.audioClipId !== null;
+  }
+
+  private _playableAssignments(): GifAssignment[] {
+    if (!this.session) return [];
+    return [...this.session.assignments.values()].filter((assignment) =>
+      this._assignmentHasPlayableAudio(assignment),
+    );
+  }
+
+  private _eligibleVotersForEntries(entries: GifAssignment[]) {
+    if (entries.length < 2) return [];
+    const entryPlayerIds = [...new Set(entries.map((entry) => entry.playerId))];
+    return this._recordingEligiblePlayers().filter((player) =>
+      entryPlayerIds.some((entryPlayerId) => entryPlayerId !== player.id),
+    );
+  }
+
+  private _currentVotingEligibleVoterIds(): string[] {
+    return this.session ? [...this.session.votingEligibleVoterIds] : [];
+  }
+
+  private _votesInCount(): number {
+    if (!this.session) return 0;
+    const eligibleVoterIds = new Set(this._currentVotingEligibleVoterIds());
+    if (eligibleVoterIds.size === 0) return 0;
+
+    let votesIn = 0;
+    for (const voterId of this.session.votes.keys()) {
+      if (eligibleVoterIds.has(voterId)) votesIn += 1;
+    }
+    return votesIn;
+  }
+
+  private _currentRecorderId(): string | null {
+    if (!this.session) return null;
+    const { currentRecorderIndex, recordingOrder } = this.session;
+    if (currentRecorderIndex < 0 || currentRecorderIndex >= recordingOrder.length) {
+      return null;
+    }
+    return recordingOrder[currentRecorderIndex] ?? null;
+  }
+
+  private _resolveRecordingWait(playerId: string, turnToken: number): void {
+    const recordingWait = this.session?.recordingWait;
+    if (
+      !this.session ||
+      !recordingWait ||
+      recordingWait.playerId !== playerId ||
+      recordingWait.turnToken !== turnToken
+    ) {
+      return;
+    }
+
+    const resolve = recordingWait.resolve;
+    this.session.recordingWait = null;
+    resolve?.();
+  }
+
+  private _moveMapValue<T>(
+    map: Map<string, T>,
+    oldId: string,
+    newId: string,
+    update?: (value: T) => void,
+  ): void {
+    if (!map.has(oldId)) return;
+    const value = map.get(oldId) as T;
+    map.delete(oldId);
+    update?.(value);
+    map.set(newId, value);
+  }
+
+  private _moveSetValue(set: Set<string>, oldId: string, newId: string): void {
+    if (set.delete(oldId)) {
+      set.add(newId);
+    }
+  }
+
+  private _createSessionRng(round: number, playerIds: string[]): () => number {
+    const seedSource = `${this.room.roomId}:${round}:${Date.now()}:${playerIds.sort().join(",")}`;
+    let seed = 2166136261;
+    for (let i = 0; i < seedSource.length; i++) {
+      seed ^= seedSource.charCodeAt(i);
+      seed = Math.imul(seed, 16777619);
+    }
+    return seededRng(seed >>> 0);
+  }
+
+  private _randomIndex(length: number, rng: () => number): number {
+    if (length <= 1) return 0;
+    return Math.floor(rng() * length);
+  }
+
+  private _shuffleInPlace<T>(items: T[], rng: () => number): void {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
   }
 }

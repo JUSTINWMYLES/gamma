@@ -88,12 +88,14 @@ html, body, #app {
 /* pinch-to-zoom and double-tap-to-zoom across the entire app.               */
 html {
   touch-action: manipulation;
+  overscroll-behavior-y: none;
 }
 
 body {
   background: var(--bg-base);
   color: var(--text-primary);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  overscroll-behavior-y: none;
 }
 
 /*

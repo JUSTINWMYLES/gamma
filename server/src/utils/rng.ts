@@ -6,6 +6,8 @@
  * NOT cryptographically secure — use only for game mechanics.
  */
 
+import { randomBytes } from "node:crypto";
+
 /**
  * Returns a function that produces the next float in [0, 1) using a
  * linear congruential generator seeded with `seed`.
@@ -36,11 +38,13 @@ export function seededShuffle<T>(arr: T[], seed: number): T[] {
 /**
  * Generate a 4-character room code.
  * Excludes visually ambiguous characters (0/O, 1/I, 5/S, 2/Z).
+ * Uses crypto.randomBytes instead of Math.random() per project convention.
  */
 export function generateRoomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRTUVWXY3469";
+  const bytes = randomBytes(4);
   return Array.from(
-    { length: 4 },
-    () => chars[Math.floor(Math.random() * chars.length)],
+    bytes,
+    (b) => chars[b % chars.length],
   ).join("");
 }

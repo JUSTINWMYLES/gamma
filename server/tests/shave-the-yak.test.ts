@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import ShaveYakGame, { YAK_H, YAK_W } from "../src/games/registry-19-shave-the-yak";
 import {
   createYakMask,
   applySwipe,
   computeShavedPercent,
+  computeShavedPercentFromCounts,
   computeScore,
   buildRoundResult,
   rankLeaderboard,
@@ -10,6 +12,51 @@ import {
   SHAVE_RADIUS,
 } from "../src/games/registry-19-shave-the-yak/shavedPercent";
 import type { YakMask, RoundResult } from "../src/games/registry-19-shave-the-yak/shavedPercent";
+
+function createPlayer(id: string, name: string) {
+  return {
+    id,
+    name,
+    score: 0,
+    isReady: false,
+    isEliminated: false,
+    isConnected: true,
+    disconnectedAt: 0,
+    micPermission: "granted",
+    motionPermission: "granted",
+  };
+}
+
+function createRoomStub(playerIds: string[] = ["p1"]) {
+  const players = new Map(
+    playerIds.map((id, index) => [id, createPlayer(id, `Player ${index + 1}`)]),
+  );
+
+  return {
+    state: {
+      phase: "in_round",
+      selectedGame: "registry-19-shave-the-yak",
+      hostSessionId: playerIds[0] ?? "",
+      phaseStartedAt: 0,
+      currentRound: 1,
+      isPracticeRound: false,
+      roundDurationSecs: 20,
+      gameConfig: {
+        roundCount: 1,
+        timeLimitSecs: 20,
+        practiceRoundEnabled: false,
+        matchMode: "ffa",
+      },
+      players,
+    },
+    broadcast: vi.fn(),
+    clients: playerIds.map((id) => ({ sessionId: id, send: vi.fn() })),
+  } as any;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 // ── createYakMask ────────────────────────────────────────────────────────────
 
@@ -130,6 +177,18 @@ describe("applySwipe", () => {
 // ── computeShavedPercent ─────────────────────────────────────────────────────
 
 describe("computeShavedPercent", () => {
+  it("computes from tracked shaved counts", () => {
+    expect(computeShavedPercentFromCounts(100, 0)).toBe(0);
+    expect(computeShavedPercentFromCounts(100, 25)).toBe(25);
+    expect(computeShavedPercentFromCounts(3, 1)).toBe(33.33);
+  });
+
+  it("clamps tracked shaved counts to valid bounds", () => {
+    expect(computeShavedPercentFromCounts(10, -5)).toBe(0);
+    expect(computeShavedPercentFromCounts(10, 50)).toBe(100);
+    expect(computeShavedPercentFromCounts(0, 10)).toBe(0);
+  });
+
   it("returns 0 for untouched mask", () => {
     const mask = createYakMask(50, 50);
     expect(computeShavedPercent(mask)).toBe(0);
@@ -360,5 +419,115 @@ describe("integration: full shave flow", () => {
     const pct = computeShavedPercent(mask);
     expect(pct).toBeGreaterThan(0);
     expect(pct).toBeLessThan(100);
+  });
+});
+
+describe("ShaveYakGame live update behavior", () => {
+  it("tracks shaved cells incrementally for player updates", () => {
+    const room = createRoomStub(["p1"]);
+    const client = room.clients[0];
+    const game = new ShaveYakGame(room) as any;
+
+    const mask = createYakMask(YAK_W, YAK_H, `0,${YAK_W * YAK_H}`);
+    game.playerRounds.set("p1", {
+      mask,
+      shavedCells: 0,
+      hits: 0,
+      misses: 0,
+      combo: 0,
+      comboMax: 0,
+      yakOffsetX: 0,
+      yakOffsetY: 0,
+      yakRotation: 0,
+    });
+
+    game.handleInput(client, {
+      action: "swipe",
+      x1: 20,
+      y1: 20,
+      x2: 80,
+      y2: 20,
+      onTarget: true,
+    });
+
+    const playerRound = game.playerRounds.get("p1");
+    expect(playerRound.shavedCells).toBeGreaterThan(0);
+    expect(client.send).toHaveBeenCalledWith(
+      "shave_update",
+      expect.objectContaining({
+        shavedPercent: computeShavedPercent(playerRound.mask),
+        combo: 1,
+        comboMax: 1,
+      }),
+    );
+  });
+
+  it("sends nudge updates directly to the active client", () => {
+    const room = createRoomStub(["p1"]);
+    const client = room.clients[0];
+    const otherClient = { sessionId: "other", send: vi.fn() };
+    room.clients.push(otherClient);
+    const game = new ShaveYakGame(room) as any;
+
+    game.playerRounds.set("p1", {
+      mask: createYakMask(YAK_W, YAK_H, `0,${YAK_W * YAK_H}`),
+      shavedCells: 0,
+      hits: 0,
+      misses: 0,
+      combo: 3,
+      comboMax: 3,
+      yakOffsetX: 0,
+      yakOffsetY: 0,
+      yakRotation: 0,
+    });
+
+    game.handleInput(client, {
+      action: "swipe",
+      x1: -10,
+      y1: 10,
+      x2: -40,
+      y2: 15,
+      onTarget: false,
+    });
+
+    expect(client.send).toHaveBeenCalledWith(
+      "yak_nudge",
+      expect.objectContaining({
+        yakOffsetX: expect.any(Number),
+        yakOffsetY: expect.any(Number),
+        yakRotation: expect.any(Number),
+      }),
+    );
+    expect(otherClient.send).not.toHaveBeenCalled();
+  });
+
+  it("skips progress broadcasts when nothing changed", () => {
+    const room = createRoomStub(["p1"]);
+    const game = new ShaveYakGame(room) as any;
+
+    game.playerRounds.set("p1", {
+      mask: createYakMask(YAK_W, YAK_H, `0,${YAK_W * YAK_H}`),
+      shavedCells: 0,
+      hits: 0,
+      misses: 0,
+      combo: 0,
+      comboMax: 0,
+      yakOffsetX: 0,
+      yakOffsetY: 0,
+      yakRotation: 0,
+    });
+
+    game.progressDirty = false;
+    game._broadcastProgress();
+    expect(room.broadcast).not.toHaveBeenCalled();
+
+    game.progressDirty = true;
+    game._broadcastProgress();
+    expect(room.broadcast).toHaveBeenCalledWith(
+      "shave_progress_all",
+      expect.objectContaining({
+        players: [expect.objectContaining({ playerId: "p1", shavedPercent: 0 })],
+      }),
+    );
   });
 });

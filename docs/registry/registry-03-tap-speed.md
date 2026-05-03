@@ -123,10 +123,9 @@ This is the first game to use the bracket system (`server/src/utils/bracket.ts`)
 |---------|-----------|---------|
 | `tap_bracket_init` | Server → All | `{ totalPlayers, totalRounds }` |
 | `tap_match_start` | Server → All | `{ matchId, player1Id, player1Name, player2Id, player2Name, bracketRound }` |
-| `tap_go` | Server → Match players | `{ durationMs }` |
+| `tap_go` | Server → Match players | `{ durationMs, endsAt }` |
 | `tap_confirmed` | Server → Tapper | `{ tapCount }` |
 | `tap_counts` | Server → All | `{ matchId, player1Id, player1Taps, player2Id, player2Taps }` |
-| `tap_timer` | Server → All | `{ matchId, timeRemaining, player1Taps, player2Taps }` |
 | `tap_match_timer_start` | Server → All | `{ matchId, durationMs, endsAt }` |
 | `tap_match_end` | Server → All | `{ matchId, player1Id, player1Taps, player2Id, player2Taps }` |
 | `tap_match_result` | Server → All | `{ matchId, winnerId, winnerName, loserId, loserName, winnerTaps, loserTaps, durationMs }` |

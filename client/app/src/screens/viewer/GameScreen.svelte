@@ -63,28 +63,26 @@
   let ctx: CanvasRenderingContext2D;
   let animFrame: number;
 
-  let timeLeft = 0;
-  let timerInterval: ReturnType<typeof setInterval>;
+  // Time remaining — only needed for the default (Don't Get Caught) fallback UI.
+  // Derived reactively from server-authoritative timestamps; no setInterval drift.
+  $: isDefaultGame = !isOddOneOut && !isShaveYak && !isAudioOverlay && !isLowball && !isFireMatch && !isHotPotato && !isTapSpeed && !isSoundReplication && !isEscapeMaze && !isPaintMatch && !isGridTapColors && !isWordBuild && !isWantedAd && !isTierRanking && !isMedicalStory && !isWesternStandoff && !isNewsBroadcast;
+  $: timeLeft = isDefaultGame
+    ? Math.max(0, state.roundDurationSecs - (Date.now() - state.phaseStartedAt) / 1000)
+    : 0;
 
   onMount(() => {
-    if (isOddOneOut || isShaveYak || isAudioOverlay || isLowball || isFireMatch || isHotPotato || isTapSpeed || isSoundReplication || isEscapeMaze || isPaintMatch || isGridTapColors || isWordBuild || isWantedAd || isTierRanking || isMedicalStory || isWesternStandoff || isNewsBroadcast) return; // delegated components handle their own setup
-    ctx = canvas.getContext("2d")!;
-    animFrame = requestAnimationFrame(draw);
-
-    timerInterval = setInterval(() => {
-      const elapsed = (Date.now() - state.phaseStartedAt) / 1000;
-      timeLeft = Math.max(0, state.roundDurationSecs - elapsed);
-    }, 200);
+    if (isDefaultGame) {
+      ctx = canvas.getContext("2d")!;
+      animFrame = requestAnimationFrame(draw);
+    }
 
     return () => {
       cancelAnimationFrame(animFrame);
-      clearInterval(timerInterval);
     };
   });
 
   onDestroy(() => {
     cancelAnimationFrame(animFrame);
-    clearInterval(timerInterval);
   });
 
   function draw() {

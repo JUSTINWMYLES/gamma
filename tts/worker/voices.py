@@ -16,9 +16,12 @@ class VoiceRegistry:
         self.manifest_path = manifest_path.expanduser().resolve()
         self.manifest_dir = self.manifest_path.parent
         self._voices: dict[str, VoicePreset] = {}
+        self._manifest_mtime_ns = 0
+        self._manifest_size = -1
         self.refresh()
 
     def refresh(self) -> None:
+        stat = self.manifest_path.stat()
         payload = json.loads(self.manifest_path.read_text(encoding="utf-8"))
         voices: dict[str, VoicePreset] = {}
         for raw_voice in payload.get("voices", []):
@@ -56,9 +59,18 @@ class VoiceRegistry:
                 availability_reason=reason,
             )
         self._voices = voices
+        self._manifest_mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+        self._manifest_size = stat.st_size
+
+    def refresh_if_changed(self) -> None:
+        stat = self.manifest_path.stat()
+        mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+        if mtime_ns == self._manifest_mtime_ns and stat.st_size == self._manifest_size and self._voices:
+            return
+        self.refresh()
 
     def resolve_for_job(self, job: Job) -> ResolvedVoice:
-        self.refresh()
+        self.refresh_if_changed()
         preset = self._voices.get(job.voice_preset_id)
         source = (job.voice_source or (preset.source if preset else "")).strip()
         if source == "builtin":

@@ -89,7 +89,7 @@ const DIRECT_LOS_HALF_ANGLE = Math.PI / 12; // 15° each side = 30° "direct" zo
 const DIRECT_LOS_MULTIPLIER = 4; // 4x faster detection when dead center
 
 /** Guard bounding-box half-size for wall collision (tiles). Slightly larger than players. */
-const GUARD_HALF = 0.45;
+const GUARD_HALF = 0.44;
 
 /** Max guards regardless of round number. */
 const MAX_GUARDS = 6;

@@ -25,6 +25,11 @@ import { RedisPresence } from "@colyseus/redis-presence";
 import { RedisDriver } from "@colyseus/redis-driver";
 import { GammaRoom } from "./rooms/GammaRoom";
 import { fetchTTSArtifact, isTTSEnabled } from "./games/registry-45-news-broadcast/ttsApiClient";
+import {
+  fetchAudioOverlayClip,
+  isAudioOverlayObjectStoreEnabled,
+  sanitizeAudioOverlayClipId,
+} from "./utils/audioOverlayObjectStore";
 
 const PORT = Number(process.env.PORT ?? 2567);
 const TTS_JOB_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,127})$/;
@@ -47,6 +52,36 @@ async function main() {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", ts: Date.now() });
   });
+
+  const handleAudioOverlayClipProxy: express.RequestHandler = async (req, res) => {
+    const clipId = sanitizeAudioOverlayClipId(req.params.clipId ?? "");
+    if (!clipId) {
+      res.status(400).json({ error: "invalid clipId" });
+      return;
+    }
+
+    if (!isAudioOverlayObjectStoreEnabled()) {
+      res.status(404).json({ error: "Audio Overlay object store is not enabled" });
+      return;
+    }
+
+    const clip = await fetchAudioOverlayClip(clipId);
+    if (!clip) {
+      res.status(502).json({ error: "Failed to reach audio clip storage" });
+      return;
+    }
+
+    if (!clip.ok) {
+      res.status(clip.status).json({ error: clip.error });
+      return;
+    }
+
+    res.setHeader("Content-Type", clip.contentType);
+    res.setHeader("Content-Length", clip.bytes.byteLength.toString());
+    res.setHeader("Cache-Control", clip.cacheControl ?? "private, max-age=300");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.status(200).send(clip.bytes);
+  };
 
   const handleTTSAudioProxy: express.RequestHandler = async (req, res) => {
     const jobId = sanitizeTTSJobId(req.params.jobId ?? "");
@@ -78,6 +113,10 @@ async function main() {
     res.status(200).send(artifact.bytes);
   };
 
+  app.get([
+    "/api/audio-overlay/clips/:clipId",
+    "/ws/api/audio-overlay/clips/:clipId",
+  ], handleAudioOverlayClipProxy);
   app.get(["/api/tts/audio/:jobId", "/ws/api/tts/audio/:jobId"], handleTTSAudioProxy);
 
   const httpServer = createServer(app);

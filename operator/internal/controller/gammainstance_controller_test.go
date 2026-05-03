@@ -43,7 +43,7 @@ func newTestInstance(name, namespace string) *gammav1alpha1.GammaInstance {
 		Spec: gammav1alpha1.GammaInstanceSpec{
 			Server: gammav1alpha1.ServerSpec{
 				Image:    "ghcr.io/gamma/gamma-server:latest",
-				Replicas: int32Ptr(2),
+				Replicas: int32Ptr(1),
 				Port:     2567,
 			},
 			Client: gammav1alpha1.ClientSpec{
@@ -80,7 +80,7 @@ func TestReconcile_CreatesServerDeployment(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "ghcr.io/gamma/gamma-server:latest", deploy.Spec.Template.Spec.Containers[0].Image)
-	assert.Equal(t, int32(2), *deploy.Spec.Replicas)
+	assert.Equal(t, int32(1), *deploy.Spec.Replicas)
 	assert.Equal(t, int32(2567), deploy.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort)
 }
 
@@ -531,8 +531,8 @@ func TestReconcile_CreatesHPAWhenAutoscalingEnabled(t *testing.T) {
 	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-server", Namespace: "default"}, hpa)
 	require.NoError(t, err)
 
-	assert.Equal(t, int32(2), *hpa.Spec.MinReplicas)
-	assert.Equal(t, int32(10), hpa.Spec.MaxReplicas)
+	assert.Equal(t, int32(1), *hpa.Spec.MinReplicas)
+	assert.Equal(t, int32(1), hpa.Spec.MaxReplicas)
 	assert.Equal(t, "my-gamma-server", hpa.Spec.ScaleTargetRef.Name)
 }
 
@@ -614,14 +614,15 @@ func TestReconcile_CreatesIngressWhenEnabled(t *testing.T) {
 
 	assert.Equal(t, "nginx", *ingress.Spec.IngressClassName)
 	assert.Equal(t, "gamma.example.com", ingress.Spec.Rules[0].Host)
-	require.Len(t, ingress.Spec.Rules[0].HTTP.Paths, 3)
-	assert.Equal(t, "/api/tts", ingress.Spec.Rules[0].HTTP.Paths[0].Path)
+	require.Len(t, ingress.Spec.Rules[0].HTTP.Paths, 4)
+	assert.Equal(t, "/api/audio-overlay", ingress.Spec.Rules[0].HTTP.Paths[0].Path)
 	if assert.NotNil(t, ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service) {
 		assert.Equal(t, "my-gamma-server", ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Name)
 		assert.EqualValues(t, 2567, ingress.Spec.Rules[0].HTTP.Paths[0].Backend.Service.Port.Number)
 	}
-	assert.Equal(t, "/ws", ingress.Spec.Rules[0].HTTP.Paths[1].Path)
-	assert.Equal(t, "/", ingress.Spec.Rules[0].HTTP.Paths[2].Path)
+	assert.Equal(t, "/api/tts", ingress.Spec.Rules[0].HTTP.Paths[1].Path)
+	assert.Equal(t, "/ws", ingress.Spec.Rules[0].HTTP.Paths[2].Path)
+	assert.Equal(t, "/", ingress.Spec.Rules[0].HTTP.Paths[3].Path)
 
 	// Verify sticky session annotations.
 	assert.Equal(t, "cookie", ingress.Annotations["nginx.ingress.kubernetes.io/affinity"])
@@ -814,6 +815,71 @@ func TestHelpers_DefaultValues(t *testing.T) {
 
 	storageSpec.Size = "5Gi"
 	assert.Equal(t, "5Gi", storageSpec.RedisStorageSize())
+
+	audioOverlayObjectStoreSpec := gammav1alpha1.AudioOverlayObjectStoreSpec{}
+	assert.Equal(t, "gamma-audio-overlay-clips", audioOverlayObjectStoreSpec.BucketNameValue())
+	assert.Equal(t, "audio-overlay-clips", audioOverlayObjectStoreSpec.PrefixValue())
+
+	audioOverlayObjectStoreSpec.BucketName = "custom-bucket"
+	audioOverlayObjectStoreSpec.Prefix = "/custom/prefix/"
+	assert.Equal(t, "custom-bucket", audioOverlayObjectStoreSpec.BucketNameValue())
+	assert.Equal(t, "custom/prefix", audioOverlayObjectStoreSpec.PrefixValue())
+}
+
+func TestBuildServerEnv_AudioOverlayObjectStoreEnabled(t *testing.T) {
+	instance := newTestInstance("my-gamma", "test-ns")
+	instance.Spec.AudioOverlay = gammav1alpha1.AudioOverlaySpec{
+		ObjectStore: gammav1alpha1.AudioOverlayObjectStoreSpec{
+			Enabled:    true,
+			BucketName: "gamma-audio-overlay-clips",
+			Prefix:     "round-clips",
+		},
+	}
+
+	env := buildServerEnv(instance)
+
+	envMap := map[string]string{}
+	for _, e := range env {
+		if e.Value != "" {
+			envMap[e.Name] = e.Value
+		}
+	}
+
+	assert.Equal(t, "my-gamma-tts-object-store.test-ns.svc.cluster.local:8333", envMap["AUDIO_OVERLAY_OBJECT_STORE_ENDPOINT"])
+	assert.Equal(t, "false", envMap["AUDIO_OVERLAY_OBJECT_STORE_USE_SSL"])
+	assert.Equal(t, "gamma", envMap["AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY"])
+	assert.Equal(t, "gammalocal", envMap["AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY"])
+	assert.Equal(t, "gamma-audio-overlay-clips", envMap["AUDIO_OVERLAY_OBJECT_STORE_BUCKET"])
+	assert.Equal(t, "round-clips", envMap["AUDIO_OVERLAY_OBJECT_STORE_PREFIX"])
+	_, hasTTSAPIURL := envMap["TTS_API_URL"]
+	assert.False(t, hasTTSAPIURL)
+}
+
+func TestBuildServerEnv_AudioOverlayObjectStoreSecretCredentials(t *testing.T) {
+	instance := newTestInstance("my-gamma", "test-ns")
+	instance.Spec.AudioOverlay = gammav1alpha1.AudioOverlaySpec{
+		ObjectStore: gammav1alpha1.AudioOverlayObjectStoreSpec{Enabled: true},
+	}
+	instance.Spec.TTS.ObjectStore.Credentials.SecretRef = &corev1.LocalObjectReference{Name: "gamma-object-store-credentials"}
+
+	env := buildServerEnv(instance)
+
+	secretEnvs := map[string]*corev1.EnvVarSource{}
+	for _, e := range env {
+		if e.ValueFrom != nil {
+			secretEnvs[e.Name] = e.ValueFrom
+		}
+	}
+
+	require.Contains(t, secretEnvs, "AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY")
+	require.NotNil(t, secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY"].SecretKeyRef)
+	assert.Equal(t, "gamma-object-store-credentials", secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY"].SecretKeyRef.Name)
+	assert.Equal(t, "accessKey", secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_ACCESS_KEY"].SecretKeyRef.Key)
+
+	require.Contains(t, secretEnvs, "AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY")
+	require.NotNil(t, secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY"].SecretKeyRef)
+	assert.Equal(t, "gamma-object-store-credentials", secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY"].SecretKeyRef.Name)
+	assert.Equal(t, "secretKey", secretEnvs["AUDIO_OVERLAY_OBJECT_STORE_SECRET_KEY"].SecretKeyRef.Key)
 }
 
 func TestBuildServerEnv_RedisEnabled(t *testing.T) {
@@ -900,6 +966,28 @@ func TestComputePhase(t *testing.T) {
 				gi.Status.ServerReadyReplicas = 2
 				gi.Status.ClientReadyReplicas = 2
 				gi.Status.RedisReady = false
+			},
+			expected: "Running",
+		},
+		{
+			name: "audio overlay object store enabled but not ready",
+			setup: func(gi *gammav1alpha1.GammaInstance) {
+				gi.Spec.AudioOverlay.ObjectStore.Enabled = true
+				gi.Status.ServerReadyReplicas = 2
+				gi.Status.ClientReadyReplicas = 2
+				gi.Status.RedisReady = true
+				gi.Status.TTSObjectStoreReady = false
+			},
+			expected: "Degraded",
+		},
+		{
+			name: "audio overlay object store enabled and ready",
+			setup: func(gi *gammav1alpha1.GammaInstance) {
+				gi.Spec.AudioOverlay.ObjectStore.Enabled = true
+				gi.Status.ServerReadyReplicas = 2
+				gi.Status.ClientReadyReplicas = 2
+				gi.Status.RedisReady = true
+				gi.Status.TTSObjectStoreReady = true
 			},
 			expected: "Running",
 		},
@@ -1031,6 +1119,72 @@ func TestReconcile_InjectsSecretEnvVarsIntoServerDeployment(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "GIPHY_API_KEY secret env var should be injected into server deployment")
+}
+
+func TestReconcile_CreatesSharedObjectStoreForAudioOverlay(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.AudioOverlay = gammav1alpha1.AudioOverlaySpec{
+		ObjectStore: gammav1alpha1.AudioOverlayObjectStoreSpec{Enabled: true},
+	}
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
+	require.NoError(t, err)
+
+	serverDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-server", Namespace: "default"}, serverDeploy)
+	require.NoError(t, err)
+
+	envMap := map[string]string{}
+	for _, env := range serverDeploy.Spec.Template.Spec.Containers[0].Env {
+		if env.Value != "" {
+			envMap[env.Name] = env.Value
+		}
+	}
+
+	assert.Equal(t, "my-gamma-tts-object-store.default.svc.cluster.local:8333", envMap["AUDIO_OVERLAY_OBJECT_STORE_ENDPOINT"])
+	assert.Equal(t, "gamma-audio-overlay-clips", envMap["AUDIO_OVERLAY_OBJECT_STORE_BUCKET"])
+	_, hasTTSAPIURL := envMap["TTS_API_URL"]
+	assert.False(t, hasTTSAPIURL)
+	assert.NotNil(t, objectStoreDeploy.Spec.Template.Spec.Containers[0].ReadinessProbe)
+	assert.NotNil(t, objectStoreDeploy.Spec.Template.Spec.Containers[0].LivenessProbe)
+}
+
+func TestReconcile_DoesNotCreateSharedObjectStoreWhenUnused(t *testing.T) {
+	s := newScheme()
+	instance := newTestInstance("my-gamma", "default")
+	instance.Spec.TTS.Enabled = false
+	instance.Spec.AudioOverlay.ObjectStore.Enabled = false
+
+	client := fake.NewClientBuilder().WithScheme(s).
+		WithObjects(instance).
+		WithStatusSubresource(instance).
+		Build()
+
+	r := &GammaInstanceReconciler{Client: client, Scheme: s}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "my-gamma", Namespace: "default"},
+	})
+	require.NoError(t, err)
+
+	objectStoreDeploy := &appsv1.Deployment{}
+	err = client.Get(context.Background(), types.NamespacedName{Name: "my-gamma-tts-object-store", Namespace: "default"}, objectStoreDeploy)
+	assert.Error(t, err)
+	assert.True(t, crclient.IgnoreNotFound(err) == nil)
 }
 
 func TestBuildServerEnv_OTELEnabled(t *testing.T) {

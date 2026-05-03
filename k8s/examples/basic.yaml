@@ -42,3 +42,9 @@ spec:
   #     credentials:
   #       secretRef:
   #         name: gamma-object-store-credentials
+
+  # Optional Audio Overlay clip storage in the shared SeaweedFS object store.
+  # This keeps browser traffic on the Gamma server proxy instead of exposing S3 directly.
+  # audioOverlay:
+  #   objectStore:
+  #     enabled: true

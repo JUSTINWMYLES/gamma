@@ -77,8 +77,11 @@ const ROUND_DURATION_SECS = 60;
 /** Minimum time between accepted moves from one player/team (ms). */
 const MOVE_DEBOUNCE_MS = 100;
 
-/** How often to broadcast positions (ms). */
+/** How often to evaluate position sync broadcasts (ms). */
 const SYNC_TICK_MS = 200;
+
+/** Periodic full-sync heartbeat for idle position updates (ms). */
+const POSITION_HEARTBEAT_MS = 1000;
 
 /** How often to check for shake input in team mode (ms). */
 const SHAKE_TICK_MS = 150;
@@ -181,6 +184,12 @@ export default class EscapeMazeGame extends BaseGame {
 
   /** Round timer interval. */
   private timerInterval: ReturnType<typeof setInterval> | null = null;
+
+  /** True when positions changed since the last sync broadcast. */
+  private positionSyncDirty = false;
+
+  /** Timestamp of the last position/team-position broadcast. */
+  private lastPositionBroadcastAt = 0;
 
   /** Resolve to end the round early (all escaped). */
   private roundResolve: (() => void) | null = null;
@@ -431,6 +440,8 @@ export default class EscapeMazeGame extends BaseGame {
     super.teardown();
     this.activeRoundToken++;
     this._clearRoundLifecycle();
+    this.positionSyncDirty = false;
+    this.lastPositionBroadcastAt = 0;
     this.playerPositions.clear();
     this.teams = [];
     this.roundResolve = null;
@@ -722,10 +733,10 @@ export default class EscapeMazeGame extends BaseGame {
     }
 
     // Broadcast initial positions
-    this._broadcastPositions();
+    this._broadcastPositionSync(true);
 
     // Start sync and timer intervals
-    this.syncInterval = setInterval(() => this._broadcastPositions(), SYNC_TICK_MS);
+    this.syncInterval = setInterval(() => this._broadcastPositionSync(), SYNC_TICK_MS);
     this.timerInterval = setInterval(() => this._timerTick(), 250);
 
     // Wait for round to end (all escaped or time runs out)
@@ -770,6 +781,8 @@ export default class EscapeMazeGame extends BaseGame {
       player.y = newY;
     }
 
+    this._markPositionSyncDirty();
+
     // Send move confirmation
     this.send(sessionId, "maze_move_ok", { x: newX, y: newY });
 
@@ -787,6 +800,7 @@ export default class EscapeMazeGame extends BaseGame {
     pos.escaped = true;
     pos.escapeOrder = this.finishCount;
     pos.escapeTimeMs = Date.now() - this.roundStartMs;
+    this._markPositionSyncDirty();
 
     const player = this.room.state.players.get(sessionId);
     this.broadcast("maze_player_escaped", {
@@ -897,10 +911,10 @@ export default class EscapeMazeGame extends BaseGame {
     });
 
     // Broadcast initial positions
-    this._broadcastTeamPositions();
+    this._broadcastPositionSync(true);
 
     // Start sync interval
-    this.syncInterval = setInterval(() => this._broadcastTeamPositions(), SYNC_TICK_MS);
+    this.syncInterval = setInterval(() => this._broadcastPositionSync(), SYNC_TICK_MS);
     this.timerInterval = setInterval(() => this._timerTick(), 250);
 
     // Wait for round to end
@@ -949,6 +963,7 @@ export default class EscapeMazeGame extends BaseGame {
     team.pos.x = newX;
     team.pos.y = newY;
     team.pos.lastMoveAt = now;
+    this._markPositionSyncDirty();
 
     // Broadcast to team
     for (const mid of team.memberIds) {
@@ -974,6 +989,7 @@ export default class EscapeMazeGame extends BaseGame {
     team.pos.escaped = true;
     team.pos.escapeOrder = this.finishCount;
     team.pos.escapeTimeMs = Date.now() - this.roundStartMs;
+    this._markPositionSyncDirty();
 
     const memberNames = team.memberIds.map((id) => {
       const p = this.room.state.players.get(id);
@@ -1021,6 +1037,26 @@ export default class EscapeMazeGame extends BaseGame {
   }
 
   // ── Broadcasting ──────────────────────────────────────────────────────────
+
+  private _markPositionSyncDirty(): void {
+    this.positionSyncDirty = true;
+  }
+
+  private _broadcastPositionSync(force = false): void {
+    const now = Date.now();
+    if (!force && !this.positionSyncDirty && now - this.lastPositionBroadcastAt < POSITION_HEARTBEAT_MS) {
+      return;
+    }
+
+    if (this.gameMode === "individual") {
+      this._broadcastPositions();
+    } else {
+      this._broadcastTeamPositions();
+    }
+
+    this.positionSyncDirty = false;
+    this.lastPositionBroadcastAt = now;
+  }
 
   private _broadcastPositions(): void {
     const positions: Array<{
@@ -1070,6 +1106,13 @@ export default class EscapeMazeGame extends BaseGame {
 
   private _endRound(roundToken: number = this.activeRoundToken): void {
     if (roundToken !== this.activeRoundToken) return;
+
+    const roundWasActive = !!(
+      this.syncInterval || this.timerInterval || this.roundTimeout || this.roundResolve
+    );
+    if (roundWasActive) {
+      this._broadcastPositionSync(true);
+    }
 
     this._clearIntervals();
     if (this.roundTimeout) {
@@ -1138,6 +1181,8 @@ export default class EscapeMazeGame extends BaseGame {
     this.finishCount = 0;
     this.roundStartMs = Date.now();
     this.roundResolve = null;
+    this.positionSyncDirty = false;
+    this.lastPositionBroadcastAt = 0;
     this.playerPositions.clear();
     this.teams = [];
     this.roundSeed = this.mazeSeed + round * 7919;
