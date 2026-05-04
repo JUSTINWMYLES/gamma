@@ -327,6 +327,8 @@ body {
 .light .from-blue-900 { --tw-gradient-from: #dbeafe !important; }
 .light .via-blue-900  { --tw-gradient-stops: var(--tw-gradient-from), #dbeafe var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
 .light .to-blue-900   { --tw-gradient-to: #dbeafe !important; }
+.light .text-blue-100 { color: #1e3a8a !important; }
+.light .text-blue-300 { color: #1d4ed8 !important; }
 .light .from-sky-900 { --tw-gradient-from: #e0f2fe !important; }
 .light .via-sky-900  { --tw-gradient-stops: var(--tw-gradient-from), #e0f2fe var(--tw-gradient-via-position), var(--tw-gradient-to) !important; }
 .light .to-sky-900   { --tw-gradient-to: #e0f2fe !important; }

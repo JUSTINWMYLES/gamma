@@ -501,7 +501,7 @@
   {/if}
 
   {#if role === "viewer"}
-    {#if activeTrackAttribution && (phase === "lobby" || phase === "game_over" || phase === "scoreboard")}
+    {#if activeTrackAttribution && (phase === "lobby" || phase === "instructions" || phase === "countdown" || phase === "in_round" || phase === "round_end" || phase === "scoreboard" || phase === "game_over")}
       <div class="px-3 py-2 text-[11px] text-gray-300/90 bg-black/30 border-t border-white/10">
         {activeTrackAttribution} • https://creativecommons.org/licenses/by/4.0/ • Full credit: ATTRIBUTIONS.md
       </div>

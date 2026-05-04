@@ -48,7 +48,7 @@ const MIN_MATCH_DURATION_MS = 5_000;
 const MAX_MATCH_DURATION_MS = 20_000;
 
 /** Minimum interval between accepted taps from one player (ms). */
-const TAP_DEBOUNCE_MS = 50;
+const TAP_DEBOUNCE_MS = 25;
 
 /** How often to check match state during a live duel (ms). */
 const MATCH_MONITOR_TICK_MS = 250;
